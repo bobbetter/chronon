@@ -1,0 +1,21 @@
+services:
+  chronon-spark:
+    image: spark:3.5.3-scala2.12-java11-python3-ubuntu
+    environment:
+      JAVA_HOME: /usr/local/openjdk-11
+      SPARK_HOME: /opt/spark
+      SCALA_HOME: /opt/scala
+    volumes:
+      - ../out/spark/assembly.dest/chronon-spark-assembly.jar:/opt/chronon/jars/chronon-spark-assembly.jar:ro
+      - spark-workdir:/opt/chronon/workdir
+    command: ["tail", "-f", "/dev/null"]
+    restart: unless-stopped
+    networks:
+      - chronon-net
+
+volumes:
+  spark-workdir:
+
+networks:
+  chronon-net:
+

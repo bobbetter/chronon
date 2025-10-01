@@ -21,6 +21,14 @@ object `package` extends build.BaseModule {
 //      mvn"org.apache.parquet:parquet-avro:1.15.2".forceVersion(),
     )
   
+  override def assembly: T[PathRef] = Task {
+    val original = super.assembly()
+    val renamed = Task.dest / "chronon-spark-assembly.jar"
+    os.copy.over(original.path, renamed, createFolders = true)
+    PathRef(renamed)
+  }
+
+
   // Single test module for all Spark tests
   object test extends build.BaseTestModule {
     def moduleDeps = Seq(build.spark, build.api.test, build.aggregator.test)
