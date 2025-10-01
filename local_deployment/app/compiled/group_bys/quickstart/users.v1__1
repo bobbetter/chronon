@@ -1,0 +1,69 @@
+{
+  "aggregations": [],
+  "keyColumns": [
+    "user_id"
+  ],
+  "metaData": {
+    "columnHashes": {
+      "account_created_ds": "6ec00c66ee3db957ec87a0301d6f1f24",
+      "email_verified": "c4dcfee3a62e165361e8b7efcacf8879",
+      "user_id": "56f9d4edd9ca35371c9410e78d27b4cf"
+    },
+    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_users_with_offset_0\", \"spec\": \"data.users/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}]}",
+    "executionInfo": {
+      "conf": {
+        "common": {
+          "spark.chronon.coalesce.factor": "10",
+          "spark.chronon.partition.column": "<partition-column-name>",
+          "spark.chronon.partition.format": "<date-format>",
+          "spark.chronon.table.format_provider.class": "ai.chronon.integrations.cloud_gcp.GcpFormatProvider",
+          "spark.chronon.table_write.format": "iceberg",
+          "spark.default.parallelism": "10",
+          "spark.kryo.registrator": "ai.chronon.integrations.cloud_gcp.ChrononIcebergKryoRegistrator",
+          "spark.sql.catalog.bigquery_catalog": "ai.chronon.integrations.cloud_gcp.DelegatingBigQueryMetastoreCatalog",
+          "spark.sql.catalog.bigquery_catalog.catalog-impl": "org.apache.iceberg.gcp.bigquery.BigQueryMetastoreCatalog",
+          "spark.sql.catalog.bigquery_catalog.gcp.bigquery.location": "<region>",
+          "spark.sql.catalog.bigquery_catalog.gcp.bigquery.project-id": "<project-id>",
+          "spark.sql.catalog.bigquery_catalog.io-impl": "org.apache.iceberg.io.ResolvingFileIO",
+          "spark.sql.catalog.bigquery_catalog.warehouse": "gs://zipline-warehouse-<customer_id>/data/tables/",
+          "spark.sql.defaultCatalog": "bigquery_catalog",
+          "spark.sql.defaultUrlStreamHandlerFactory.enabled": "false",
+          "spark.sql.shuffle.partitions": "10"
+        }
+      },
+      "env": {
+        "common": {
+          "ARTIFACT_PREFIX": "<customer-artifact-bucket>",
+          "CLOUD_PROVIDER": "<gcp | aws>",
+          "CUSTOMER_ID": "<customer_id>",
+          "GCP_BIGTABLE_INSTANCE_ID": "<bigtable-instance-id>",
+          "GCP_DATAPROC_CLUSTER_NAME": "<dataproc-cluster-name>",
+          "GCP_PROJECT_ID": "<project-id>",
+          "GCP_REGION": "<region>"
+        }
+      },
+      "historicalBackfill": 0,
+      "scheduleCron": "@daily"
+    },
+    "name": "quickstart.users.v1__1",
+    "online": 1,
+    "outputNamespace": "quickstart",
+    "sourceFile": "group_bys/quickstart/users.py",
+    "team": "quickstart",
+    "version": "1"
+  },
+  "sources": [
+    {
+      "entities": {
+        "query": {
+          "selects": {
+            "account_created_ds": "account_created_ds",
+            "email_verified": "email_verified",
+            "user_id": "user_id"
+          }
+        },
+        "snapshotTable": "data.users"
+      }
+    }
+  ]
+}

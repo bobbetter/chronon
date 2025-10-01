@@ -121,6 +121,16 @@ object `package` extends PythonModule with RuffModule with PublishModule {
 
   // Install in editable mode with generated sources. Can mess ruffCheck import order (due to gen_thrift priority change)
   def installEditable() = Task.Command {
+    val env = Task.ctx().env
+    val repoVenvPython = moduleDir / os.up / ".venv" / "bin" / "python"
+    val pythonExec = env.get("PYTHON")
+      .orElse(env.get("VIRTUAL_ENV").map(v => (os.Path(v) / "bin" / "python").toString))
+      .orElse(env.get("PYTHON_EXECUTABLE"))
+      .orElse(Some(repoVenvPython).filter(os.exists).map(_.toString))
+      .getOrElse("python3")
+
+    println(s"Using python executable: $pythonExec")
+
     // Generate sources in Task.dest as usual
     val generatedPaths = generatedSources()
     
@@ -143,7 +153,7 @@ object `package` extends PythonModule with RuffModule with PublishModule {
     
     // Install in editable mode
     println(s"Working directory: $pythonDir")
-    os.proc("python", "-m", "pip", "install", "-e", ".").call(cwd = pythonDir)
+    os.proc(pythonExec, "-m", "pip", "install", "-e", ".").call(cwd = pythonDir)
     println("Package installed in editable mode with generated sources")
   }
 }
