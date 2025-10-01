@@ -2,20 +2,38 @@ services:
   chronon-spark:
     image: spark:3.5.3-scala2.12-java11-python3-ubuntu
     environment:
-      JAVA_HOME: /usr/local/openjdk-11
+      JAVA_HOME: /opt/java/openjdk
       SPARK_HOME: /opt/spark
       SCALA_HOME: /opt/scala
+      PATH: /opt/spark/bin:/opt/java/openjdk/bin:$PATH
+      SPARK_CONF_DIR: /srv/chronon/conf
     volumes:
-      - ../out/spark/assembly.dest/chronon-spark-assembly.jar:/opt/chronon/jars/chronon-spark-assembly.jar:ro
-      - spark-workdir:/opt/chronon/workdir
+      - ../out/spark/assembly.dest/chronon-spark-assembly.jar:/srv/chronon/jars/chronon-spark-assembly.jar:ro
+      - ./app/data:/srv/chronon/data:ro
+      - ./app/scripts:/srv/chronon/scripts:ro
+      - ./conf:/srv/chronon/conf:ro
+      - ./metastore:/srv/chronon/metastore
+    working_dir: /srv/chronon
     command: ["tail", "-f", "/dev/null"]
     restart: unless-stopped
     networks:
       - chronon-net
-
-volumes:
-  spark-workdir:
+  duckui:
+    build:
+      context: ./duckui
+    environment:
+      SPARK_WAREHOUSE_PATH: /srv/chronon/metastore/warehouse
+    volumes:
+      - ./duckui:/srv/chronon/duckui
+      - ./metastore:/srv/chronon/metastore:ro
+    working_dir: /srv/chronon/duckui
+    ports:
+      - "8501:8501"
+    command: ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    depends_on:
+      - chronon-spark
+    networks:
+      - chronon-net
 
 networks:
   chronon-net:
-

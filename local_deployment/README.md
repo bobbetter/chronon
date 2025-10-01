@@ -1,0 +1,1 @@
+- Run `spark-shell -i ./scripts/data-loader.scala --master local[*]` to load data into spark and create tables.
