@@ -37,7 +37,7 @@ default = Team(
             "GCP_DATAPROC_CLUSTER_NAME": "<dataproc-cluster-name>",
             "GCP_BIGTABLE_INSTANCE_ID": "<bigtable-instance-id>",
             "ARTIFACT_PREFIX": "<customer-artifact-bucket>",
-            "CLOUD_PROVIDER": "<gcp | aws>",
+            "CLOUD_PROVIDER": "aws",
         },
     ),
 )

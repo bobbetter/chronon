@@ -1,20 +1,18 @@
 services:
   chronon-spark:
-    image: spark:3.5.3-scala2.12-java11-python3-ubuntu
+    build:
+      context: ..
+      dockerfile: local_deployment/chronon-spark/Dockerfile
+
     environment:
-      JAVA_HOME: /opt/java/openjdk
-      SPARK_HOME: /opt/spark
-      SCALA_HOME: /opt/scala
-      PATH: /opt/spark/bin:/opt/java/openjdk/bin:$PATH
-      SPARK_CONF_DIR: /srv/chronon/conf
+      CHRONON_DRIVER_JAR: /srv/chronon/jars/chronon-spark-assembly.jar
+      USER: spark
+      SPARK_SUBMIT_PATH: /opt/spark/bin/spark-submit
     volumes:
       - ../out/spark/assembly.dest/chronon-spark-assembly.jar:/srv/chronon/jars/chronon-spark-assembly.jar:ro
-      - ./app/data:/srv/chronon/data:ro
-      - ./app/scripts:/srv/chronon/scripts:ro
-      - ./conf:/srv/chronon/conf:ro
+      - ./app:/srv/chronon/app
+      - ./chronon-spark:/srv/chronon/conf:ro
       - ./metastore:/srv/chronon/metastore
-    working_dir: /srv/chronon
-    command: ["tail", "-f", "/dev/null"]
     restart: unless-stopped
     networks:
       - chronon-net

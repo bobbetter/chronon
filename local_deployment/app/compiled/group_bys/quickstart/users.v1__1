@@ -34,7 +34,7 @@
       "env": {
         "common": {
           "ARTIFACT_PREFIX": "<customer-artifact-bucket>",
-          "CLOUD_PROVIDER": "<gcp | aws>",
+          "CLOUD_PROVIDER": "aws",
           "CUSTOMER_ID": "<customer_id>",
           "GCP_BIGTABLE_INSTANCE_ID": "<bigtable-instance-id>",
           "GCP_DATAPROC_CLUSTER_NAME": "<dataproc-cluster-name>",
