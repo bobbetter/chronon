@@ -1,5 +1,5 @@
 - Build the spark assembly jar: `mill spark/assembly`
-- Install the Python package locally: `mill python.installEditable`
+- Install the Python package locally: `./mill python.installEditable`
 
 After installing Python package, run `rm -rf python/src/agent python/src/gen_thrift python/src/zipline_ai.egg-info` to delete the generated sources that otherwise prevent conflict errors.
 
@@ -11,6 +11,8 @@ Then: ` ./mill python.wheel` to build Python wheel
 
 - ` zipline compile` to compile the configs
 
+
+python3 run.py --conf=compiled/group_bys/quickstart/purchases.v1__1 --mode backfill --ds 2023-01-01
 
 Next steps:
 - Need to run some sort of mill script to build the wheel and install it in the Docker container.

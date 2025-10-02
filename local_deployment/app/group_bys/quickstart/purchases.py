@@ -44,6 +44,7 @@ v1 = GroupBy(
     sources=[source],
     keys=["user_id"], # We are aggregating by user
     online=True,
+    backfill_start_date="2023-01-01",
     aggregations=[
         Aggregation(
             input_column="purchase_price",

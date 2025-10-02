@@ -33,7 +33,8 @@ export TEST_NAME="${APP_NAME}_${USER}_test"
 unset PYSPARK_DRIVER_PYTHON
 unset PYSPARK_PYTHON
 unset SPARK_HOME
-unset SPARK_CONF_DIR
+# Note: SPARK_CONF_DIR should be set in docker-compose.yml to /srv/chronon/conf
+# to pick up spark-defaults.conf
 export LOG4J_FILE="${CHRONON_WORKING_DIR}/log4j_file"
 cat > ${LOG4J_FILE} << EOF
 log4j.rootLogger=INFO, stdout

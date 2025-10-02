@@ -8,6 +8,12 @@ services:
       CHRONON_DRIVER_JAR: /srv/chronon/jars/chronon-spark-assembly.jar
       USER: spark
       SPARK_SUBMIT_PATH: /opt/spark/bin/spark-submit
+      SPARK_CONF_DIR: /srv/chronon/conf
+      JOB_MODE: local[*]
+      PARALLELISM: 2
+      EXECUTOR_MEMORY: 2G
+      EXECUTOR_CORES: 4
+      DRIVER_MEMORY: 1G
     volumes:
       - ../out/spark/assembly.dest/chronon-spark-assembly.jar:/srv/chronon/jars/chronon-spark-assembly.jar:ro
       - ./app:/srv/chronon/app

@@ -65,6 +65,7 @@
       "operation": 13
     }
   ],
+  "backfillStartDate": "2023-01-01",
   "keyColumns": [
     "user_id"
   ],
