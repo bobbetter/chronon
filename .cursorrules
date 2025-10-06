@@ -12,3 +12,33 @@ We use the mill build system for this project. A couple of examples of command i
 - Make sure to sanity check compilation works when you’re done making a series of code changes
 - When done with compilation checks, make sure to run the related unit tests as well (either for the class or module)
 - When applicable, suggest test additions / extensions to go with your code changes
+
+# Upload-to-KV (DynamoDB) - Quick Reference
+- Jars (build and mount):
+  - Spark driver jar: `./mill spark.assembly` → `out/spark/assembly.dest/chronon-spark-assembly.jar` (mount to `/srv/chronon/jars/chronon-spark-assembly.jar`).
+  - AWS online jar: `./mill cloud_aws.assembly` → `out/cloud_aws/assembly.dest/chronon-aws-assembly.jar` (mount to `/srv/chronon/jars/chronon-aws-assembly.jar`).
+- Required env vars in the Spark container:
+  - `CHRONON_ONLINE_CLASS=ai.chronon.integrations.aws.AwsApiImpl`
+  - `CHRONON_ONLINE_JAR=/srv/chronon/jars/chronon-aws-assembly.jar`
+  - `DYNAMO_ENDPOINT=http://dynamodb-local:8000` (AwsApiImpl reads `DYNAMO_ENDPOINT`)
+  - `AWS_DEFAULT_REGION=us-west-2`
+- Local upload command (after computing the upload table):
+  - `python3 run.py --mode upload-to-kv --conf=compiled/group_bys/<team>/<dataset>.v1__X --ds YYYY-MM-DD --uploader spark`
+  - Internally maps to Spark subcommand `group-by-upload-bulk-load` in `ai.chronon.spark.Driver` and calls `kvStore.bulkPut(...)`.
+- Relevant classes/files:
+  - Online API (AWS): `cloud_aws/src/main/scala/ai/chronon/integrations/aws/AwsApiImpl.scala` (`AwsApiImpl`).
+  - Dynamo KV store: `cloud_aws/src/main/scala/ai/chronon/integrations/aws/DynamoDBKVStoreImpl.scala` (`DynamoDBKVStoreImpl`, `bulkPut` implemented to read upload table and call `multiPut`).
+  - Spark entrypoints:
+    - `spark/src/main/scala/ai/chronon/spark/Driver.scala` (`GroupByUploadToKVBulkLoad` path).
+    - `spark/src/main/scala/ai/chronon/spark/kv_store/KVUploadNodeRunner.scala` (alternate runner calling `bulkPut`).
+  - Helpers:
+    - `spark/src/main/scala/ai/chronon/spark/utils/InMemoryKvStore.scala` (reference `bulkPut` logic shape).
+    - `spark/src/main/scala/ai/chronon/spark/catalog/TableUtils.scala` (reads Hive/Delta tables).
+  - Local tooling:
+    - `local_deployment/app/run.py` (supports `upload-to-kv` mode; routes to `group-by-upload-bulk-load`).
+    - `local_deployment/app/scripts/spark_submit.sh` (replaces `--online-jar=None` / `--online-class=None` with env values).
+    - `local_deployment/docker-compose.yml` (mounts the jars; sets env above).
+- Gotchas:
+  - Ensure `CHRONON_ONLINE_JAR` matches the actual mounted filename; mismatch will cause `ClassNotFoundException` for `AwsApiImpl`.
+  - Use `DYNAMO_ENDPOINT` (not `DYNAMODB_ENDPOINT`) for the AwsApi to pick up the local endpoint.
+  - `spark` assembly does NOT include `cloud_aws`; always include the AWS jar via `--jars` or `CHRONON_ONLINE_JAR`.

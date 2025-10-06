@@ -228,7 +228,12 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
     import org.apache.spark.sql.Row
     import ai.chronon.online.KVStore
 
-    val spark = SparkSession.active
+    // Ensure there is an active SparkSession for reading the offline table
+    val spark = SparkSession.getActiveSession
+      .orElse(SparkSession.getDefaultSession)
+      .getOrElse {
+        ai.chronon.spark.submission.SparkSessionBuilder.build("dynamodb-bulk-put")
+      }
     val tableUtils = TableUtils(spark)
 
     val partitionFilter =
@@ -257,21 +262,57 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
       KVStore.PutRequest(key, value, destinationOnlineDataSet, Option(timestamp))
     }
 
-    // group into batches and issue multiPut per partition to maximize parallelism
+    // group into batches and write per partition without capturing non-serializable class state
     requests.foreachPartition { it =>
+      import software.amazon.awssdk.services.dynamodb.DynamoDbClient
+      import software.amazon.awssdk.regions.Region
+      import java.net.URI
+
+      // Build a local client on the executor
+      val region = sys.env.getOrElse("AWS_DEFAULT_REGION", "us-west-2")
+      val endpoint = sys.env.getOrElse("DYNAMO_ENDPOINT", "http://localhost:8000")
+      
+      var localClient = DynamoDbClient.builder()
+        .endpointOverride(URI.create(endpoint))
+        .region(Region.of(region))
+        .build()
+      
       val batch = new scala.collection.mutable.ArrayBuffer[KVStore.PutRequest](defaultBatchSize)
-      def flush(): Unit = {
-        if (batch.nonEmpty) {
-          // best-effort; exceptions propagate to fail the job
-          scala.concurrent.Await.result(multiPut(batch.toSeq), scala.concurrent.duration.Duration(5, "minutes"))
-          batch.clear()
+
+      def putBatch(): Unit = {
+        if (batch.isEmpty) return
+        batch.foreach { req =>
+          val attributeMap: Map[String, AttributeValue] = Map(
+            DynamoDBKVStoreConstants.partitionKeyColumn -> AttributeValue.builder
+              .b(SdkBytes.fromByteArray(req.keyBytes))
+              .build,
+            "valueBytes" -> AttributeValue.builder.b(SdkBytes.fromByteArray(req.valueBytes)).build
+          ) ++ req.tsMillis
+            .map(ts => Map(DynamoDBKVStoreConstants.sortKeyColumn -> AttributeValue.builder.n(ts.toString).build))
+            .getOrElse(Map.empty)
+
+          val putItemReq = PutItemRequest.builder
+            .tableName(req.dataset)
+            .item(attributeMap.toJava)
+            .build()
+
+          // best-effort; exceptions should fail the task
+          localClient.putItem(putItemReq)
+        }
+        batch.clear()
+      }
+
+      try {
+        it.foreach { req =>
+          batch += req
+          if (batch.size >= defaultBatchSize) putBatch()
+        }
+        putBatch()
+      } finally {
+        try localClient.close() catch {
+          case _: Throwable => ()
         }
       }
-      it.foreach { req =>
-        batch += req
-        if (batch.size >= defaultBatchSize) flush()
-      }
-      flush()
     }
   }
 

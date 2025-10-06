@@ -6,6 +6,8 @@ services:
 
     environment:
       CHRONON_DRIVER_JAR: /srv/chronon/jars/chronon-spark-assembly.jar
+      CHRONON_ONLINE_JAR: /srv/chronon/jars/chronon-aws-assembly.jar
+      CHRONON_ONLINE_CLASS: ai.chronon.integrations.aws.AwsApiImpl
       USER: spark
       SPARK_SUBMIT_PATH: /opt/spark/bin/spark-submit
       SPARK_CONF_DIR: /srv/chronon/conf
@@ -15,12 +17,15 @@ services:
       EXECUTOR_CORES: 4
       DRIVER_MEMORY: 1G
       DDB_BULKPUT_BATCH_SIZE: 100
-      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
       AWS_DEFAULT_REGION: us-west-2
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
       CLOUD_PROVIDER: AWS
 
     volumes:
       - ../out/spark/assembly.dest/chronon-spark-assembly.jar:/srv/chronon/jars/chronon-spark-assembly.jar:ro
+      - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:ro
       - ./app:/srv/chronon/app
       - ./chronon-spark:/srv/chronon/conf:ro
       - ./metastore:/srv/chronon/metastore
