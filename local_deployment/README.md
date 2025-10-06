@@ -9,6 +9,7 @@
 - Run `python3 run.py --conf=compiled/group_bys/quickstart/purchases.v1__1 --ds 2023-12-01`
 - Run `python3 run.py --mode upload --conf=compiled/group_bys/quickstart/purchases.v1__1 --ds 2023-12-01`
 - Run `python3 run.py --mode upload-to-kv --conf=compiled/group_bys/quickstart/purchases.v1__1 --ds 2023-12-01 --uploader spark`
+- Fetch data back: `./fetcher/run.sh` (requires Scala 2.12.x locally, no Spark needed)
 
 To-do:
 - clean up "metastore" folder, name it something like datastore and move into chronon-spark folder.

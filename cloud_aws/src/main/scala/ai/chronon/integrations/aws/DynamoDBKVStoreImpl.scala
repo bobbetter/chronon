@@ -1,6 +1,7 @@
 package ai.chronon.integrations.aws
 
 import ai.chronon.api.Constants
+import ai.chronon.api.Extensions.StringOps
 import ai.chronon.api.Constants.{ContinuationKey, ListLimit}
 import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.online.KVStore
@@ -134,7 +135,7 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
       Future {
         val item: Try[util.Map[String, AttributeValue]] =
           handleDynamoDbOperation(metricsContext.withSuffix("multiget"), req.dataset) {
-            dynamoDbClient.getItem(getItemReq).item()
+            dynamoDbClient.getItem(getItemReq.toBuilder.tableName(mapDatasetName(req.dataset)).build()).item()
           }
 
         val response = item.map(i => List(i).toJava)
@@ -168,7 +169,7 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
       AttributeValue.builder.b(SdkBytes.fromByteArray(k.asInstanceOf[Array[Byte]])).build
     }
 
-    val scanBuilder = ScanRequest.builder.tableName(request.dataset).limit(listLimit)
+    val scanBuilder = ScanRequest.builder.tableName(mapDatasetName(request.dataset)).limit(listLimit)
     val scanRequest = maybeExclusiveStartKeyAttribute match {
       case Some(value) => scanBuilder.exclusiveStartKey(Map(partitionKeyColumn -> value).toJava).build
       case _           => scanBuilder.build
@@ -200,13 +201,14 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
   override def multiPut(keyValueDatasets: Seq[KVStore.PutRequest]): Future[Seq[Boolean]] = {
     logger.info(s"Triggering multiput for ${keyValueDatasets.size}: rows")
     val datasetToWriteRequests = keyValueDatasets.map { req =>
+      val targetDataset = mapDatasetName(req.dataset)
       val attributeMap: Map[String, AttributeValue] = buildAttributeMap(req.keyBytes, req.valueBytes)
       val tsMap =
         req.tsMillis.map(ts => Map(sortKeyColumn -> AttributeValue.builder.n(ts.toString).build)).getOrElse(Map.empty)
 
       val putItemReq =
-        PutItemRequest.builder.tableName(req.dataset).item((attributeMap ++ tsMap).toJava).build()
-      (req.dataset, putItemReq)
+        PutItemRequest.builder.tableName(targetDataset).item((attributeMap ++ tsMap).toJava).build()
+      (targetDataset, putItemReq)
     }
 
     val futureResponses = datasetToWriteRequests.map { case (dataset, putItemRequest) =>
@@ -249,8 +251,11 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
          |FROM $sourceOfflineTable
          |$partitionFilter""".stripMargin)
 
+    // Map destination dataset to canonical table name (e.g., QUICKSTART_PURCHASES_V1__1_BATCH)
+    val targetDataset = mapDatasetName(destinationOnlineDataSet)
+
     // Ensure table exists
-    create(destinationOnlineDataSet)
+    create(targetDataset)
 
     // Write in batches to avoid huge request fanout; reuse multiPut
     val defaultBatchSize = sys.env.getOrElse("DDB_BULKPUT_BATCH_SIZE", "100").toInt
@@ -259,7 +264,7 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
       val key = row.get(0).asInstanceOf[Array[Byte]]
       val value = row.get(1).asInstanceOf[Array[Byte]]
       val timestamp = row.get(2).asInstanceOf[Long]
-      KVStore.PutRequest(key, value, destinationOnlineDataSet, Option(timestamp))
+      KVStore.PutRequest(key, value, targetDataset, Option(timestamp))
     }
 
     // group into batches and write per partition without capturing non-serializable class state
@@ -314,6 +319,13 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
         }
       }
     }
+  }
+
+  // Mirror BigTable's dataset mapping: default group-by uploads go to *_BATCH
+  private def mapDatasetName(dataset: String): String = {
+    if (dataset == null) return null
+    if (dataset.endsWith("_BATCH") || dataset.endsWith("_STREAMING")) dataset
+    else dataset.sanitize.toUpperCase + "_BATCH"
   }
 
   private def getCapacityUnits(props: Map[String, Any], key: String, defaultValue: Long): Long = {
@@ -409,7 +421,7 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
       )
 
     QueryRequest.builder
-      .tableName(request.dataset)
+      .tableName(mapDatasetName(request.dataset))
       .keyConditionExpression(s"$partitionAlias = :partitionKeyValue AND $timeAlias BETWEEN :start AND :end")
       .expressionAttributeNames(attrNameAliasMap.toJava)
       .expressionAttributeValues(attrValuesMap.toJava)

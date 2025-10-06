@@ -48,7 +48,7 @@ class AwsApiImpl(conf: Map[String, String]) extends Api(conf) {
     * a fully functional Chronon serving stack in Aws
     * @return
     */
-  override def externalRegistry: ExternalSourceRegistry = ???
+  override def externalRegistry: ExternalSourceRegistry = null
 
   /** The logResponse method is currently unimplemented. We'll need to implement this prior to bringing up the
     * fully functional serving stack in Aws which includes logging feature responses to a stream for OOC
