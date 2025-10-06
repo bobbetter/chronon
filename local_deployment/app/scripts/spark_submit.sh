@@ -45,6 +45,18 @@ log4j.appender.stdout.layout.ConversionPattern=%d{yyyy-MM-dd HH:mm:ss} %-5p %c{1
 log4j.appender.stdout.layout.ConversionPattern=[%d{yyyy-MM-dd HH:mm:ss}] {%c{1}} %L - %m%n
 log4j.logger.ai.chronon=INFO
 EOF
+# Replace None placeholders from Python with env-provided values, if present
+PROCESSED_ARGS=()
+for arg in "$@"; do
+  if [[ "$arg" == "--online-jar=None" && -n "${CHRONON_ONLINE_JAR:-}" ]]; then
+    PROCESSED_ARGS+=("--online-jar=${CHRONON_ONLINE_JAR}")
+  elif [[ "$arg" == "--online-class=None" && -n "${CHRONON_ONLINE_CLASS:-}" ]]; then
+    PROCESSED_ARGS+=("--online-class=${CHRONON_ONLINE_CLASS}")
+  else
+    PROCESSED_ARGS+=("$arg")
+  fi
+done
+
 $SPARK_SUBMIT_PATH \
 --driver-java-options " -Dlog4j.configuration=file:${LOG4J_FILE}" \
 --conf "spark.executor.extraJavaOptions= -XX:ParallelGCThreads=4 -XX:+UseParallelGC -XX:+UseCompressedOops" \
@@ -69,7 +81,7 @@ $SPARK_SUBMIT_PATH \
 --conf spark.chronon.outputParallelismOverride=${OUTPUT_PARALLELISM:--1} \
 --conf spark.chronon.rowCountPerPartition=${ROW_COUNT_PER_PARTITION:--1} \
 --jars "${CHRONON_ONLINE_JAR:-}" \
-"$@" 2>&1                                                  |
+"${PROCESSED_ARGS[@]}" 2>&1                                 |
 grep --line-buffered -v "YarnScheduler:70"                 |
 grep --line-buffered -v "TransportResponseHandler:144"     |
 grep --line-buffered -v "TransportClient:331"              |

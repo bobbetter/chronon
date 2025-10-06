@@ -43,6 +43,7 @@ SPARK_MODES = [
     "backfill-left",
     "backfill-final",
     "upload",
+    "upload-to-kv",
     "streaming",
     "consistency-metrics-compute",
     "compare",
@@ -64,6 +65,7 @@ MODE_ARGS = {
     "backfill-left": OFFLINE_ARGS,
     "backfill-final": OFFLINE_ARGS,
     "upload": OFFLINE_ARGS,
+    "upload-to-kv": ONLINE_OFFLINE_WRITE_ARGS,
     "stats-summary": OFFLINE_ARGS,
     "log-summary": OFFLINE_ARGS,
     "analyze": OFFLINE_ARGS,
@@ -82,6 +84,7 @@ MODE_ARGS = {
 ROUTES = {
     "group_bys": {
         "upload": "group-by-upload",
+        "upload-to-kv": "group-by-upload-bulk-load",
         "backfill": "group-by-backfill",
         "streaming": "group-by-streaming",
         "metadata-upload": "metadata-upload",
@@ -290,7 +293,7 @@ def set_runtime_env(args):
                     environment["conf_env"] = conf_json.get("metaData").get("modeToEnvMap", {}).get(effective_mode, {})
                     # Load additional args used on backfill.
                     if custom_json(conf_json) and effective_mode in {
-                      "backfill", "backfill-left", "backfill-final", "upload"
+                      "backfill", "backfill-left", "backfill-final", "upload", "upload-to-kv"
                     }:
                         environment["conf_env"]["CHRONON_CONFIG_ADDITIONAL_ARGS"] = " ".join(
                             custom_json(conf_json).get("additional_args", [])

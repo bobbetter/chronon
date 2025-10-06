@@ -222,7 +222,58 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
   /** Implementation of bulkPut is currently a TODO for the DynamoDB store. This involves transforming the underlying
     * Parquet data to Amazon's Ion format + swapping out old table for new (as bulkLoad only writes to new tables)
     */
-  override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = ???
+  override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
+    import org.apache.spark.sql.SparkSession
+    import ai.chronon.spark.catalog.TableUtils
+    import org.apache.spark.sql.Row
+    import ai.chronon.online.KVStore
+
+    val spark = SparkSession.active
+    val tableUtils = TableUtils(spark)
+
+    val partitionFilter =
+      Option(partition).map { part => s"WHERE ${tableUtils.partitionColumn} = '$part'" }.getOrElse("")
+
+    val offlineDf = tableUtils.sql(s"SELECT * FROM $sourceOfflineTable")
+    val tsColumn =
+      if (offlineDf.columns.contains(Constants.TimeColumn)) Constants.TimeColumn
+      else s"(unix_timestamp(ds, 'yyyy-MM-dd') * 1000 + ${tableUtils.partitionSpec.spanMillis})"
+
+    val df =
+      tableUtils.sql(s"""SELECT key_bytes, value_bytes, $tsColumn as ts
+         |FROM $sourceOfflineTable
+         |$partitionFilter""".stripMargin)
+
+    // Ensure table exists
+    create(destinationOnlineDataSet)
+
+    // Write in batches to avoid huge request fanout; reuse multiPut
+    val defaultBatchSize = sys.env.getOrElse("DDB_BULKPUT_BATCH_SIZE", "100").toInt
+
+    val requests = df.rdd.map { row: Row =>
+      val key = row.get(0).asInstanceOf[Array[Byte]]
+      val value = row.get(1).asInstanceOf[Array[Byte]]
+      val timestamp = row.get(2).asInstanceOf[Long]
+      KVStore.PutRequest(key, value, destinationOnlineDataSet, Option(timestamp))
+    }
+
+    // group into batches and issue multiPut per partition to maximize parallelism
+    requests.foreachPartition { it =>
+      val batch = new scala.collection.mutable.ArrayBuffer[KVStore.PutRequest](defaultBatchSize)
+      def flush(): Unit = {
+        if (batch.nonEmpty) {
+          // best-effort; exceptions propagate to fail the job
+          scala.concurrent.Await.result(multiPut(batch.toSeq), scala.concurrent.duration.Duration(5, "minutes"))
+          batch.clear()
+        }
+      }
+      it.foreach { req =>
+        batch += req
+        if (batch.size >= defaultBatchSize) flush()
+      }
+      flush()
+    }
+  }
 
   private def getCapacityUnits(props: Map[String, Any], key: String, defaultValue: Long): Long = {
     props.get(key) match {

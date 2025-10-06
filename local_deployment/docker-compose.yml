@@ -14,6 +14,11 @@ services:
       EXECUTOR_MEMORY: 2G
       EXECUTOR_CORES: 4
       DRIVER_MEMORY: 1G
+      DDB_BULKPUT_BATCH_SIZE: 100
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      AWS_DEFAULT_REGION: us-west-2
+      CLOUD_PROVIDER: AWS
+
     volumes:
       - ../out/spark/assembly.dest/chronon-spark-assembly.jar:/srv/chronon/jars/chronon-spark-assembly.jar:ro
       - ./app:/srv/chronon/app
