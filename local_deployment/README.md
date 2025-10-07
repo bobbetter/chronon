@@ -13,6 +13,8 @@ Then you can run workflow as outlined in the Makefile:
 - Run `make run-join` to run the join
 - Run `make run-upload-returns` to run the returns upload
 - Run `make run-upload-purchases` to run the purchases upload
+- Run `make run-upload-to-kv-returns` to run the returns upload to the KV store
+- Run `make run-upload-to-kv-purchases` to run the purchases upload to the KV store
 - Run `make fetch-groupby` to fetch the groupby
 - Run `make fetch-join` to fetch the join
 
@@ -27,5 +29,6 @@ Additional GroupBy commands to backfill (outside of Join operations):
 
 To-do:
 - clean up "metastore" folder, name it something like datastore and move into chronon-spark folder.
+  - Also, there seems to be duplicated metastore_db folder in the chronon-spark folder. Also derby.log is duplicated.
 - Spark scripts will currently fail if new team names are used because a schema is not present. `CREATE SCHEMA IF NOT EXISTS <team_name>;`
 - Build a separate Scala service that handles the Fetcher and MetaData upload operations that are currently standalone Scala scripts (./fetcher/... and ./metauploader/...)

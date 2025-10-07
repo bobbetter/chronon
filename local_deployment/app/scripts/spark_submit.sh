@@ -58,8 +58,8 @@ for arg in "$@"; do
 done
 
 $SPARK_SUBMIT_PATH \
---driver-java-options " -Dlog4j.configuration=file:${LOG4J_FILE}" \
---conf "spark.executor.extraJavaOptions= -XX:ParallelGCThreads=4 -XX:+UseParallelGC -XX:+UseCompressedOops" \
+--driver-java-options " -Dlog4j.configuration=file:${LOG4J_FILE} -Dderby.system.home=/srv/chronon/metastore" \
+--conf "spark.executor.extraJavaOptions= -XX:ParallelGCThreads=4 -XX:+UseParallelGC -XX:+UseCompressedOops -Dderby.system.home=/srv/chronon/metastore" \
 --conf spark.eventLog.enabled=false \
 --conf spark.sql.adaptive.enabled=false \
 --conf spark.sql.adaptive.coalescePartitions.enabled=false \

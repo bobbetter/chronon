@@ -16,6 +16,12 @@ run-upload-returns:
 run-upload-purchases:
 	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && python3 run.py --mode upload --conf=compiled/group_bys/quickstart/purchases.v1__1 --ds 2023-12-01"
 
+run-upload-to-kv-returns:
+	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && python3 run.py --mode upload-to-kv --conf=compiled/group_bys/quickstart/returns.v1__1 --ds 2023-12-01"
+
+run-upload-to-kv-purchases:
+	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && python3 run.py --mode upload-to-kv --conf=compiled/group_bys/quickstart/purchases.v1__1 --ds 2023-12-01"
+
 fetch-groupby:
 	cd fetcher && ./run.sh --type=groupby
 
