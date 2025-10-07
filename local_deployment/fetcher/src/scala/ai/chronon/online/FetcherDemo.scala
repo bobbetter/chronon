@@ -79,6 +79,9 @@ object FetcherDemo {
         println(s"\nERROR: ${e.getMessage}")
         e.printStackTrace()
         sys.exit(1)
+    } finally {
+      try api.ddbClient.close() catch { case _: Throwable => () }
     }
+    System.exit(0)
   }
 }

@@ -22,10 +22,7 @@ import json
 import logging
 import multiprocessing
 import os
-import re
 import subprocess
-import time
-import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 
 ONLINE_ARGS = "--online-jar={online_jar} --online-class={online_class} "
@@ -56,9 +53,7 @@ SPARK_MODES = [
 ]
 MODES_USING_EMBEDDED = ["metadata-upload", "fetch", "local-streaming"]
 
-# Constants for supporting multiple spark versions.
-SUPPORTED_SPARK = ["2.4.0", "3.1.1", "3.2.1"]
-SCALA_VERSION_FOR_SPARK = {"2.4.0": "2.11", "3.1.1": "2.12", "3.2.1": "2.13"}
+# (Jar download removed; jars are assumed to be present in the environment.)
 
 MODE_ARGS = {
     "backfill": OFFLINE_ARGS,
@@ -120,26 +115,7 @@ APP_NAME_TEMPLATE = "chronon_{conf_type}_{mode}_{context}_{name}"
 RENDER_INFO_DEFAULT_SCRIPT = "scripts/render_info.py"
 
 
-def retry_decorator(retries=3, backoff=20):
-    def wrapper(func):
-        def wrapped(*args, **kwargs):
-            attempt = 0
-            while attempt <= retries:
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    attempt += 1
-                    logging.exception(e)
-                    sleep_time = attempt * backoff
-                    logging.info(
-                        "[{}] Retry: {} out of {}/ Sleeping for {}".format(func.__name__, attempt, retries, sleep_time)
-                    )
-                    time.sleep(sleep_time)
-            return func(*args, **kwargs)
-
-        return wrapped
-
-    return wrapper
+# (Retry decorator removed; previously used for jar downloads.)
 
 
 def custom_json(conf):
@@ -159,77 +135,10 @@ def check_output(cmd):
     return subprocess.check_output(cmd.split(), stderr=subprocess.STDOUT, bufsize=0).strip()
 
 
-def download_only_once(url, path, skip_download=False):
-    if skip_download:
-        print("Skipping download of " + path)
-        return
-    should_download = True
-    path = path.strip()
-    if os.path.exists(path):
-        content_output = check_output("curl -sI " + url).decode("utf-8")
-        content_length = re.search("(content-length:\\s)(\\d+)", content_output.lower())
-        remote_size = int(content_length.group().split()[-1])
-        local_size = int(check_output("wc -c " + path).split()[0])
-        print(
-            """Files sizes of {url} vs. {path}
-    Remote size: {remote_size}
-    Local size : {local_size}""".format(
-                **locals()
-            )
-        )
-        if local_size == remote_size:
-            print("Sizes match. Assuming its already downloaded.")
-            should_download = False
-        if should_download:
-            print("Different file from remote at local: " + path + ". Re-downloading..")
-            check_call("curl {} -o {} --connect-timeout 10".format(url, path))
-    else:
-        print("No file at: " + path + ". Downloading..")
-        check_call("curl {} -o {} --connect-timeout 10".format(url, path))
+# (Download helpers removed; jars are assumed to be present.)
 
 
-@retry_decorator(retries=3, backoff=50)
-def download_jar(
-    version,
-    jar_type="uber",
-    release_tag=None,
-    spark_version="3.1.1",
-    skip_download=False,
-):
-    assert (
-        spark_version in SUPPORTED_SPARK
-    ), f"Received unsupported spark version {spark_version}. Supported spark versions are {SUPPORTED_SPARK}"
-    scala_version = SCALA_VERSION_FOR_SPARK[spark_version]
-    maven_url_prefix = os.environ.get("CHRONON_MAVEN_MIRROR_PREFIX", None)
-    default_url_prefix = "https://s01.oss.sonatype.org/service/local/repositories/public/content"
-    url_prefix = maven_url_prefix if maven_url_prefix else default_url_prefix
-    base_url = "{}/ai/chronon/spark_{}_{}".format(url_prefix, jar_type, scala_version)
-    print("Downloading jar from url: " + base_url)
-    jar_path = os.environ.get("CHRONON_DRIVER_JAR", None)
-    if jar_path is None:
-        if version == "latest":
-            version = None
-        if version is None:
-            metadata_content = check_output("curl -s {}/maven-metadata.xml".format(base_url))
-            meta_tree = ET.fromstring(metadata_content)
-            versions = [
-                node.text
-                for node in meta_tree.findall("./versioning/versions/")
-                if re.search(
-                    r"^\d+\.\d+\.\d+{}$".format("\_{}\d*".format(release_tag) if release_tag else ""),
-                    node.text,
-                )
-            ]
-            version = versions[-1]
-        jar_url = "{base_url}/{version}/spark_{jar_type}_{scala_version}-{version}-assembly.jar".format(
-            base_url=base_url,
-            version=version,
-            scala_version=scala_version,
-            jar_type=jar_type,
-        )
-        jar_path = os.path.join("/tmp", jar_url.split("/")[-1])
-        download_only_once(jar_url, jar_path, skip_download)
-    return jar_path
+# (Jar download removed; jars are assumed to be present.)
 
 
 def set_runtime_env(args):
@@ -237,7 +146,7 @@ def set_runtime_env(args):
     Setting the runtime environment variables.
     These are extracted from the common env, the team env and the common env.
     In order to use the environment variables defined in the configs as overrides for the args in the cli this method
-    needs to be run before the runner and jar downloads.
+    needs to be run before preparing the runner.
 
     The order of priority is:
         - Environment variables existing already.
@@ -358,13 +267,6 @@ class Runner:
         self.sub_help = args.sub_help
         self.mode = args.mode
         self.online_jar = args.online_jar
-        valid_jar = args.online_jar and os.path.exists(args.online_jar)
-        # fetch online jar if necessary
-        if (self.mode in ONLINE_MODES) and (not args.sub_help) and not valid_jar:
-            print("Downloading online_jar")
-            self.online_jar = check_output("{}".format(args.online_jar_fetch)).decode("utf-8")
-            os.environ["CHRONON_ONLINE_JAR"] = self.online_jar
-            print("Downloaded jar to {}".format(self.online_jar))
 
         if self.conf:
             try:
@@ -547,11 +449,8 @@ def set_defaults(parser):
         online_jar=os.environ.get("CHRONON_ONLINE_JAR"),
         repo=chronon_repo_path,
         online_class=os.environ.get("CHRONON_ONLINE_CLASS"),
-        version=os.environ.get("VERSION"),
-        spark_version=os.environ.get("SPARK_VERSION", "3.1.1"),
         spark_submit_path=os.path.join(chronon_repo_path, "scripts/spark_submit.sh"),
         spark_streaming_submit_path=os.path.join(chronon_repo_path, "scripts/spark_streaming.sh"),
-        online_jar_fetch=os.path.join(chronon_repo_path, "scripts/fetch_online_jar.py"),
         conf_type="group_bys",
         online_args=os.environ.get("CHRONON_ONLINE_ARGS", ""),
         chronon_jar=os.environ.get("CHRONON_DRIVER_JAR"),
@@ -597,15 +496,8 @@ if __name__ == "__main__":
         "--online-class",
         help="Class name of Online Impl. Used for streaming and metadata-upload mode.",
     )
-    parser.add_argument("--version", help="Chronon version to use.")
-    parser.add_argument("--spark-version", help="Spark version to use for downloading jar.")
     parser.add_argument("--spark-submit-path", help="Path to spark-submit")
     parser.add_argument("--spark-streaming-submit-path", help="Path to spark-submit for streaming")
-    parser.add_argument(
-        "--online-jar-fetch",
-        help="Path to script that can pull online jar. "
-        + "This will run only when a file doesn't exist at location specified by online_jar",
-    )
     parser.add_argument(
         "--sub-help",
         action="store_true",
@@ -620,7 +512,6 @@ if __name__ == "__main__":
         help="Basic arguments that need to be supplied to all online modes",
     )
     parser.add_argument("--chronon-jar", help="Path to chronon OS jar")
-    parser.add_argument("--release-tag", help="Use the latest jar for a particular tag.")
     parser.add_argument("--list-apps", help="command/script to list running jobs on the scheduler")
     parser.add_argument(
         "--render-info",
@@ -633,17 +524,10 @@ if __name__ == "__main__":
     set_runtime_env(pre_parse_args)
     set_defaults(parser)
     args, unknown_args = parser.parse_known_args()
-    jar_type = "embedded" if args.mode in MODES_USING_EMBEDDED else "uber"
     extra_args = (" " + args.online_args) if args.mode in ONLINE_MODES else ""
     args.args = " ".join(unknown_args) + extra_args
-    jar_path = (
-        args.chronon_jar
-        if args.chronon_jar
-        else download_jar(
-            args.version,
-            jar_type=jar_type,
-            release_tag=args.release_tag,
-            spark_version=os.environ.get("SPARK_VERSION", args.spark_version),
-        )
+    jar_path = os.path.expanduser(args.chronon_jar) if args.chronon_jar else None
+    assert jar_path and os.path.exists(jar_path), (
+        "CHRONON_DRIVER_JAR must be provided via --chronon-jar or environment and point to an existing file"
     )
-    Runner(args, os.path.expanduser(jar_path)).run()
+    Runner(args, jar_path).run()

@@ -40,26 +40,31 @@ object MetaDataUpload {
 
     // Build AWS Api and helpers
     val api = new ai.chronon.integrations.aws.AwsApiImpl(Map.empty[String, String])
-    val fetchContext = FetchContext(api.genKvStore, Constants.MetadataDataset)
-    val metadataStore = new MetadataStore(fetchContext)
+    try {
+      val fetchContext = FetchContext(api.genKvStore, Constants.MetadataDataset)
+      val metadataStore = new MetadataStore(fetchContext)
 
-    val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName)
+      val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName)
 
-    // Walker extracts KV pairs (endpoint -> (key -> List(value)))
-    val walker = new MetadataDirWalker(args.confPath, acceptedEndPoints, maybeConfType = args.confType)
-    val kvMap = walker.run
+      // Walker extracts KV pairs (endpoint -> (key -> List(value)))
+      val walker = new MetadataDirWalker(args.confPath, acceptedEndPoints, maybeConfType = args.confType)
+      val kvMap = walker.run
 
-    // Ensure tables exist
-    acceptedEndPoints.foreach(e => metadataStore.create(e))
+      // Ensure tables exist
+      acceptedEndPoints.foreach(e => metadataStore.create(e))
 
-    // Upload
-    val putResults = kvMap.toSeq.flatMap { case (endPoint, keyValues) =>
-      Await.result(metadataStore.put(keyValues, endPoint), 30.minutes)
+      // Upload
+      val putResults = kvMap.toSeq.flatMap { case (endPoint, keyValues) =>
+        Await.result(metadataStore.put(keyValues, endPoint), 30.minutes)
+      }
+
+      val success = putResults.count(identity)
+      val failure = putResults.length - success
+      println(s"Uploaded Chronon Configs to the KV store, success count = $success, failure count = $failure")
+    } finally {
+      try api.ddbClient.close() catch { case _: Throwable => () }
+      System.exit(0)
     }
-
-    val success = putResults.count(identity)
-    val failure = putResults.length - success
-    println(s"Uploaded Chronon Configs to the KV store, success count = $success, failure count = $failure")
   }
 }
 
