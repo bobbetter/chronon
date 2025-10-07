@@ -136,8 +136,7 @@
           "startPartition": "2023-01-01",
           "timeColumn": "ts"
         },
-        "table": "data.returns",
-        "topic": "events.returns/fields=ts,return_id,user_id,product_id,refund_amt/host=kafka/port=9092"
+        "table": "data.returns"
       }
     }
   ]

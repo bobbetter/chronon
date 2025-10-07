@@ -36,11 +36,31 @@ if [ ! -f "$SCALAC" ]; then
     exit 1
 fi
 
-echo "Compiling FetcherDemo.scala with Scala 2.12.18..."
-"$SCALAC" -classpath "$AWS_JAR" -d "$OUTPUT_DIR" "$SOURCE"
+TYPE="groupby"
+ARGS=()
+for arg in "$@"; do
+  case $arg in
+    --type=*)
+      TYPE="${arg#*=}"
+      ;;
+    *)
+      ARGS+=("$arg")
+      ;;
+  esac
+done
 
-echo "Running FetcherDemo..."
-echo ""
+echo "Compiling demos with Scala 2.12.18..."
+"$SCALAC" -classpath "$AWS_JAR" -d "$OUTPUT_DIR" \
+  "$SCRIPT_DIR/src/scala/ai/chronon/online/FetcherDemo.scala" \
+  "$SCRIPT_DIR/src/scala/ai/chronon/online/FetcherDemoJoin.scala"
+
 JAVA_OPTS="-Dlogback.configurationFile=$SCRIPT_DIR/logback.xml"
-java $JAVA_OPTS -cp "$OUTPUT_DIR:$AWS_JAR" ai.chronon.online.FetcherDemo "$@"
+MAIN_CLASS="ai.chronon.online.FetcherDemo"
+if [ "$TYPE" = "join" ]; then
+  MAIN_CLASS="ai.chronon.online.FetcherDemoJoin"
+fi
+
+echo "Running $MAIN_CLASS..."
+echo ""
+java $JAVA_OPTS -cp "$OUTPUT_DIR:$AWS_JAR" "$MAIN_CLASS" "${ARGS[@]}"
 
