@@ -36,3 +36,6 @@ delete-data:
 
 delete-quickstart:
 	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && spark-shell --master local[*] --conf spark.chronon.database=quickstart -i ./scripts/data-deletion.scala"
+
+connect-flink:
+	docker exec -it local_deployment-flink-jobmanager-1 bash
