@@ -11,7 +11,8 @@ lazy val root = (project in file(".")).
       "org.apache.flink" %% "flink-streaming-scala" % flinkVersion % Provided,
       "org.apache.flink" % "flink-clients" % flinkVersion % Provided,
       "org.apache.flink" % "flink-connector-kafka" % "3.0.2-1.18",
-      "org.scala-lang.modules" %% "scala-collection-compat" % "2.12.0"
+      "org.scala-lang.modules" %% "scala-collection-compat" % "2.12.0",
+      "org.scalatest" %% "scalatest" % "3.2.19" % Test
     ),
     Compile / scalaSource := baseDirectory.value / "src" / "main" / "scala",
     Test / scalaSource := baseDirectory.value / "src" / "test" / "scala"

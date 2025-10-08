@@ -26,7 +26,6 @@ docker compose -f "$COMPOSE_YML" exec flink-jobmanager \
   --bootstrap kafka:9092 \
   --source source-events \
   --sink sink-aggregates \
-  --windowSec 10
 
 echo "Submitted. Check Flink UI at http://localhost:8081"
 
