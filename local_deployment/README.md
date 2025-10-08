@@ -32,3 +32,8 @@ To-do:
   - Also, there seems to be duplicated metastore_db folder in the chronon-spark folder. Also derby.log is duplicated.
 - Spark scripts will currently fail if new team names are used because a schema is not present. `CREATE SCHEMA IF NOT EXISTS <team_name>;`
 - Build a separate Scala service that handles the Fetcher and MetaData upload operations that are currently standalone Scala scripts (./fetcher/... and ./metauploader/...)
+
+
+Strange behaviors:
+- Streaming jobs will look up metadata in KV that has been previously uploaded through the batch upload.
+-- And this uploaded metadata must be up-to-date with the latest version of the GroupBy config, meaning, if the GroupBy config has changed, the batch-upload must run again.

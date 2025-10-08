@@ -1,4 +1,4 @@
-.PHONY: help clean-topics create-topics list-topics clean-kafka build test run package clean
+.PHONY: help clean-topics create-topics list-topics clean-kafka build test run package clean run-flink
 
 help:
 	@echo "Available targets:"
@@ -11,18 +11,21 @@ help:
 	@echo "  test            - Run unit tests"
 	@echo "  package         - Build assembly JAR"
 	@echo "  clean           - Clean build artifacts"
+	@echo "  run-flink       - Submit Chronon Flink job to local cluster"
 
 # Kafka topic management
 clean-topics:
 	@echo "Deleting Kafka topics..."
 	docker exec kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic source-events 2>/dev/null || echo "source-events doesn't exist or already deleted"
 	docker exec kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic sink-aggregates 2>/dev/null || echo "sink-aggregates doesn't exist or already deleted"
+	docker exec kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic events.returns 2>/dev/null || echo "events.returns doesn't exist or already deleted"
 	@echo "Topics deleted!"
 
 create-topics:
 	@echo "Creating Kafka topics..."
 	docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --topic source-events --partitions 1 --replication-factor 1 2>/dev/null || echo "source-events already exists"
 	docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --topic sink-aggregates --partitions 1 --replication-factor 1 2>/dev/null || echo "sink-aggregates already exists"
+	docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --topic events.returns --partitions 1 --replication-factor 1 2>/dev/null || echo "events.returns already exists"
 	@echo "Topics created!"
 
 recreate-topics: clean-topics
@@ -58,4 +61,9 @@ package:
 
 clean:
 	sbt clean
+
+# Run Chronon Flink job
+run-flink:
+	@echo "Submitting Chronon Flink job to local cluster..."
+	@bash run_flink_job.sh quickstart.returns.v1__1
 

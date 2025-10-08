@@ -20,8 +20,8 @@ object FetcherDemo {
     println("=" * 80)
 
     // Get GroupBy name and key from args or use defaults
-    val groupByName = if (args.length > 0) args(0) else "quickstart.purchases.v1__1"
-    val userId = if (args.length > 1) args(1) else "85"
+    val groupByName = if (args.length > 0) args(0) else "quickstart.returns.v1__1"
+    val userId = if (args.length > 1) args(1) else "999"
     
     println(s"Fetching GroupBy: $groupByName")
     println(s"Key: user_id = $userId")

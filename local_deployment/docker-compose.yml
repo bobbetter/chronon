@@ -35,9 +35,14 @@ services:
 
   flink-jobmanager:
     image: flink:1.17.0-scala_2.12-java11  
+    container_name: flink-jobmanager
     command: ["jobmanager"]
     environment:
       FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager"
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
+      AWS_DEFAULT_REGION: us-west-2
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
     ports:
       - "8081:8081"
     networks:
@@ -45,9 +50,14 @@ services:
 
   flink-taskmanager:
     image: flink:1.17.0-scala_2.12-java11
+    container_name: flink-taskmanager
     command: ["taskmanager"]
     environment:
-      FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager"
+      FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager\ntaskmanager.numberOfTaskSlots: 4"
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
+      AWS_DEFAULT_REGION: us-west-2
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
     depends_on:
       - flink-jobmanager
     networks:
