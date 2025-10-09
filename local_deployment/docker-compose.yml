@@ -34,30 +34,42 @@ services:
       - chronon-net
 
   flink-jobmanager:
-    image: flink:1.17.0-scala_2.12-java11  
+    build:
+      context: .
+      dockerfile: chronon-flink/Dockerfile
     container_name: flink-jobmanager
     command: ["jobmanager"]
     environment:
       FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager"
+      JAVA_HOME: /usr/lib/jvm/java-11-openjdk-arm64
       DYNAMO_ENDPOINT: http://dynamodb-local:8000
       AWS_DEFAULT_REGION: us-west-2
       AWS_ACCESS_KEY_ID: local
       AWS_SECRET_ACCESS_KEY: local
+    volumes:
+      - ../out/flink/assembly.dest/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-flink-assembly.jar:ro
+      - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:ro
     ports:
       - "8081:8081"
     networks:
       - chronon-net
 
   flink-taskmanager:
-    image: flink:1.17.0-scala_2.12-java11
+    build:
+      context: .
+      dockerfile: chronon-flink/Dockerfile
     container_name: flink-taskmanager
     command: ["taskmanager"]
     environment:
       FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager\ntaskmanager.numberOfTaskSlots: 4"
+      JAVA_HOME: /usr/lib/jvm/java-11-openjdk-arm64
       DYNAMO_ENDPOINT: http://dynamodb-local:8000
       AWS_DEFAULT_REGION: us-west-2
       AWS_ACCESS_KEY_ID: local
       AWS_SECRET_ACCESS_KEY: local
+    volumes:
+      - ../out/flink/assembly.dest/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-flink-assembly.jar:ro
+      - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:ro
     depends_on:
       - flink-jobmanager
     networks:

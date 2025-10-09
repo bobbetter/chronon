@@ -18,8 +18,10 @@ object CreateDdbTable {
 
     try {
       val kv = new DynamoDBKVStoreImpl(client)
-      kv.create(tableName, Map(DynamoDBKVStoreConstants.isTimedSorted -> "true"))
-      println(s"Ensured DynamoDB table exists: $tableName (is-time-sorted=true)")
+      try {
+        kv.create(tableName, Map(DynamoDBKVStoreConstants.isTimedSorted -> "true"))
+        println(s"Ensured DynamoDB table exists: $tableName (is-time-sorted=true)")
+      } catch { case _: Throwable => () }
     } finally {
       try client.close() catch { case _: Throwable => () }
     }

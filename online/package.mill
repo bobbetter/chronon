@@ -44,4 +44,11 @@ object `package` extends build.BaseModule {
       "-Djdk.internal.loader.ClassLoaders.setAccessible=true"
     )
   }
+
+  override def assembly: T[PathRef] = Task {
+    val original = super.assembly()
+    val renamed = Task.dest / "chronon-online-assembly.jar"
+    os.copy.over(original.path, renamed, createFolders = true)
+    PathRef(renamed)
+  }
 }
