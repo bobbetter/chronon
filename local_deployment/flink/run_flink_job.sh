@@ -12,7 +12,7 @@ GROUPBY_NAME="${1:-quickstart.returns.v1__1}"
 KAFKA_BOOTSTRAP="${KAFKA_BOOTSTRAP:-kafka:9092}"
 FLINK_JOBMANAGER="${FLINK_JOBMANAGER:-flink-jobmanager:8081}"
 STREAMING_MANIFEST_PATH="${STREAMING_MANIFEST_PATH:-/tmp/flink/manifests}"
-ENABLE_DEBUG="${ENABLE_DEBUG:-false}"
+ENABLE_DEBUG="${ENABLE_DEBUG:-true}"
 
 # Compute streaming dataset (DynamoDB table) from GROUPBY_NAME
 # Example: quickstart.returns.v1__1 -> QUICKSTART_RETURNS_V1__1_STREAMING

@@ -21,7 +21,7 @@ object FetcherDemo {
 
     // Get GroupBy name and key from args or use defaults
     val groupByName = if (args.length > 0) args(0) else "quickstart.returns.v1__1"
-    val userId = if (args.length > 1) args(1) else "999"
+    val userId = if (args.length > 1) args(1) else "5"
     
     println(s"Fetching GroupBy: $groupByName")
     println(s"Key: user_id = $userId")
@@ -54,7 +54,7 @@ object FetcherDemo {
         
         response.values match {
           case Success(valueMap) =>
-            if (valueMap.isEmpty) {
+            if (valueMap == null || valueMap.isEmpty) {
               println("  (no data found)")
             } else {
               println(s"  Retrieved ${valueMap.size} features:")

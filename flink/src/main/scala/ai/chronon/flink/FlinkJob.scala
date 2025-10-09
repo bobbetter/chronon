@@ -412,7 +412,8 @@ object FlinkJob {
       flinkJob.runWriteInternalManifestJob(env, jobArgs.streamingManifestPath(), maybeParentJobId.get)
     }
 
-    val jobDatastream = flinkJob.runTiledGroupByJob(env)
+    // val jobDatastream = flinkJob.runTiledGroupByJob(env)
+    val jobDatastream = flinkJob.runGroupByJob(env)
 
     jobDatastream
       .addSink(new MetricsSink(flinkJob.groupByName))

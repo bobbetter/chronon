@@ -42,6 +42,7 @@ services:
     environment:
       FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager"
       JAVA_HOME: /usr/lib/jvm/java-11-openjdk-arm64
+      CLASSPATH: /srv/chronon/jars/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar
       DYNAMO_ENDPOINT: http://dynamodb-local:8000
       AWS_DEFAULT_REGION: us-west-2
       AWS_ACCESS_KEY_ID: local
@@ -113,8 +114,15 @@ services:
       - chronon-net
 
   dynamodb-local:
-    image: amazon/dynamodb-local:latest
+    build:
+      context: .
+      dockerfile: dynamodb-local/Dockerfile
     container_name: dynamodb-local
+    environment:
+      - AWS_DEFAULT_REGION=us-west-2
+      - AWS_REGION=us-west-2
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
     ports:
       - "8000:8000"
     volumes:

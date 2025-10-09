@@ -38,3 +38,8 @@ To-do:
 Strange behaviors:
 - Streaming jobs will look up metadata in KV that has been previously uploaded through the batch upload.
 -- And this uploaded metadata must be up-to-date with the latest version of the GroupBy config, meaning, if the GroupBy config has changed, the batch-upload must run again.
+
+
+Useful commands:
+docker exec dynamodb-local aws dynamodb scan --table-name QUICKSTART_RETURNS_V1__1_STREAMING --endpoint-url http://dynamodb-local:8000 --region us-west-2 --max-items 1 2>&1 | head -50
+docker exec dynamodb-local aws dynamodb scan --table-name QUICKSTART_RETURNS_V1__1_BATCH --endpoint-url http://dynamodb-local:8000 --region us-west-2 --max-items 1 2>&1 | head -50
