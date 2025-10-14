@@ -166,5 +166,54 @@ services:
     networks:
       - chronon-net
 
+  ui-client:
+    build:
+      context: ./chronon-ui
+      dockerfile: client/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=development
+      - PORT=5000
+      - VITE_API_URL=http://localhost:8005
+    depends_on:
+      - ui-server
+    volumes:
+      # Mount source code for hot reload
+      - ./chronon-ui/client:/app/client
+      - ./chronon-ui/vite.config.ts:/app/vite.config.ts
+      - ./chronon-ui/tsconfig.json:/app/tsconfig.json
+      - ./chronon-ui/tailwind.config.ts:/app/tailwind.config.ts
+      - ./chronon-ui/postcss.config.js:/app/postcss.config.js
+      - ./chronon-ui/components.json:/app/components.json
+      # Preserve node_modules in container
+      - /app/node_modules
+    restart: unless-stopped
+    container_name: chronon-ui-client
+    stdin_open: true
+    tty: true
+    networks:
+      - chronon-net
+
+  ui-server:
+    build:
+      context: ./chronon-ui
+      dockerfile: server/Dockerfile
+    ports:
+      - "8005:8005"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Mount source code for hot reload
+      - ./chronon-ui/server:/app/server
+      # Preserve Python packages in container
+      - /app/.venv
+    restart: unless-stopped
+    container_name: chronon-ui-server
+    stdin_open: true
+    tty: true
+    networks:
+      - chronon-net
+
 networks:
   chronon-net:
