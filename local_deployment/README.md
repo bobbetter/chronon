@@ -21,3 +21,21 @@ To connect to the running Spark container:
 
 Additional GroupBy commands to backfill (outside of Join operations):
 - Run `python3 run.py --conf=compiled/group_bys/quickstart/purchases.v1__1 --ds 2023-12-01`
+
+
+To-do:
+- clean up "metastore" folder, name it something like datastore and move into chronon-spark folder.
+  - Also, there seems to be duplicated metastore_db folder in the chronon-spark folder. Also derby.log is duplicated.
+- Spark scripts will currently fail if new team names are used because a schema is not present. `CREATE SCHEMA IF NOT EXISTS <team_name>;`
+- Build a separate Scala service that handles the Fetcher and MetaData upload operations that are currently standalone Scala scripts (./fetcher/... and ./metauploader/...)
+-- Also should handle table creation for _STREAMING tables (and _BATCH)
+
+
+Strange behaviors:
+- Streaming jobs will look up metadata in KV that has been previously uploaded through the batch upload.
+-- And this uploaded metadata must be up-to-date with the latest version of the GroupBy config, meaning, if the GroupBy config has changed, the batch-upload must run again.
+
+
+Useful commands:
+docker exec dynamodb-local aws dynamodb scan --table-name QUICKSTART_RETURNS_V1__1_STREAMING --endpoint-url http://dynamodb-local:8000 --region us-west-2 --max-items 1 2>&1 | head -50
+docker exec dynamodb-local aws dynamodb scan --table-name QUICKSTART_RETURNS_V1__1_BATCH --endpoint-url http://dynamodb-local:8000 --region us-west-2 --max-items 1 2>&1 | head -50
