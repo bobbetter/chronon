@@ -99,7 +99,7 @@ export default function BatchDataPage() {
   const canGoPrev = page > 0;
 
   return (
-    <div className="h-full w-full p-6 flex flex-col gap-6 overflow-x-hidden min-w-0">
+    <div className="h-full w-full p-6 flex flex-col gap-6 min-w-0">
       {/* Header */}
       <Card>
         <CardHeader>
@@ -109,9 +109,7 @@ export default function BatchDataPage() {
             </div>
             <div>
               <CardTitle>Batch Data Explorer</CardTitle>
-              <CardDescription>
-                Browse and sample data from your databases and tables
-              </CardDescription>
+
             </div>
           </div>
         </CardHeader>
@@ -240,13 +238,11 @@ export default function BatchDataPage() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="flex-1 min-h-0 overflow-hidden">
-            <div className="border rounded-md w-full h-full">
+          <CardContent className="flex-1 min-h-0">
+            <div className="border rounded-md w-full h-[400px] overflow-auto">
               <DataTable
                 value={sampleData.data}
-                scrollable
-                scrollHeight="400px"
-                className="w-full"
+                className="w-full h-full"
                 tableStyle={{ minWidth: "max-content" }}
               >
                 {sampleData.table_schema.map((col) => (

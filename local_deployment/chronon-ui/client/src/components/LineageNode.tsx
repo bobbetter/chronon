@@ -60,8 +60,8 @@ export function LineageNode({ data }: LineageNodeProps) {
   });
 
   const handleAction = (action: string) => {
-    // Deep link to Batch Data when raw-data node with "show" action is clicked
-    if (data.type === "raw-data" && action === "show") {
+    // Deep link to Batch Data when raw-data or backfill-group_by node with "show" action is clicked
+    if ((data.type === "raw-data" || data.type === "backfill-group_by") && action === "show" && data.exists) {
       const dotIndex = data.name.indexOf(".");
       if (dotIndex > 0 && dotIndex < data.name.length - 1) {
         const db = data.name.substring(0, dotIndex);
