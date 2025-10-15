@@ -1,13 +1,18 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { DataTable } from "primereact/datatable";
+import { Column } from "primereact/column";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Database, Table as TableIcon, ChevronLeft, ChevronRight, Search } from "lucide-react";
+
+// Import PrimeReact CSS directly
+import "primereact/resources/themes/lara-dark-teal/theme.css";
+import "primereact/resources/primereact.min.css";
+import "primeicons/primeicons.css";
 
 interface DatabasesResponse {
   databases: string[];
@@ -38,6 +43,16 @@ export default function BatchDataPage() {
   const [selectedTable, setSelectedTable] = useState<string>("");
   const [page, setPage] = useState(0);
   const pageSize = 10;
+
+  // Initialize selection from URL params (?db=...&table=...)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const db = params.get("db") || "";
+    const table = params.get("table") || "";
+    if (db) setSelectedDatabase(db);
+    if (table) setSelectedTable(table);
+    setPage(0);
+  }, []);
 
   // Fetch databases
   const { data: databasesData, isLoading: isLoadingDatabases } = useQuery<DatabasesResponse>({
@@ -225,43 +240,36 @@ export default function BatchDataPage() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-            <div className="border rounded-md w-full min-w-0 max-w-full">
-              <ScrollArea className="w-full max-w-full">
-                <div className="min-w-max">
-                  <Table className="w-full">
-                <TableHeader className="bg-muted/80">
-                  <TableRow className="hover:bg-muted/50">
-                    {sampleData.table_schema.map((col) => (
-                      <TableHead key={col.name} className="font-semibold h-auto py-3">
-                        <div className="flex flex-col gap-1.5">
-                          <span className="text-foreground text-sm">{col.name}</span>
-                          <Badge variant="secondary" className="w-fit text-xs font-normal">
-                            {col.type}
-                          </Badge>
-                        </div>
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sampleData.data.map((row, idx) => (
-                    <TableRow key={idx}>
-                      {sampleData.table_schema.map((col) => (
-                        <TableCell key={col.name} className="font-mono text-xs">
-                          {row[col.name] !== null && row[col.name] !== undefined
-                            ? String(row[col.name])
-                            : <span className="text-muted-foreground italic">null</span>
-                          }
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableBody>
-                  </Table>
-                </div>
-                <ScrollBar orientation="horizontal" />
-              </ScrollArea>
+          <CardContent className="flex-1 min-h-0 overflow-hidden">
+            <div className="border rounded-md w-full h-full">
+              <DataTable
+                value={sampleData.data}
+                scrollable
+                scrollHeight="400px"
+                className="w-full"
+                tableStyle={{ minWidth: "max-content" }}
+              >
+                {sampleData.table_schema.map((col) => (
+                  <Column
+                    key={col.name}
+                    field={col.name}
+                    header={
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-foreground text-sm">{col.name}</span>
+                        <Badge variant="secondary" className="w-fit text-xs font-normal">{col.type}</Badge>
+                      </div>
+                    }
+                    body={(row: Record<string, any>) => (
+                      row[col.name] !== null && row[col.name] !== undefined
+                        ? String(row[col.name])
+                        : <span className="text-muted-foreground italic">null</span>
+                    )}
+                    style={{ minWidth: "15rem" }}
+                    headerClassName="font-semibold h-auto py-3"
+                    bodyClassName="font-mono text-xs"
+                  />
+                ))}
+              </DataTable>
             </div>
           </CardContent>
         </Card>

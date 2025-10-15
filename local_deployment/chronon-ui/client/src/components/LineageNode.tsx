@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
 
 interface LineageNodeProps {
   data: GraphNode & { label: string };
@@ -28,6 +29,7 @@ export function LineageNode({ data }: LineageNodeProps) {
   const [hovering, setHovering] = useState(false);
   const colorClass = getNodeColor(data.type_visual);
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   const executeActionMutation = useMutation({
     mutationFn: async (action: string) => {
@@ -58,6 +60,23 @@ export function LineageNode({ data }: LineageNodeProps) {
   });
 
   const handleAction = (action: string) => {
+    // Deep link to Batch Data when raw-data node with "show" action is clicked
+    if (data.type === "raw-data" && action === "show") {
+      const dotIndex = data.name.indexOf(".");
+      if (dotIndex > 0 && dotIndex < data.name.length - 1) {
+        const db = data.name.substring(0, dotIndex);
+        const table = data.name.substring(dotIndex + 1);
+        setLocation(`/batch-data?db=${encodeURIComponent(db)}&table=${encodeURIComponent(table)}`);
+      } else {
+        toast({
+          title: "Invalid node name",
+          description: `Could not parse database/table from ${data.name}`,
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+
     executeActionMutation.mutate(action);
   };
 
