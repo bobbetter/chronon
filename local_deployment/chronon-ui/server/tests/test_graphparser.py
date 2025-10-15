@@ -198,13 +198,14 @@ expected_graph = {
   ]
 }
 
+parent_dir = Path(__file__).parent
 def test_graphparser_with_compiled_data():
     graph_parser = GraphParser(compiled_data)
     graph = graph_parser.parse()
     assert graph == expected_graph
 
 def test_graphparser_with_directory_path():
-    test_dir = Path(__file__).parent / "compiled" / "one_groupby"
+    test_dir = parent_dir / "compiled" / "one_groupby"
     graph_parser = GraphParser(str(test_dir))
     graph = graph_parser.parse()
     assert graph == expected_graph
@@ -267,7 +268,7 @@ expected_graph_two_gb["nodes"].extend(second_gb["nodes"])
 expected_graph_two_gb["edges"].extend(second_gb["edges"])
 
 def test_graphparser_two_gb():
-    test_dir = Path(__file__).parent / "compiled" / "two_groupby"
+    test_dir = parent_dir / "compiled" / "two_groupby"
     graph_parser = GraphParser(str(test_dir))
     graph = graph_parser.parse()
     assert graph == expected_graph_two_gb

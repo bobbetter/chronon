@@ -61,6 +61,7 @@ def _underscore_name(name: str) -> str:
 
 
 class GraphParser:
+    IGNORE_FILES = ["schema.v1__1"]
     def __init__(self, source: Any):
         # Backward compatible: if dict provided, treat as single compiled object
         # If string path to directory is provided, parse all files within
@@ -114,7 +115,7 @@ class GraphParser:
 
             for entry in sorted(os.listdir(self._directory_path)):
                 file_path = os.path.join(self._directory_path, entry)
-                if not os.path.isfile(file_path):
+                if not os.path.isfile(file_path) or entry in self.IGNORE_FILES:
                     continue
                 try:
                     with open(file_path, "r", encoding="utf-8") as f:
