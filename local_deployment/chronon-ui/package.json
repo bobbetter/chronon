@@ -65,7 +65,9 @@
     "vaul": "^1.1.2",
     "wouter": "^3.3.5",
     "zod": "^3.24.2",
-    "zod-validation-error": "^3.4.0"
+    "zod-validation-error": "^3.4.0",
+    "primereact": "^10.8.2",
+    "primeicons": "^7.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",

@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 import duckdb
 import pandas as pd
+import numpy as np
 
 
 class DataScanner:
@@ -157,6 +158,9 @@ class DataScanner:
             # Convert DataFrame to list of dicts
             data = df.to_dict(orient="records")
             
+            # Convert numpy arrays and types to native Python types for JSON serialization
+            data = [self._convert_numpy_to_native(row) for row in data]
+            
             return {
                 "data": data,
                 "table_schema": table_schema,
@@ -217,6 +221,9 @@ class DataScanner:
             table_schema = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
             data = df.to_dict(orient="records")
             
+            # Convert numpy arrays and types to native Python types for JSON serialization
+            data = [self._convert_numpy_to_native(row) for row in data]
+            
             return {
                 "data": data,
                 "table_schema": table_schema,
@@ -258,3 +265,24 @@ class DataScanner:
             return any(path.rglob("*.parquet"))
         except Exception:
             return False
+    
+    def _convert_numpy_to_native(self, obj: Any) -> Any:
+        """
+        Convert numpy types to native Python types for JSON serialization.
+        
+        Args:
+            obj: Object to convert
+            
+        Returns:
+            Object with numpy types converted to native Python types
+        """
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.generic):
+            return obj.item()
+        elif isinstance(obj, dict):
+            return {key: self._convert_numpy_to_native(value) for key, value in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [self._convert_numpy_to_native(item) for item in obj]
+        else:
+            return obj

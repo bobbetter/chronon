@@ -36,7 +36,7 @@ export default function App() {
               <header className="flex items-center justify-between gap-2 p-4 border-b border-border sticky top-0 z-50 bg-background">
                 <div className="flex items-center gap-2">
                   <SidebarTrigger data-testid="button-sidebar-toggle" />
-                  <h1 className="text-lg font-semibold">Data Lineage Tool</h1>
+                  <h1 className="text-2xl font-semibold">ChronoForce - Feature Engineering Platform</h1>
                 </div>
                 <ThemeToggle />
               </header>

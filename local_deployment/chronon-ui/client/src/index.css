@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* PrimeReact styles */
+@import "primereact/resources/themes/lara-dark-teal/theme.css";
+@import "primereact/resources/primereact.min.css";
+@import "primeicons/primeicons.css";
+
 /* LIGHT MODE */
 :root {
   --button-outline: rgba(0,0,0, .10);
