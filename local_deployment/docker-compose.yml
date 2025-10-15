@@ -206,6 +206,7 @@ services:
     volumes:
       - ./chronon-ui/server:/app/server
       - ./app:/app/server/chronon_config
+      - ./chronon-spark/metastore:/app/server/spark-data:ro
     restart: unless-stopped
     container_name: chronon-ui-server
     stdin_open: true

@@ -42,3 +42,8 @@ We use the mill build system for this project. A couple of examples of command i
   - Ensure `CHRONON_ONLINE_JAR` matches the actual mounted filename; mismatch will cause `ClassNotFoundException` for `AwsApiImpl`.
   - Use `DYNAMO_ENDPOINT` (not `DYNAMODB_ENDPOINT`) for the AwsApi to pick up the local endpoint.
   - `spark` assembly does NOT include `cloud_aws`; always include the AWS jar via `--jars` or `CHRONON_ONLINE_JAR`.
+
+
+## Python Commands
+- Always use `uv` to run Python commands (e.g., `uv run pytest`, `uv run python`, etc.)
+- Never run Python commands directly without `uv`
