@@ -102,6 +102,22 @@ class DataScanner:
         finally:
             con.close()
 
+    
+    def get_table_exists(self, db_name: str, table_name: str) -> bool:
+        """
+        Check if a table exists.
+        """
+        if db_name == "default":
+            table_dir = self.warehouse_path / table_name
+        else:
+            table_dir = self.warehouse_path / f"{db_name}.db" / table_name
+        
+        # Check if the directory exists and contains parquet files
+        if not table_dir.exists() or not table_dir.is_dir():
+            return False
+        
+        return self._has_parquet_under(table_dir)
+
     def sample_table(
         self, 
         db_name: str, 

@@ -202,3 +202,8 @@ def test_schema_consistency(scanner):
     names3 = [col["name"] for col in schema3]
     assert names1 == names2
     assert names1 == names3
+
+def test_get_table_exists(scanner):
+    """Test getting the existence of a table."""
+    assert False == scanner.get_table_exists("data", "nonexistent")
+    assert True == scanner.get_table_exists("data", "clicks")

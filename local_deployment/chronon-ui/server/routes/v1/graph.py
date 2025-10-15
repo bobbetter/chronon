@@ -3,6 +3,9 @@ import logging
 from pathlib import Path
 from fastapi import APIRouter
 from server.services.graphparser import GraphParser
+from server.services.datascanner import DataScanner
+from fastapi import Depends
+from server.routes.v1.spark_data import get_datascanner
 
 path = os.path.basename(os.path.dirname(__file__))
 router = APIRouter(prefix=f"/{path}/graph", tags=["graph"])
@@ -13,8 +16,8 @@ server_root = current_dir.parent.parent
 compiled_dir = server_root / "chronon_config" / "compiled" / "group_bys" / "quickstart"
 
 @router.get("/graph_data")
-def get_graph():
-    parser = GraphParser(str(compiled_dir))
+def get_graph(scanner: DataScanner = Depends(get_datascanner)):
+    parser = GraphParser(str(compiled_dir), scanner)
     graph_dict = parser.parse()
     try:
         num_nodes = len(graph_dict.get("nodes", []))

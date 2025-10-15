@@ -2,6 +2,7 @@ import json
 import os
 import logging
 from typing import Any, Dict, List
+from server.services.datascanner import DataScanner
 
 logger = logging.getLogger("uvicorn.error")
 class Node:
@@ -62,35 +63,41 @@ def _underscore_name(name: str) -> str:
 
 class GraphParser:
     IGNORE_FILES = ["schema.v1__1"]
-    def __init__(self, source: Any):
+    def __init__(self, source: Any, datascanner: DataScanner = None):
         # Backward compatible: if dict provided, treat as single compiled object
         # If string path to directory is provided, parse all files within
         self._compiled_data = source if isinstance(source, dict) else None
         self._directory_path = source if isinstance(source, str) else None
+        self._datascanner = datascanner
+
+    def _get_batch_data_exists(self, table_name: str) -> bool:
+        # TODO: Get the database name from the table name
+        database_name = table_name.split(".")[0]
+        table_name = table_name.split(".")[1]
+        return self._datascanner.get_table_exists(database_name, table_name)
 
     def _add_compiled_to_graph(self, compiled_data: Dict[str, Any], graph: Graph, seen_nodes: set, seen_edges: set) -> None:
         conf_name: str = compiled_data["metaData"]["name"]
         raw_table_name: str = compiled_data["sources"][0]["events"]["table"]
+        team_name: str = compiled_data["metaData"]["team"]
+        backfill_name = f"{team_name}.{_underscore_name(conf_name)}"
+        upload_name = f"{team_name}.{_underscore_name(conf_name)}__upload"
 
-        # Nodes (preserve first-in order; dedupe by name)
         nodes = [
             Node(conf_name, "conf-group_by", "conf", True, ["backfill", "upload"]),
-            Node(raw_table_name, "raw-data", "batch-data", True, ["show"]),
-            Node(_underscore_name(conf_name), "backfill-group_by", "batch-data", False, ["show"]),
-            Node(f"{_underscore_name(conf_name)}__upload", "upload-group_by", "batch-data", False, ["show"]),
+            Node(raw_table_name, "raw-data", "batch-data", self._get_batch_data_exists(raw_table_name), ["show"]),
+            Node(backfill_name, "backfill-group_by", "batch-data", self._get_batch_data_exists(backfill_name), ["show"]),
+            Node(upload_name, "upload-group_by", "batch-data", self._get_batch_data_exists(upload_name), ["show"]),
         ]
         for n in nodes:
             if n.name not in seen_nodes:
                 graph.add_node(n)
                 seen_nodes.add(n.name)
 
-        # Edges (dedupe by tuple key)
-        backfill_name = _underscore_name(conf_name)
-        upload_name = f"{backfill_name}__upload"
         edges = [
             Edge(raw_table_name, conf_name, "raw-data-to-conf", True),
-            Edge(conf_name, backfill_name, "conf-to-backfill-group_by", False),
-            Edge(conf_name, upload_name, "conf-to-upload-group_by", False),
+            Edge(conf_name, backfill_name, "conf-to-backfill-group_by", True),
+            Edge(conf_name, upload_name, "conf-to-upload-group_by", True),
         ]
         for e in edges:
             key = (e.source, e.target, e.edge_type)

@@ -162,14 +162,14 @@ expected_graph = {
       "actions": ["show"]
     },
     {
-      "name": "quickstart_page_views_v1__1",
+      "name": "quickstart.quickstart_page_views_v1__1",
       "type": "backfill-group_by",
       "type_visual": "batch-data",
       "exists": False,
       "actions": ["show"]
     },
     {
-      "name": "quickstart_page_views_v1__1__upload",
+      "name": "quickstart.quickstart_page_views_v1__1__upload",
       "type": "upload-group_by",
       "type_visual": "batch-data",
       "exists": False,
@@ -185,15 +185,15 @@ expected_graph = {
     },
     {
       "source": "quickstart.page_views.v1__1",
-      "target": "quickstart_page_views_v1__1",
+      "target": "quickstart.quickstart_page_views_v1__1",
       "type": "conf-to-backfill-group_by",
-      "exists": False
+      "exists": True
     },
     {
       "source": "quickstart.page_views.v1__1",
-      "target": "quickstart_page_views_v1__1__upload",
+      "target": "quickstart.quickstart_page_views_v1__1__upload",
       "type": "conf-to-upload-group_by",
-      "exists": False
+      "exists": True
     },
   ]
 }
@@ -229,14 +229,14 @@ second_gb = {
       "actions": ["show"]
     },
     {
-      "name": "quickstart_purchases_v1__1",
+      "name": "quickstart.quickstart_purchases_v1__1",
       "type": "backfill-group_by",
       "type_visual": "batch-data",
       "exists": False,
       "actions": ["show"]
     },
     {
-      "name": "quickstart_purchases_v1__1__upload",
+      "name": "quickstart.quickstart_purchases_v1__1__upload",
       "type": "upload-group_by",
       "type_visual": "batch-data",
       "exists": False,
@@ -252,15 +252,15 @@ second_gb = {
     },
     {
       "source": "quickstart.purchases.v1__1",
-      "target": "quickstart_purchases_v1__1",
+      "target": "quickstart.quickstart_purchases_v1__1",
       "type": "conf-to-backfill-group_by",
-      "exists": False
+      "exists": True
     },
     {
       "source": "quickstart.purchases.v1__1",
-      "target": "quickstart_purchases_v1__1__upload",
+      "target": "quickstart.quickstart_purchases_v1__1__upload",
       "type": "conf-to-upload-group_by",
-      "exists": False
+      "exists": True
     },
   ]
 }
