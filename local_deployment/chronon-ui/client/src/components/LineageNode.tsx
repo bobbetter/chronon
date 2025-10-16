@@ -31,6 +31,8 @@ const getNodeColor = (typeVisual: string) => {
       return "node-online";
     case "conf":
       return "node-conf";
+    case "streaming-data":
+      return "node-streaming";
     default:
       return "node-batch";
   }
@@ -51,7 +53,7 @@ export function LineageNode({ data }: LineageNodeProps) {
     mutationFn: async ({ action, ds }: { action: string; ds?: string }) => {
       try {
         // Special handling for conf-group_by nodes
-        if ((data.type === "conf-group_by" || data.type === "conf-join") && data.config_file_path) {
+        if ((data.type === "conf-group_by" || data.type === "conf-join" || data.type === "upload-group_by" ) && data.config_file_path) {
           const res = await apiRequest("POST", "/v1/actions/run-spark-job", {
             conf_path: data.config_file_path,
             ds: ds || "2023-12-01", // Use provided date or fallback
@@ -169,7 +171,7 @@ export function LineageNode({ data }: LineageNodeProps) {
     }
 
     // Show date dialog for actions that require a date parameter
-    if (data.type === "conf-group_by" && data.config_file_path) {
+    if ((data.type === "conf-group_by" || data.type === "conf-join" ) && data.config_file_path) {
       setPendingAction(action);
       setShowDateDialog(true);
       return;
@@ -196,9 +198,9 @@ export function LineageNode({ data }: LineageNodeProps) {
         `}
         style={{
           backgroundColor: data.exists
-            ? `hsl(var(--chart-${data.type_visual === 'batch-data' ? '1' : data.type_visual === 'online-data' ? '2' : '3'}) / 0.15)`
+            ? `hsl(var(--chart-${data.type_visual === 'batch-data' ? '1' : data.type_visual === 'online-data' ? '2' : data.type_visual === 'streaming-data' ? '4' : '3'}) / 0.15)`
             : 'transparent',
-          borderColor: `hsl(var(--chart-${data.type_visual === 'batch-data' ? '1' : data.type_visual === 'online-data' ? '2' : '3'}))`,
+          borderColor: `hsl(var(--chart-${data.type_visual === 'batch-data' ? '1' : data.type_visual === 'online-data' ? '2' : data.type_visual === 'streaming-data' ? '4' : '3'}))`,
           borderStyle: data.exists ? 'solid' : 'dashed',
         }}
         data-testid={`node-${data.name}`}
@@ -222,7 +224,7 @@ export function LineageNode({ data }: LineageNodeProps) {
                 size="sm"
                 variant="secondary"
                 onClick={() => handleAction(action)}
-                disabled={executeActionMutation.isPending}
+                disabled={!data.exists || executeActionMutation.isPending}
                 className="h-6 text-xs"
                 data-testid={`button-${action}-${data.name}`}
               >

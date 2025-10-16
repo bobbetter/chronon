@@ -302,6 +302,13 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
           </Badge>
           <Badge
             variant="outline"
+            className="bg-node-streaming/20 border-node-streaming"
+            data-testid="legend-streaming-data"
+          >
+            Streaming Data
+          </Badge>
+          <Badge
+            variant="outline"
             className="bg-node-conf/20 border-node-conf"
             data-testid="legend-conf"
           >

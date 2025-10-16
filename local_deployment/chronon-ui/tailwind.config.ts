@@ -63,6 +63,7 @@ export default {
           "batch": "hsl(var(--chart-1) / <alpha-value>)",
           "online": "hsl(var(--chart-2) / <alpha-value>)",
           "conf": "hsl(var(--chart-3) / <alpha-value>)",
+          "streaming": "hsl(var(--chart-4) / <alpha-value>)",
         },
         sidebar: {
           ring: "hsl(var(--sidebar-ring) / <alpha-value>)",

@@ -87,13 +87,27 @@ class GraphParser:
         team_name: str = compiled_data["metaData"]["team"]
         backfill_name = f"{team_name}.{_underscore_name(conf_name)}"
         upload_name = f"{team_name}.{_underscore_name(conf_name)}__upload"
+        online_data_batch_name = f"{team_name}.{_underscore_name(conf_name)}_batch"
+
+        try:
+            stream_event_name: str = compiled_data["sources"][0]["events"]["topic"]
+            stream_event_name = stream_event_name.split("/")[0]
+            online_data_stream_name = f"{team_name}.{_underscore_name(stream_event_name)}_streaming"
+        except Exception as e:
+            stream_event_name = None
 
         nodes = [
             Node(conf_name, "conf-group_by", "conf", True, ["backfill", "upload"], config_file_path),
             Node(raw_table_name, "raw-data", "batch-data", self._get_batch_data_exists(raw_table_name), ["show"], None),
             Node(backfill_name, "backfill-group_by", "batch-data", self._get_batch_data_exists(backfill_name), ["show"], None),
-            Node(upload_name, "upload-group_by", "batch-data", self._get_batch_data_exists(upload_name), ["show"], None),
+            Node(upload_name, "upload-group_by", "batch-data", self._get_batch_data_exists(upload_name), ["show", "upload-to-kv"], config_file_path),
+            Node(online_data_batch_name, "online-data-batch", "online-data", self._get_batch_data_exists(upload_name), ["show"], None),
         ]
+
+        if stream_event_name:
+            nodes.append(Node(stream_event_name, "streaming-data", "streaming-data", True, None, None))
+            nodes.append(Node(online_data_stream_name, "online-data-streaming","online-data",  True, None, None))
+
         for n in nodes:
             if n.name not in seen_nodes:
                 self.graph.add_node(n)
@@ -103,7 +117,13 @@ class GraphParser:
             Edge(raw_table_name, conf_name, "raw-data-to-conf", True),
             Edge(conf_name, backfill_name, "conf-to-backfill-group_by", True),
             Edge(conf_name, upload_name, "conf-to-upload-group_by", True),
+            Edge(upload_name, online_data_batch_name, "upload-group_by-to-online-data-batch", True),
         ]
+
+        if stream_event_name:
+            edges.append(Edge(stream_event_name, conf_name, "streaming-data-to-conf", True))
+            edges.append(Edge(conf_name, online_data_stream_name, "conf-to-online-data-streaming", True))
+
         for e in edges:
             key = (e.source, e.target, e.edge_type)
             if key not in seen_edges:
@@ -111,13 +131,11 @@ class GraphParser:
                 seen_edges.add(key)
 
     def _add_compiled_to_graph_joins(self, compiled_data: Dict[str, Any], config_file_path: str=None) -> None:
-        print("Adding Join compiled data: %s", config_file_path)
         conf_name: str = compiled_data["metaData"]["name"]
         join_parts = compiled_data["joinParts"]
         team_name: str = compiled_data["metaData"]["team"]
         training_data_set_name = f"{team_name}.{_underscore_name(conf_name)}"
         left_table_name = compiled_data["left"]["events"]["table"]
-        print("Adding Nodes: %s", conf_name)
         nodes = [
             Node(
                 name=left_table_name,
@@ -138,7 +156,6 @@ class GraphParser:
             ),
         ]
         for n in nodes:
-            print("Adding Join node: %s", n.name)
             self.graph.add_node(n)
 
         self.graph.add_edge(Edge(
@@ -197,20 +214,14 @@ class GraphParser:
             print("Parsing Joins compiled directory: %s", self._directory_path_joins)
 
             for entry in sorted(os.listdir(self._directory_path_joins)):
-                print("Entry: %s", entry)
                 file_path = os.path.join(self._directory_path_joins, entry)
-                print("File path: %s", file_path)
                 short_config_file_path = self._get_short_config_file_path(file_path)
-                print("Short config file path: %s", short_config_file_path)
                 if not os.path.isfile(file_path) or entry in self.IGNORE_FILES:
-                    print("Skipping file123: %s", file_path)
                     continue
                     
                 try:
-                    print("Opening file: %s", file_path)
                     with open(file_path, "r", encoding="utf-8") as f:
                         compiled_data = json.load(f)
-                    print("Short config file path: %s", short_config_file_path)
                     self._add_compiled_to_graph_joins(compiled_data,  short_config_file_path)
                 except Exception as exc:
                     logger.debug("Skipping file %s: %s", file_path, exc)

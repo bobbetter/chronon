@@ -3,7 +3,7 @@ import { z } from "zod";
 export interface GraphNode {
     name: string;
     type: string;
-    type_visual: "batch-data" | "online-data" | "conf";
+    type_visual: "batch-data" | "online-data" | "conf" | "streaming-data";
     exists: boolean;
     actions?: string[];
     label?: string;
