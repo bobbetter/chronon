@@ -119,8 +119,8 @@ class GraphParser:
         nodes = [
             Node(conf_name, "conf-join", "conf", True, ["backfill"], config_file_path),
             Node(
-                name=training_data_set_name,node_type="batch-data",
-                type_visual="backfill-join",
+                name=training_data_set_name,node_type="backfill-join",
+                type_visual="batch-data",
                 exists=False,
                 actions=["show"],
                 config_file_path=None

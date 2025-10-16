@@ -13,11 +13,14 @@ logger = logging.getLogger("uvicorn.error")
 
 current_dir = Path(__file__).parent
 server_root = current_dir.parent.parent
-compiled_dir = server_root / "chronon_config" / "compiled" / "group_bys" / "quickstart"
-
+compiled_dir_gbs = server_root / "chronon_config" / "compiled" / "group_bys" / "quickstart"
+compiled_dir_joins = server_root / "chronon_config" / "compiled" / "joins" / "quickstart"
 @router.get("/graph_data")
 def get_graph(scanner: DataScanner = Depends(get_datascanner)):
-    parser = GraphParser(str(compiled_dir), scanner)
+    parser = GraphParser(
+        str(compiled_dir_gbs), 
+        compiled_dir_joins,
+        scanner)
     graph_dict = parser.parse()
     try:
         num_nodes = len(graph_dict.get("nodes", []))

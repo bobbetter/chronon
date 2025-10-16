@@ -185,7 +185,7 @@ def test_graphparser_two_gb():
 
 
 
-expected_graph = {
+expected_graph_with_joins = {
   "nodes": [
     {
       "name": "quickstart.page_views.v1__1",
@@ -287,4 +287,4 @@ def test_graphparser_gb_with_joins():
     test_dir_gb = parent_dir / "compiled" / "one_groupby"
     test_dir_joins = parent_dir / "compiled" / "one_join"
     graph_parser = GraphParser(str(test_dir_gb), str(test_dir_joins))
-    assert graph_parser.parse() == expected_graph
+    assert graph_parser.parse() == expected_graph_with_joins
