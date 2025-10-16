@@ -7,7 +7,7 @@ import { DataTable } from "primereact/datatable";
 import { Column } from "primereact/column";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Database, Table as TableIcon, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Database, Table as TableIcon, ChevronLeft, ChevronRight, Search, ChevronDown, ChevronUp } from "lucide-react";
 
 // Import PrimeReact CSS directly
 import "primereact/resources/themes/lara-dark-teal/theme.css";
@@ -42,6 +42,7 @@ export default function BatchDataPageV2() {
   const [selectedDatabase, setSelectedDatabase] = useState<string>("");
   const [selectedTable, setSelectedTable] = useState<string>("");
   const [page, setPage] = useState(0);
+  const [isSelectorExpanded, setIsSelectorExpanded] = useState(true);
   const pageSize = 10;
 
   // Initialize selection from URL params (?db=...&table=...)
@@ -104,17 +105,38 @@ export default function BatchDataPageV2() {
         {/* Header */}
         <Card>
           <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-md bg-node-batch/20">
-                <Database className="h-6 w-6 text-node-batch" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-md bg-node-batch/20">
+                  <Database className="h-6 w-6 text-node-batch" />
+                </div>
+                <div>
+                  <CardTitle>Batch Data Explorer V2</CardTitle>
+                  <CardDescription>Browse databases and tables with improved layout</CardDescription>
+                </div>
               </div>
-              <div>
-                <CardTitle>Batch Data Explorer V2</CardTitle>
-                <CardDescription>Browse databases and tables with improved layout</CardDescription>
-              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsSelectorExpanded(!isSelectorExpanded)}
+                className="gap-2"
+              >
+                {isSelectorExpanded ? (
+                  <>
+                    <ChevronUp className="h-4 w-4" />
+                    Collapse
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4" />
+                    Expand
+                  </>
+                )}
+              </Button>
             </div>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+          {isSelectorExpanded && (
+            <CardContent className="flex flex-col gap-4">
             {/* Database and Table Selection - Fixed width container */}
             <div className="flex gap-4 items-end">
               <div className="flex-1">
@@ -186,7 +208,8 @@ export default function BatchDataPageV2() {
                 </span>
               </div>
             )}
-          </CardContent>
+            </CardContent>
+          )}
         </Card>
 
         {/* Data Display */}
@@ -245,7 +268,7 @@ export default function BatchDataPageV2() {
                 <DataTable
                   value={sampleData.data}
                   scrollable
-                  scrollHeight="500px"
+                  scrollHeight={isSelectorExpanded ? "500px" : "calc(100vh - 320px)"}
                   className="min-w-full bg-transparent text-foreground custom-datatable"
                   tableStyle={{ minWidth: "max-content" }}
                 >
@@ -255,8 +278,8 @@ export default function BatchDataPageV2() {
                       field={col.name}
                       header={
                         <div className="flex flex-col gap-1.5">
-                          <span className="text-sm font-medium text-white">{col.name}</span>
-                          <Badge variant="outline" className="w-fit text-[10px] font-normal">{col.type}</Badge>
+                          <span className="text-sm font-bold">{col.name}</span>
+                          <Badge variant="outline" className="w-fit text-[10px] font-normal border-gray-400 text-gray-600">{col.type}</Badge>
                         </div>
                       }
                       body={(row: Record<string, any>) => {
@@ -264,39 +287,47 @@ export default function BatchDataPageV2() {
                         if (value === null || value === undefined) {
                           return <span className="text-muted-foreground italic">null</span>;
                         }
-                        // Handle objects/maps by displaying as formatted JSON
+                        // Handle objects/maps - arrays display inline, objects display formatted
                         if (typeof value === 'object') {
+                          if (Array.isArray(value)) {
+                            // Display arrays inline with no extra whitespace
+                            return <span className="whitespace-nowrap">{JSON.stringify(value)}</span>;
+                          }
+                          // Objects still get pretty-printed
                           return <pre className="whitespace-pre-wrap">{JSON.stringify(value, null, 2)}</pre>;
                         }
                         return String(value);
                       }}
                       style={{ minWidth: "15rem" }}
-                      headerClassName="h-auto py-3 bg-zinc-900 text-zinc-50 border-zinc-800"
-                      bodyClassName="font-mono text-xs text-zinc-100"
+                      headerClassName="h-auto py-3"
+                      bodyClassName="font-mono text-xs"
                     />
                   ))}
                 </DataTable>
               </div>
-              {/* Localized styling to improve contrast/visibility */}
+              {/* Localized styling for light mode table */}
               <style>{`
-                .custom-datatable .p-datatable-wrapper { background: transparent; }
+                .custom-datatable .p-datatable-wrapper { background: white; }
                 .custom-datatable .p-datatable-table { border-collapse: separate; border-spacing: 0; }
                 .custom-datatable .p-datatable-thead > tr > th {
-                  background-color: #0a0a0a; /* near-black for strong contrast */
-                  color: #f5f5f5; /* bright header text */
-                  border-bottom: 1px solid #27272a;
-                  border-right: 1px solid #27272a;
+                  background-color: #e5e7eb; /* light grey header */
+                  color: #4b5563; /* darker grey text */
+                  border-bottom: 1px solid #d1d5db;
+                  border-right: 1px solid #d1d5db;
                   position: sticky; top: 0; z-index: 1;
                 }
                 .custom-datatable .p-datatable-thead > tr > th:last-child { border-right: none; }
                 .custom-datatable .p-datatable-tbody > tr > td {
-                  border-top: 1px solid #27272a;
-                  border-right: 1px solid #27272a;
-                  color: #e5e7eb; /* zinc-200 */
+                  border-top: 1px solid #e5e7eb;
+                  border-right: 1px solid #e5e7eb;
+                  color: #000000; /* black text */
+                  background-color: #ffffff; /* white background */
+                  padding: 0.375rem 0.75rem; /* reduced from default ~0.75rem 1rem */
+                  line-height: 1.75; /* tighter line height */
                 }
                 .custom-datatable .p-datatable-tbody > tr > td:last-child { border-right: none; }
-                .custom-datatable .p-datatable-tbody > tr:nth-child(even) > td { background-color: rgba(255,255,255,0.03); }
-                .custom-datatable .p-datatable-tbody > tr:hover > td { background-color: rgba(59,130,246,0.08); }
+                .custom-datatable .p-datatable-tbody > tr:nth-child(even) > td { background-color: #f9fafb; /* light grey alternating rows */ }
+                .custom-datatable .p-datatable-tbody > tr:hover > td { background-color: #eff6ff; /* light blue hover */ }
               `}</style>
             </CardContent>
           </Card>

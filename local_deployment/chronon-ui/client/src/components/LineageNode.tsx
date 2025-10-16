@@ -236,48 +236,51 @@ export function LineageNode({ data }: LineageNodeProps) {
         }}
         data-testid={`node-${data.name}`}
       >
-        <div className="font-mono text-xs text-foreground mb-1">
+        <div className="font-mono text-xs font-bold text-foreground mb-1">
           {data.name}
         </div>
         <Badge
           variant="outline"
-          className="text-xs mb-2"
+          className="text-xs font-normal mb-2"
           data-testid={`badge-${data.type}`}
         >
           {data.type}
         </Badge>
 
         {hovering && ((data.actions?.length ?? 0) > 0 || data.type_visual === "batch-data") && (
-          <div className="flex gap-2 mt-2">
-            {data.actions && data.actions.map((action) => (
-              <Button
-                key={action}
-                size="sm"
-                variant="secondary"
-                onClick={() => handleAction(action)}
-                disabled={!data.exists || executeActionMutation.isPending}
-                className="h-6 text-xs"
-                data-testid={`button-${action}-${data.name}`}
-              >
-                {action}
-              </Button>
-            ))}
-            {data.type_visual === "batch-data" && data.exists && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowDeleteDialog(true);
-                }}
-                disabled={deleteTableMutation.isPending}
-                className="h-6 text-xs px-2 bg-destructive/20 hover:bg-destructive/30 text-destructive border-destructive/30"
-                data-testid={`button-delete-${data.name}`}
-                title="Delete table"
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            )}
+          <div className="mt-2">
+            <div className="text-xs text-muted-foreground mb-1">Actions:</div>
+            <div className="flex gap-2">
+              {data.actions && data.actions.map((action) => (
+                <Button
+                  key={action}
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => handleAction(action)}
+                  disabled={!data.exists || executeActionMutation.isPending}
+                  className="h-6 text-xs"
+                  data-testid={`button-${action}-${data.name}`}
+                >
+                  {action}
+                </Button>
+              ))}
+              {data.type_visual === "batch-data" && data.exists && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDeleteDialog(true);
+                  }}
+                  disabled={deleteTableMutation.isPending}
+                  className="h-6 text-xs px-2 bg-destructive/20 hover:bg-destructive/30 text-destructive border-destructive/30"
+                  data-testid={`button-delete-${data.name}`}
+                  title="Delete table"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </div>
