@@ -259,11 +259,17 @@ export default function BatchDataPageV2() {
                           <Badge variant="outline" className="w-fit text-[10px] font-normal">{col.type}</Badge>
                         </div>
                       }
-                      body={(row: Record<string, any>) => (
-                        row[col.name] !== null && row[col.name] !== undefined
-                          ? String(row[col.name])
-                          : <span className="text-muted-foreground italic">null</span>
-                      )}
+                      body={(row: Record<string, any>) => {
+                        const value = row[col.name];
+                        if (value === null || value === undefined) {
+                          return <span className="text-muted-foreground italic">null</span>;
+                        }
+                        // Handle objects/maps by displaying as formatted JSON
+                        if (typeof value === 'object') {
+                          return <pre className="whitespace-pre-wrap">{JSON.stringify(value, null, 2)}</pre>;
+                        }
+                        return String(value);
+                      }}
                       style={{ minWidth: "15rem" }}
                       headerClassName="h-auto py-3 bg-zinc-900 text-zinc-50 border-zinc-800"
                       bodyClassName="font-mono text-xs text-zinc-100"
