@@ -66,11 +66,9 @@ def _underscore_name(name: str) -> str:
 
 class GraphParser:
     IGNORE_FILES = ["schema.v1__1"]
-    def __init__(self, source: Any, datascanner: DataScanner = None):
-        # Backward compatible: if dict provided, treat as single compiled object
-        # If string path to directory is provided, parse all files within
-        self._compiled_data = source if isinstance(source, dict) else None
-        self._directory_path = source if isinstance(source, str) else None
+    def __init__(self, directory_path_gbs: str, directory_path_joins: str = None,datascanner: DataScanner = None):
+        self._directory_path_gbs = directory_path_gbs
+        self._directory_path_joins = directory_path_joins
         self._datascanner = datascanner
         self.graph = Graph()
 
@@ -112,8 +110,42 @@ class GraphParser:
                 self.graph.add_edge(e)
                 seen_edges.add(key)
 
-    def _add_compiled_to_graph_joins(self, compiled_data: Dict[str, Any], graph: Graph, seen_nodes: set, seen_edges: set, config_file_path: str=None) -> None:
-        return None
+    def _add_compiled_to_graph_joins(self, compiled_data: Dict[str, Any], config_file_path: str=None) -> None:
+        print("Adding Join compiled data: %s", config_file_path)
+        conf_name: str = compiled_data["metaData"]["name"]
+        join_parts = compiled_data["joinParts"]
+        training_data_set_name = f"training_data.{conf_name}"
+        print("Adding Nodes: %s", conf_name)
+        nodes = [
+            Node(conf_name, "conf-join", "conf", True, ["backfill"], config_file_path),
+            Node(
+                name=training_data_set_name,node_type="batch-data",
+                type_visual="backfill-join",
+                exists=False,
+                actions=["show"],
+                config_file_path=None
+            ),
+        ]
+        for n in nodes:
+            print("Adding Join node: %s", n.name)
+            self.graph.add_node(n)
+
+        self.graph.add_edge(Edge(
+            source=conf_name,
+            target=training_data_set_name,
+            edge_type="conf-to-training-data-set",
+            exists="False"
+        ))
+
+        for join_part in join_parts:
+            group_by_name = join_part["groupBy"]["metaData"]["name"]
+            edge = Edge(
+                source=group_by_name,
+                target=conf_name,
+                edge_type="conf-to-conf",
+                exists="True"
+            )
+            self.graph.add_edge(edge)
 
     def _get_short_config_file_path(self, config_file_path: str) -> str:
         """/app/server/chronon_config/compiled/group_bys/quickstart/users.v1__1 
@@ -124,35 +156,48 @@ class GraphParser:
         return config_file_path
 
     def parse(self) -> Dict[str, Any]:
-        # Single compiled dict
-        if self._compiled_data is not None:
-            logger.debug("Parsing single compiled data")
-            self._add_compiled_to_graph_gbs(self._compiled_data, set(), set(), None)
-            return self.graph.to_dict()
-
         # Directory of compiled files
-        if self._directory_path and os.path.isdir(self._directory_path):
-            logger.info("Parsing compiled directory: %s", self._directory_path)
+        if self._directory_path_gbs and os.path.isdir(self._directory_path_gbs):
+            print("Parsing GroupBys compiled directory: %s", self._directory_path_gbs)
             seen_nodes: set = set()
             seen_edges: set = set()
 
-            print("----", sorted(os.listdir(self._directory_path)))
-
-            for entry in sorted(os.listdir(self._directory_path)):
-                file_path = os.path.join(self._directory_path, entry)
+            for entry in sorted(os.listdir(self._directory_path_gbs)):
+                file_path = os.path.join(self._directory_path_gbs, entry)
                 short_config_file_path = self._get_short_config_file_path(file_path)
                 if not os.path.isfile(file_path) or entry in self.IGNORE_FILES:
                     continue
                 try:
                     with open(file_path, "r", encoding="utf-8") as f:
                         compiled_data = json.load(f)
-                    self._add_compiled_to_graph(compiled_data, graph, seen_nodes, seen_edges, short_config_file_path)
+                    self._add_compiled_to_graph_gbs(compiled_data, seen_nodes, seen_edges, short_config_file_path)
                 except Exception as exc:
-                    # Skip unreadable/non-JSON files silently, but emit debug info
                     logger.debug("Skipping file %s: %s", file_path, exc)
                     continue
 
-            return self.graph.to_dict()
+        if self._directory_path_joins and os.path.isdir(self._directory_path_joins):
+            print("Parsing Joins compiled directory: %s", self._directory_path_joins)
 
-        # If input type is unsupported, return empty graph
-        return Graph().to_dict()
+            for entry in sorted(os.listdir(self._directory_path_joins)):
+                print("Entry: %s", entry)
+                file_path = os.path.join(self._directory_path_joins, entry)
+                print("File path: %s", file_path)
+                short_config_file_path = self._get_short_config_file_path(file_path)
+                print("Short config file path: %s", short_config_file_path)
+                if not os.path.isfile(file_path) or entry in self.IGNORE_FILES:
+                    print("Skipping file123: %s", file_path)
+                    continue
+                    
+                try:
+                    print("Opening file: %s", file_path)
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        compiled_data = json.load(f)
+                    print("Short config file path: %s", short_config_file_path)
+                    self._add_compiled_to_graph_joins(compiled_data,  short_config_file_path)
+                except Exception as exc:
+                    logger.debug("Skipping file %s: %s", file_path, exc)
+                    continue
+        
+
+
+        return self.graph.to_dict()
