@@ -97,7 +97,7 @@ class GraphParser:
             stream_event_name = None
 
         nodes = [
-            Node(conf_name, "conf-group_by", "conf", True, ["backfill", "upload"], config_file_path),
+            Node(conf_name, "conf-group_by", "conf", True, ["backfill", "pre-compute-upload"], config_file_path),
             Node(raw_table_name, "raw-data", "batch-data", self._get_batch_data_exists(raw_table_name), ["show"], None),
             Node(backfill_name, "backfill-group_by", "batch-data", self._get_batch_data_exists(backfill_name), ["show"], None),
             Node(upload_name, "upload-group_by", "batch-data", self._get_batch_data_exists(upload_name), ["show", "upload-to-kv"], config_file_path),

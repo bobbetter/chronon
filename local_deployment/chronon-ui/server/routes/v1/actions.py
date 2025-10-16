@@ -79,7 +79,11 @@ async def run_spark_job(request: SparkJobRequest):
         
         if request.mode == "backfill":
             request.mode = None
-        
+
+        if request.mode == "pre-compute-upload":
+            request.mode = "upload"
+
+
         result = spark_runner.run_spark_job(
             conf_path=request.conf_path,
             ds=request.ds,
