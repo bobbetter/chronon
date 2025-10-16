@@ -22,6 +22,11 @@ const menuItems = [
     url: "/batch-data",
     icon: Database,
   },
+  {
+    title: "Batch Data V2",
+    url: "/batch-data-v2",
+    icon: Database,
+  },
 ];
 
 export function AppSidebar() {
