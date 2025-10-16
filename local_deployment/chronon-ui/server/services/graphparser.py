@@ -72,6 +72,7 @@ class GraphParser:
         self._compiled_data = source if isinstance(source, dict) else None
         self._directory_path = source if isinstance(source, str) else None
         self._datascanner = datascanner
+        self.graph = Graph()
 
     def _get_batch_data_exists(self, table_name: str) -> bool:
         # If no datascanner is provided, we can't check existence
@@ -82,7 +83,7 @@ class GraphParser:
         table_name = table_name.split(".")[1]
         return self._datascanner.get_table_exists(database_name, table_name)
 
-    def _add_compiled_to_graph(self, compiled_data: Dict[str, Any], graph: Graph, seen_nodes: set, seen_edges: set, config_file_path: str=None) -> None:
+    def _add_compiled_to_graph_gbs(self, compiled_data: Dict[str, Any], seen_nodes: set, seen_edges: set, config_file_path: str=None) -> None:
         conf_name: str = compiled_data["metaData"]["name"]
         raw_table_name: str = compiled_data["sources"][0]["events"]["table"]
         team_name: str = compiled_data["metaData"]["team"]
@@ -97,7 +98,7 @@ class GraphParser:
         ]
         for n in nodes:
             if n.name not in seen_nodes:
-                graph.add_node(n)
+                self.graph.add_node(n)
                 seen_nodes.add(n.name)
 
         edges = [
@@ -108,11 +109,15 @@ class GraphParser:
         for e in edges:
             key = (e.source, e.target, e.edge_type)
             if key not in seen_edges:
-                graph.add_edge(e)
+                self.graph.add_edge(e)
                 seen_edges.add(key)
 
+    def _add_compiled_to_graph_joins(self, compiled_data: Dict[str, Any], graph: Graph, seen_nodes: set, seen_edges: set, config_file_path: str=None) -> None:
+        return None
+
     def _get_short_config_file_path(self, config_file_path: str) -> str:
-        """/app/server/chronon_config/compiled/group_bys/quickstart/users.v1__1 -> compiled/group_bys/quickstart/users.v1__1"""
+        """/app/server/chronon_config/compiled/group_bys/quickstart/users.v1__1 
+        -> compiled/group_bys/quickstart/users.v1__1"""
         match = re.search(r'(compiled/.*)$', config_file_path)
         if match:
             return match.group(1)
@@ -121,17 +126,17 @@ class GraphParser:
     def parse(self) -> Dict[str, Any]:
         # Single compiled dict
         if self._compiled_data is not None:
-            graph = Graph()
             logger.debug("Parsing single compiled data")
-            self._add_compiled_to_graph(self._compiled_data, graph, set(), set(), None)
-            return graph.to_dict()
+            self._add_compiled_to_graph_gbs(self._compiled_data, set(), set(), None)
+            return self.graph.to_dict()
 
         # Directory of compiled files
         if self._directory_path and os.path.isdir(self._directory_path):
-            graph = Graph()
             logger.info("Parsing compiled directory: %s", self._directory_path)
             seen_nodes: set = set()
             seen_edges: set = set()
+
+            print("----", sorted(os.listdir(self._directory_path)))
 
             for entry in sorted(os.listdir(self._directory_path)):
                 file_path = os.path.join(self._directory_path, entry)
@@ -147,7 +152,7 @@ class GraphParser:
                     logger.debug("Skipping file %s: %s", file_path, exc)
                     continue
 
-            return graph.to_dict()
+            return self.graph.to_dict()
 
         # If input type is unsupported, return empty graph
         return Graph().to_dict()
