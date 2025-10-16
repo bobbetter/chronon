@@ -98,6 +98,16 @@ async def run_spark_job(request: SparkJobRequest):
         )
 
 
+@router.post("/delete-table", response_model=SparkJobResponse)
+async def delete_table(table_name: str):
+    """
+    Delete a table in the chronon-spark container.
+    """
+    try:
+        return spark_runner.delete_table(table_name)
+    except Exception as e:
+        logger.error(f"Unexpected error deleting table: {e}")
+
 @router.get("/health")
 async def health_check():
     """

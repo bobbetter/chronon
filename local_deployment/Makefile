@@ -38,10 +38,13 @@ connect:
 	docker exec -it local_deployment-chronon-spark-1 bash
 
 delete-data:
-	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && spark-shell --master local[*] --conf spark.chronon.database=data -i ./scripts/data-deletion.scala"
+	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && spark-shell --master local[*] --conf spark.chronon.database=data -i ./scripts/delete-database.scala"
 
 delete-quickstart:
-	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && spark-shell --master local[*] --conf spark.chronon.database=quickstart -i ./scripts/data-deletion.scala"
+	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && spark-shell --master local[*] --conf spark.chronon.database=quickstart -i ./scripts/delete-database.scala"
 
 connect-flink:
 	docker exec -it local_deployment-flink-jobmanager-1 bash
+
+
+docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && spark-shell --master local[*] --conf spark.chronon.table=quickstart_page_views_v1__1 -i ./scripts/delete-table.scala"
