@@ -150,7 +150,7 @@ class GraphParser:
                 name=training_data_set_name,
                 node_type="backfill-join",
                 type_visual="batch-data",
-                exists=self._get_batch_data_exists(left_table_name),
+                exists=self._get_batch_data_exists(training_data_set_name),
                 actions=["show"],
                 config_file_path=None
             ),

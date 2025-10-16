@@ -35,10 +35,65 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
     initialData: initialData,
   });
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
+  
+  // Load hidden types from localStorage on mount
+  const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('lineage-graph-hidden-types');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  
+  // Load hidePending from localStorage on mount
+  const [hidePending, setHidePending] = useState(() => {
+    try {
+      const saved = localStorage.getItem('lineage-graph-hide-pending');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
 
   const handleRefresh = () => {
     refetch();
   };
+
+  const toggleTypeVisibility = useCallback((typeVisual: string) => {
+    setHiddenTypes((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(typeVisual)) {
+        newSet.delete(typeVisual);
+      } else {
+        newSet.add(typeVisual);
+      }
+      
+      // Save to localStorage
+      try {
+        localStorage.setItem('lineage-graph-hidden-types', JSON.stringify(Array.from(newSet)));
+      } catch (error) {
+        console.warn('Failed to save hidden types:', error);
+      }
+      
+      return newSet;
+    });
+  }, []);
+
+  const toggleHidePending = useCallback(() => {
+    setHidePending((prev: boolean) => {
+      const newValue = !prev;
+      
+      // Save to localStorage
+      try {
+        localStorage.setItem('lineage-graph-hide-pending', JSON.stringify(newValue));
+      } catch (error) {
+        console.warn('Failed to save hide pending state:', error);
+      }
+      
+      return newValue;
+    });
+  }, []);
 
   // Load saved node positions from localStorage
   const loadNodePositions = useCallback((): Record<string, { x: number; y: number }> => {
@@ -98,6 +153,7 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
         type: "lineageNode",
         position: savedPos || { x: 50, y: 50 + index * verticalSpacing },
         data: { ...node, label: node.name },
+        hidden: hiddenTypes.has(node.type_visual) || (hidePending && !node.exists),
       });
     });
 
@@ -109,6 +165,7 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
         type: "lineageNode",
         position: savedPos || { x: 50 + horizontalSpacing, y: 50 + index * verticalSpacing },
         data: { ...node, label: node.name },
+        hidden: hiddenTypes.has(node.type_visual) || (hidePending && !node.exists),
       });
     });
 
@@ -120,6 +177,7 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
         type: "lineageNode",
         position: savedPos || { x: 50 + horizontalSpacing * 2, y: 50 + index * verticalSpacing },
         data: { ...node, label: node.name },
+        hidden: hiddenTypes.has(node.type_visual) || (hidePending && !node.exists),
       });
     });
 
@@ -137,11 +195,12 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
         type: "lineageNode",
         position: savedPos || { x: 50 + horizontalSpacing, y: baseY + index * verticalSpacing },
         data: { ...node, label: node.name },
+        hidden: hiddenTypes.has(node.type_visual) || (hidePending && !node.exists),
       });
     });
 
     return nodes;
-  }, [graphData, loadNodePositions]);
+  }, [graphData, loadNodePositions, hiddenTypes, hidePending]);
 
   const computedEdges: Edge[] = useMemo(() => {
     if (!graphData) return [];
@@ -283,36 +342,69 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
           </Button>
         </Panel>
         <Panel position="bottom-left" className="text-xs text-muted-foreground bg-card/80 backdrop-blur-sm p-2 rounded-md border border-border">
-          {`Nodes: ${nodes.length} · Edges: ${edges.length}`}
+          {`Nodes: ${nodes.filter(n => !n.hidden).length}/${nodes.length} · Edges: ${edges.length}`}
         </Panel>
         <Panel position="top-left" className="flex gap-2">
           <Badge
             variant="outline"
-            className="bg-node-batch/20 border-node-batch"
+            className={`cursor-pointer transition-opacity ${
+              hiddenTypes.has('batch-data')
+                ? 'opacity-40 line-through'
+                : 'bg-node-batch/20 border-node-batch'
+            }`}
+            onClick={() => toggleTypeVisibility('batch-data')}
             data-testid="legend-batch-data"
           >
             Batch Data
           </Badge>
           <Badge
             variant="outline"
-            className="bg-node-online/20 border-node-online"
+            className={`cursor-pointer transition-opacity ${
+              hiddenTypes.has('online-data')
+                ? 'opacity-40 line-through'
+                : 'bg-node-online/20 border-node-online'
+            }`}
+            onClick={() => toggleTypeVisibility('online-data')}
             data-testid="legend-online-data"
           >
             Online Data
           </Badge>
           <Badge
             variant="outline"
-            className="bg-node-streaming/20 border-node-streaming"
+            className={`cursor-pointer transition-opacity ${
+              hiddenTypes.has('streaming-data')
+                ? 'opacity-40 line-through'
+                : 'bg-node-streaming/20 border-node-streaming'
+            }`}
+            onClick={() => toggleTypeVisibility('streaming-data')}
             data-testid="legend-streaming-data"
           >
             Streaming Data
           </Badge>
           <Badge
             variant="outline"
-            className="bg-node-conf/20 border-node-conf"
+            className={`cursor-pointer transition-opacity ${
+              hiddenTypes.has('conf')
+                ? 'opacity-40 line-through'
+                : 'bg-node-conf/20 border-node-conf'
+            }`}
+            onClick={() => toggleTypeVisibility('conf')}
             data-testid="legend-conf"
           >
             Configuration
+          </Badge>
+          <div className="h-6 w-px bg-border" />
+          <Badge
+            variant="outline"
+            className={`cursor-pointer transition-opacity ${
+              hidePending
+                ? 'opacity-40 line-through'
+                : 'bg-muted/20 border-muted-foreground'
+            }`}
+            onClick={toggleHidePending}
+            data-testid="legend-hide-pending"
+          >
+            Hide Pending
           </Badge>
         </Panel>
       </ReactFlow>
