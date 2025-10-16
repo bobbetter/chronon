@@ -10,8 +10,11 @@ upload-meta:
 run-join:
 	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && python3 run.py --conf=compiled/joins/quickstart/training_set.v1__1 --ds=2023-12-01"
 
+run-pageviews-backfill:
+	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && python3 run.py --conf=compiled/group_bys/quickstart/page_views.v1__1 --ds 2025-11-01"
+
 run-purchases-backfill:
-	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && python3 run.py --conf=compiled/group_bys/quickstart/purchases.v1__1 --ds 2023-12-01"
+	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && python3 run.py --mode backfill --conf=compiled/group_bys/quickstart/purchases.v1__1 --ds 2023-12-01"
 
 run-upload-returns:
 	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && python3 run.py --mode upload --conf=compiled/group_bys/quickstart/returns.v1__1 --ds 2023-12-01"

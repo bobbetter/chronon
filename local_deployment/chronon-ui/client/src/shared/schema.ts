@@ -7,6 +7,7 @@ export interface GraphNode {
     exists: boolean;
     actions?: string[];
     label?: string;
+    config_file_path?: string;
 }
 
 export interface GraphEdge {

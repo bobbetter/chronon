@@ -35,33 +35,3 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
-
-
-# Request/Response models
-class NodeActionRequest(BaseModel):
-    nodeName: str
-    action: str
-
-class NodeActionResponse(BaseModel):
-    nodeName: str
-    action: str
-    timestamp: str
-    status: str
-    message: str
-
-
-
-@app.post("/node_action", response_model=NodeActionResponse)
-def execute_node_action(request: NodeActionRequest):
-    """
-    Execute an action on a node (e.g., backfill, upload, show)
-    """
-    # This is a placeholder implementation
-    # In a real implementation, this would trigger actual backend operations
-    return NodeActionResponse(
-        nodeName=request.nodeName,
-        action=request.action,
-        timestamp=datetime.now().isoformat(),
-        status="success",
-        message=f"Successfully executed {request.action} on {request.nodeName}"
-    )

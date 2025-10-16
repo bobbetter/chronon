@@ -143,7 +143,8 @@ def sample_table(
     """
     try:
         result = scanner.sample_table(db_name, table_name, limit=limit, offset=offset)
-        logger.info(f"Retrieved {len(result['data'])} rows from {db_name}.{table_name} (limit={limit}, offset={offset})")
+        # logger.info(f"Retrieved {len(result['data'])} rows from {db_name}.{table_name} (limit={limit}, offset={offset})")
+        logger.info(f"Result: {result['data'][0]['value_bytes']}")
         return TableSampleResponse(
             database=db_name,
             table=table_name,

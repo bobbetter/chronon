@@ -207,12 +207,16 @@ services:
       - ./chronon-ui/server:/app/server
       - ./app:/app/server/chronon_config
       - ./chronon-spark/metastore:/app/server/spark-data:ro
+      # Mount Docker socket to allow triggering Spark jobs via Docker API
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     container_name: chronon-ui-server
     stdin_open: true
     tty: true
     networks:
       - chronon-net
+    depends_on:
+      - chronon-spark
 
 networks:
   chronon-net:

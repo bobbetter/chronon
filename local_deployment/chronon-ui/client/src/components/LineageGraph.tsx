@@ -16,7 +16,9 @@ import "reactflow/dist/style.css";
 import type { GraphData, GraphNode, GraphEdge } from "@/shared/schema";
 import { LineageNode } from "./LineageNode";
 import { Badge } from "@/components/ui/badge";
-import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
 
 interface LineageGraphProps {
   data?: GraphData;
@@ -27,11 +29,16 @@ const nodeTypes = {
 };
 
 export function LineageGraph({ data: initialData }: LineageGraphProps) {
-  const { data: graphData, isLoading, error } = useQuery<GraphData>({
+  const queryClient = useQueryClient();
+  const { data: graphData, isLoading, error, refetch, isFetching } = useQuery<GraphData>({
     queryKey: ["/v1/graph/graph_data"],
     initialData: initialData,
   });
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
+
+  const handleRefresh = () => {
+    refetch();
+  };
 
   const computedNodes: Node[] = useMemo(() => {
     if (!graphData) return [];
@@ -194,7 +201,7 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
       >
         <Background />
         <Controls className="bg-card border-border" />
-        <Panel position="top-right" className="flex gap-4 bg-card/80 backdrop-blur-sm p-4 rounded-md border border-border">
+        <Panel position="top-right" className="flex items-center gap-4 bg-card/80 backdrop-blur-sm p-4 rounded-md border border-border">
           <div className="flex items-center gap-2">
             <div className="w-8 h-0.5 bg-foreground/30" />
             <span className="text-xs text-muted-foreground">Exists</span>
@@ -203,6 +210,17 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
             <div className="w-8 h-0.5 border-t-2 border-dashed border-foreground/30" />
             <span className="text-xs text-muted-foreground">Pending</span>
           </div>
+          <div className="h-6 w-px bg-border" />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleRefresh}
+            disabled={isFetching}
+            className="h-7 px-2"
+            data-testid="graph-refresh-button"
+          >
+            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          </Button>
         </Panel>
         <Panel position="bottom-left" className="text-xs text-muted-foreground bg-card/80 backdrop-blur-sm p-2 rounded-md border border-border">
           {`Nodes: ${nodes.length} · Edges: ${edges.length}`}

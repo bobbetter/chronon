@@ -157,7 +157,7 @@ class DataScanner:
             
             # Convert DataFrame to list of dicts
             data = df.to_dict(orient="records")
-            
+            print(data)
             # Convert numpy arrays and types to native Python types for JSON serialization
             data = [self._convert_numpy_to_native(row) for row in data]
             

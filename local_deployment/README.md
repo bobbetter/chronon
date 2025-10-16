@@ -39,3 +39,7 @@ Strange behaviors:
 Useful commands:
 docker exec dynamodb-local aws dynamodb scan --table-name QUICKSTART_RETURNS_V1__1_STREAMING --endpoint-url http://dynamodb-local:8000 --region us-west-2 --max-items 1 2>&1 | head -50
 docker exec dynamodb-local aws dynamodb scan --table-name QUICKSTART_RETURNS_V1__1_BATCH --endpoint-url http://dynamodb-local:8000 --region us-west-2 --max-items 1 2>&1 | head -50
+
+
+Force re-recrate chronon-ui-server container:
+docker-compose up -d --force-recreate ui-server

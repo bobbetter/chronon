@@ -1,17 +1,19 @@
 import json
 import os
+import re
 import logging
 from typing import Any, Dict, List
 from server.services.datascanner import DataScanner
 
 logger = logging.getLogger("uvicorn.error")
 class Node:
-    def __init__(self, name: str, node_type: str, type_visual: str, exists: bool, actions: List[str]):
+    def __init__(self, name: str, node_type: str, type_visual: str, exists: bool, actions: List[str], config_file_path: str=None):
         self.name = name
         self.node_type = node_type
         self.type_visual = type_visual
         self.exists = exists
         self.actions = actions
+        self.config_file_path = config_file_path
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -20,6 +22,7 @@ class Node:
             "type_visual": self.type_visual,
             "exists": self.exists,
             "actions": self.actions,
+            "config_file_path": self.config_file_path,
         }
 
 
@@ -71,12 +74,15 @@ class GraphParser:
         self._datascanner = datascanner
 
     def _get_batch_data_exists(self, table_name: str) -> bool:
+        # If no datascanner is provided, we can't check existence
+        if self._datascanner is None:
+            return False
         # TODO: Get the database name from the table name
         database_name = table_name.split(".")[0]
         table_name = table_name.split(".")[1]
         return self._datascanner.get_table_exists(database_name, table_name)
 
-    def _add_compiled_to_graph(self, compiled_data: Dict[str, Any], graph: Graph, seen_nodes: set, seen_edges: set) -> None:
+    def _add_compiled_to_graph(self, compiled_data: Dict[str, Any], graph: Graph, seen_nodes: set, seen_edges: set, config_file_path: str=None) -> None:
         conf_name: str = compiled_data["metaData"]["name"]
         raw_table_name: str = compiled_data["sources"][0]["events"]["table"]
         team_name: str = compiled_data["metaData"]["team"]
@@ -84,10 +90,10 @@ class GraphParser:
         upload_name = f"{team_name}.{_underscore_name(conf_name)}__upload"
 
         nodes = [
-            Node(conf_name, "conf-group_by", "conf", True, ["backfill", "upload"]),
-            Node(raw_table_name, "raw-data", "batch-data", self._get_batch_data_exists(raw_table_name), ["show"]),
-            Node(backfill_name, "backfill-group_by", "batch-data", self._get_batch_data_exists(backfill_name), ["show"]),
-            Node(upload_name, "upload-group_by", "batch-data", self._get_batch_data_exists(upload_name), ["show"]),
+            Node(conf_name, "conf-group_by", "conf", True, ["backfill", "upload"], config_file_path),
+            Node(raw_table_name, "raw-data", "batch-data", self._get_batch_data_exists(raw_table_name), ["show"], None),
+            Node(backfill_name, "backfill-group_by", "batch-data", self._get_batch_data_exists(backfill_name), ["show"], None),
+            Node(upload_name, "upload-group_by", "batch-data", self._get_batch_data_exists(upload_name), ["show"], None),
         ]
         for n in nodes:
             if n.name not in seen_nodes:
@@ -105,12 +111,19 @@ class GraphParser:
                 graph.add_edge(e)
                 seen_edges.add(key)
 
+    def _get_short_config_file_path(self, config_file_path: str) -> str:
+        """/app/server/chronon_config/compiled/group_bys/quickstart/users.v1__1 -> compiled/group_bys/quickstart/users.v1__1"""
+        match = re.search(r'(compiled/.*)$', config_file_path)
+        if match:
+            return match.group(1)
+        return config_file_path
+
     def parse(self) -> Dict[str, Any]:
         # Single compiled dict
         if self._compiled_data is not None:
             graph = Graph()
             logger.debug("Parsing single compiled data")
-            self._add_compiled_to_graph(self._compiled_data, graph, set(), set())
+            self._add_compiled_to_graph(self._compiled_data, graph, set(), set(), None)
             return graph.to_dict()
 
         # Directory of compiled files
@@ -122,12 +135,13 @@ class GraphParser:
 
             for entry in sorted(os.listdir(self._directory_path)):
                 file_path = os.path.join(self._directory_path, entry)
+                short_config_file_path = self._get_short_config_file_path(file_path)
                 if not os.path.isfile(file_path) or entry in self.IGNORE_FILES:
                     continue
                 try:
                     with open(file_path, "r", encoding="utf-8") as f:
                         compiled_data = json.load(f)
-                    self._add_compiled_to_graph(compiled_data, graph, seen_nodes, seen_edges)
+                    self._add_compiled_to_graph(compiled_data, graph, seen_nodes, seen_edges, short_config_file_path)
                 except Exception as exc:
                     # Skip unreadable/non-JSON files silently, but emit debug info
                     logger.debug("Skipping file %s: %s", file_path, exc)
