@@ -221,6 +221,14 @@ expected_graph_with_joins = {
       'config_file_path': None,
     },
     {
+      "name": "data.checkouts",
+      "type": "raw-data",
+      "type_visual": "batch-data",
+      "exists": False,
+      "actions": ["show"],
+      'config_file_path': None,
+    },
+    {
       'actions': [
           "backfill",
       ],
@@ -237,8 +245,8 @@ expected_graph_with_joins = {
       'config_file_path': None,
       'exists': False,
       'name': 'training_data.quickstart.training_set.v1__1',
-      'type': 'batch-data',
-      'type_visual': 'backfill-join',
+      'type': 'backfill-join',
+      'type_visual': 'batch-data',
     },
   ],
   "edges": [
@@ -259,6 +267,12 @@ expected_graph_with_joins = {
       "target": "quickstart.quickstart_page_views_v1__1__upload",
       "type": "conf-to-upload-group_by",
       "exists": True
+    },
+    {
+      'exists': 'True',
+      'source': 'data.checkouts',
+      'target': 'quickstart.training_set.v1__1',
+      'type': 'raw-data-to-conf',
     },
     {
       'exists': 'False',

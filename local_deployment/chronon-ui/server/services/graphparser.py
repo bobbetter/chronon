@@ -115,8 +115,17 @@ class GraphParser:
         conf_name: str = compiled_data["metaData"]["name"]
         join_parts = compiled_data["joinParts"]
         training_data_set_name = f"training_data.{conf_name}"
+        left_table_name = compiled_data["left"]["events"]["table"]
         print("Adding Nodes: %s", conf_name)
         nodes = [
+            Node(
+                name=left_table_name,
+                node_type="raw-data",
+                type_visual="batch-data",
+                exists=self._get_batch_data_exists(left_table_name),
+                actions=["show"],
+                config_file_path=None
+            ),
             Node(conf_name, "conf-join", "conf", True, ["backfill"], config_file_path),
             Node(
                 name=training_data_set_name,node_type="backfill-join",
@@ -129,6 +138,13 @@ class GraphParser:
         for n in nodes:
             print("Adding Join node: %s", n.name)
             self.graph.add_node(n)
+
+        self.graph.add_edge(Edge(
+            source=left_table_name,
+            target=conf_name,
+            edge_type="raw-data-to-conf",
+            exists="True"
+        ))
 
         self.graph.add_edge(Edge(
             source=conf_name,
