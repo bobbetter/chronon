@@ -153,7 +153,7 @@ class DataScanner:
             df = con.execute(sample_query, [limit, offset]).fetch_df()
             
             # Get schema
-            table_schema = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
+            table_schema = self.get_table_schema(db_name, table_name)
             
             # Convert DataFrame to list of dicts
             data = df.to_dict(orient="records")
