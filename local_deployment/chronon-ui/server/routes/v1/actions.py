@@ -77,6 +77,9 @@ async def run_spark_job(request: SparkJobRequest):
     try:
         logger.info(f"Received Spark job request: conf={request.conf_path}, ds={request.ds}, mode={request.mode}")
         
+        if request.mode == "backfill":
+            request.mode = None
+        
         result = spark_runner.run_spark_job(
             conf_path=request.conf_path,
             ds=request.ds,

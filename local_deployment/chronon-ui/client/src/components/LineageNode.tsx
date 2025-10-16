@@ -51,10 +51,10 @@ export function LineageNode({ data }: LineageNodeProps) {
     mutationFn: async ({ action, ds }: { action: string; ds?: string }) => {
       try {
         // Special handling for conf-group_by nodes
-        if (data.type === "conf-group_by" && data.config_file_path) {
+        if ((data.type === "conf-group_by" || data.type === "conf-join") && data.config_file_path) {
           const res = await apiRequest("POST", "/v1/actions/run-spark-job", {
             conf_path: data.config_file_path,
-            ds: ds || "2025-11-01", // Use provided date or fallback
+            ds: ds || "2023-12-01", // Use provided date or fallback
             mode: action,
           });
           
@@ -151,12 +151,13 @@ export function LineageNode({ data }: LineageNodeProps) {
 
   const handleAction = (action: string) => {
     // Deep link to Batch Data when raw-data or backfill-group_by node with "show" action is clicked
-    if ((data.type === "raw-data" || data.type === "backfill-group_by" || data.type === "upload-group_by") && action === "show" && data.exists) {
+    if ((data.type === "raw-data" || data.type === "backfill-group_by" || data.type === "upload-group_by" || data.type === "backfill-join") && action === "show" && data.exists) {
       const dotIndex = data.name.indexOf(".");
       if (dotIndex > 0 && dotIndex < data.name.length - 1) {
         const db = data.name.substring(0, dotIndex);
         const table = data.name.substring(dotIndex + 1);
-        setLocation(`/batch-data?db=${encodeURIComponent(db)}&table=${encodeURIComponent(table)}`);
+        // Open in new window/tab
+        window.open(`/batch-data?db=${encodeURIComponent(db)}&table=${encodeURIComponent(table)}`, '_blank');
       } else {
         toast({
           title: "Invalid node name",

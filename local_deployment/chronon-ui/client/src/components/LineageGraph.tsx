@@ -18,7 +18,7 @@ import { LineageNode } from "./LineageNode";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, RotateCcw } from "lucide-react";
 
 interface LineageGraphProps {
   data?: GraphData;
@@ -40,8 +40,34 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
     refetch();
   };
 
+  // Load saved node positions from localStorage
+  const loadNodePositions = useCallback((): Record<string, { x: number; y: number }> => {
+    try {
+      const saved = localStorage.getItem('lineage-graph-node-positions');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  }, []);
+
+  // Save node positions to localStorage
+  const saveNodePositions = useCallback((nodes: Node[]) => {
+    try {
+      const positions: Record<string, { x: number; y: number }> = {};
+      nodes.forEach((node) => {
+        positions[node.id] = { x: node.position.x, y: node.position.y };
+      });
+      localStorage.setItem('lineage-graph-node-positions', JSON.stringify(positions));
+    } catch (error) {
+      console.warn('Failed to save node positions:', error);
+    }
+  }, []);
+
   const computedNodes: Node[] = useMemo(() => {
     if (!graphData) return [];
+
+    // Load saved positions
+    const savedPositions = loadNodePositions();
 
     // Analyze each node's dependencies
     const nodeCategories = graphData.nodes.map((node: GraphNode) => {
@@ -66,30 +92,33 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
 
     // Position left nodes (only downstream)
     leftNodes.forEach((node: GraphNode, index: number) => {
+      const savedPos = savedPositions[node.name];
       nodes.push({
         id: node.name,
         type: "lineageNode",
-        position: { x: 50, y: 50 + index * verticalSpacing },
+        position: savedPos || { x: 50, y: 50 + index * verticalSpacing },
         data: { ...node, label: node.name },
       });
     });
 
     // Position middle nodes (both upstream and downstream)
     middleNodes.forEach((node: GraphNode, index: number) => {
+      const savedPos = savedPositions[node.name];
       nodes.push({
         id: node.name,
         type: "lineageNode",
-        position: { x: 50 + horizontalSpacing, y: 50 + index * verticalSpacing },
+        position: savedPos || { x: 50 + horizontalSpacing, y: 50 + index * verticalSpacing },
         data: { ...node, label: node.name },
       });
     });
 
     // Position right nodes (only upstream)
     rightNodes.forEach((node: GraphNode, index: number) => {
+      const savedPos = savedPositions[node.name];
       nodes.push({
         id: node.name,
         type: "lineageNode",
-        position: { x: 50 + horizontalSpacing * 2, y: 50 + index * verticalSpacing },
+        position: savedPos || { x: 50 + horizontalSpacing * 2, y: 50 + index * verticalSpacing },
         data: { ...node, label: node.name },
       });
     });
@@ -102,16 +131,17 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
         rightNodes.length
       ) * verticalSpacing + 100;
 
+      const savedPos = savedPositions[node.name];
       nodes.push({
         id: node.name,
         type: "lineageNode",
-        position: { x: 50 + horizontalSpacing, y: baseY + index * verticalSpacing },
+        position: savedPos || { x: 50 + horizontalSpacing, y: baseY + index * verticalSpacing },
         data: { ...node, label: node.name },
       });
     });
 
     return nodes;
-  }, [graphData]);
+  }, [graphData, loadNodePositions]);
 
   const computedEdges: Edge[] = useMemo(() => {
     if (!graphData) return [];
@@ -139,6 +169,13 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
   const [nodes, setNodes] = useNodesState(computedNodes);
   const [edges, setEdges] = useEdgesState(computedEdges);
 
+  const handleResetLayout = useCallback(() => {
+    // Clear saved positions
+    localStorage.removeItem('lineage-graph-node-positions');
+    // Force recomputation by refetching
+    refetch();
+  }, [refetch]);
+
   useEffect(() => {
     if (graphData) console.debug('[graph] loaded', { nodes: graphData.nodes?.length, edges: graphData.edges?.length });
   }, [graphData]);
@@ -158,9 +195,21 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      setNodes((nds) => applyNodeChanges(changes, nds));
+      setNodes((nds) => {
+        const updatedNodes = applyNodeChanges(changes, nds);
+        
+        // Save positions after drag operations
+        const hasDragChanges = changes.some(
+          (change) => change.type === 'position' && change.dragging === false
+        );
+        if (hasDragChanges) {
+          saveNodePositions(updatedNodes);
+        }
+        
+        return updatedNodes;
+      });
     },
-    [setNodes]
+    [setNodes, saveNodePositions]
   );
 
   if (isLoading) {
@@ -218,8 +267,19 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
             disabled={isFetching}
             className="h-7 px-2"
             data-testid="graph-refresh-button"
+            title="Refresh graph data"
           >
             <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleResetLayout}
+            className="h-7 px-2"
+            data-testid="graph-reset-layout-button"
+            title="Reset node positions to default"
+          >
+            <RotateCcw className="h-4 w-4" />
           </Button>
         </Panel>
         <Panel position="bottom-left" className="text-xs text-muted-foreground bg-card/80 backdrop-blur-sm p-2 rounded-md border border-border">

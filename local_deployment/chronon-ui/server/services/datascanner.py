@@ -157,7 +157,7 @@ class DataScanner:
             
             # Convert DataFrame to list of dicts
             data = df.to_dict(orient="records")
-            print(data)
+            # print(data)
             # Convert numpy arrays and types to native Python types for JSON serialization
             data = [self._convert_numpy_to_native(row) for row in data]
             
@@ -280,6 +280,8 @@ class DataScanner:
             return obj.tolist()
         elif isinstance(obj, np.generic):
             return obj.item()
+        elif isinstance(obj, bytearray):
+            return str(obj)
         elif isinstance(obj, dict):
             return {key: self._convert_numpy_to_native(value) for key, value in obj.items()}
         elif isinstance(obj, (list, tuple)):
