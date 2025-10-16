@@ -246,7 +246,7 @@ export default function BatchDataPageV2() {
                   value={sampleData.data}
                   scrollable
                   scrollHeight="500px"
-                  className="min-w-full"
+                  className="min-w-full bg-transparent text-foreground custom-datatable"
                   tableStyle={{ minWidth: "max-content" }}
                 >
                   {sampleData.table_schema.map((col) => (
@@ -255,8 +255,8 @@ export default function BatchDataPageV2() {
                       field={col.name}
                       header={
                         <div className="flex flex-col gap-1.5">
-                          <span className="text-foreground text-sm">{col.name}</span>
-                          <Badge variant="secondary" className="w-fit text-xs font-normal">{col.type}</Badge>
+                          <span className="text-sm font-medium text-white">{col.name}</span>
+                          <Badge variant="outline" className="w-fit text-[10px] font-normal">{col.type}</Badge>
                         </div>
                       }
                       body={(row: Record<string, any>) => (
@@ -265,12 +265,33 @@ export default function BatchDataPageV2() {
                           : <span className="text-muted-foreground italic">null</span>
                       )}
                       style={{ minWidth: "15rem" }}
-                      headerClassName="font-semibold h-auto py-3"
-                      bodyClassName="font-mono text-xs"
+                      headerClassName="h-auto py-3 bg-zinc-900 text-zinc-50 border-zinc-800"
+                      bodyClassName="font-mono text-xs text-zinc-100"
                     />
                   ))}
                 </DataTable>
               </div>
+              {/* Localized styling to improve contrast/visibility */}
+              <style>{`
+                .custom-datatable .p-datatable-wrapper { background: transparent; }
+                .custom-datatable .p-datatable-table { border-collapse: separate; border-spacing: 0; }
+                .custom-datatable .p-datatable-thead > tr > th {
+                  background-color: #0a0a0a; /* near-black for strong contrast */
+                  color: #f5f5f5; /* bright header text */
+                  border-bottom: 1px solid #27272a;
+                  border-right: 1px solid #27272a;
+                  position: sticky; top: 0; z-index: 1;
+                }
+                .custom-datatable .p-datatable-thead > tr > th:last-child { border-right: none; }
+                .custom-datatable .p-datatable-tbody > tr > td {
+                  border-top: 1px solid #27272a;
+                  border-right: 1px solid #27272a;
+                  color: #e5e7eb; /* zinc-200 */
+                }
+                .custom-datatable .p-datatable-tbody > tr > td:last-child { border-right: none; }
+                .custom-datatable .p-datatable-tbody > tr:nth-child(even) > td { background-color: rgba(255,255,255,0.03); }
+                .custom-datatable .p-datatable-tbody > tr:hover > td { background-color: rgba(59,130,246,0.08); }
+              `}</style>
             </CardContent>
           </Card>
         )}
