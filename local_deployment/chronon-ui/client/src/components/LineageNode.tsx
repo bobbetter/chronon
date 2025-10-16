@@ -7,7 +7,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
-import { Loader2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -44,10 +44,41 @@ export function LineageNode({ data }: LineageNodeProps) {
   const [dateValue, setDateValue] = useState("");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [dateError, setDateError] = useState<string | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const colorClass = getNodeColor(data.type_visual);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+
+  const deleteTableMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/v1/actions/delete-table?table_name=${encodeURIComponent(data.name)}`, null);
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || `HTTP ${res.status}`);
+      }
+      
+      return await res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Table deleted",
+        description: `Successfully deleted table ${data.name}`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Delete failed",
+        description: error.message || `Failed to delete table ${data.name}`,
+        variant: "destructive",
+      });
+    },
+    onSettled: () => {
+      // Re-fetch graph data after deletion completes
+      queryClient.invalidateQueries({ queryKey: ["/v1/graph/graph_data"] });
+    },
+  });
 
   const executeActionMutation = useMutation({
     mutationFn: async ({ action, ds }: { action: string; ds?: string }) => {
@@ -216,9 +247,9 @@ export function LineageNode({ data }: LineageNodeProps) {
           {data.type}
         </Badge>
 
-        {hovering && data.actions && data.actions.length > 0 && (
+        {hovering && ((data.actions?.length ?? 0) > 0 || data.type_visual === "batch-data") && (
           <div className="flex gap-2 mt-2">
-            {data.actions.map((action) => (
+            {data.actions && data.actions.map((action) => (
               <Button
                 key={action}
                 size="sm"
@@ -231,11 +262,27 @@ export function LineageNode({ data }: LineageNodeProps) {
                 {action}
               </Button>
             ))}
+            {data.type_visual === "batch-data" && data.exists && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDeleteDialog(true);
+                }}
+                disabled={deleteTableMutation.isPending}
+                className="h-6 text-xs px-2 bg-destructive/20 hover:bg-destructive/30 text-destructive border-destructive/30"
+                data-testid={`button-delete-${data.name}`}
+                title="Delete table"
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            )}
           </div>
         )}
       </div>
 
-      {executeActionMutation.isPending && (
+      {(executeActionMutation.isPending || deleteTableMutation.isPending) && (
         <div className="absolute bottom-1 right-1" data-testid="node-loading-indicator">
           <Loader2 className="h-4 w-4 animate-spin text-foreground/60" />
         </div>
@@ -298,6 +345,43 @@ export function LineageNode({ data }: LineageNodeProps) {
             </Button>
             <Button onClick={handleDateSubmit}>
               Execute
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Delete Table</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete the table <strong>{data.name}</strong>? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+              disabled={deleteTableMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                deleteTableMutation.mutate();
+                setShowDeleteDialog(false);
+              }}
+              disabled={deleteTableMutation.isPending}
+            >
+              {deleteTableMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
