@@ -194,13 +194,18 @@ class GraphParser:
     def _add_orphan_raw_data_nodes(self) -> None:
         all_raw_data_nodes = self._datascanner.list_tables(db_name=HARDCODED_DB_NAME, with_db_name=True)
         raw_data_nodes_from_conf = [x.name for x in self.graph.nodes if x.node_type  == "raw-data"]
-
-        print("all_raw_data_nodes", all_raw_data_nodes)
-        print("raw_data_nodes_from_conf", raw_data_nodes_from_conf)
         
         for raw_data_node in all_raw_data_nodes:
             if raw_data_node not in raw_data_nodes_from_conf:
                 self.graph.add_node(Node(raw_data_node, "raw-data", "batch-data", True, ["show"], None))
+
+    def _add_orphan_streaming_data_nodes_FAKE(self) -> None:
+        all_streaming_data_nodes = ["events.page_views", "events.logins"]
+        streaming_data_nodes_from_conf = [x.name for x in self.graph.nodes if x.node_type  == "streaming-data"]
+
+        for streaming_data_node in all_streaming_data_nodes:
+            if streaming_data_node not in streaming_data_nodes_from_conf:
+                self.graph.add_node(Node(streaming_data_node, "streaming-data", "streaming-data", True, None, None))
 
     def parse(self) -> Dict[str, Any]:
         # Directory of compiled files
@@ -241,4 +246,5 @@ class GraphParser:
         
 
         self._add_orphan_raw_data_nodes()
+        self._add_orphan_streaming_data_nodes_FAKE()
         return self.graph.to_dict()
