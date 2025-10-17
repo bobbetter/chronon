@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from server.services.datascanner import DataScanner
 
 logger = logging.getLogger("uvicorn.error")
+HARDCODED_DB_NAME = "data" # TODO: Make this dynamic
 class Node:
     def __init__(self, name: str, node_type: str, type_visual: str, exists: bool, actions: List[str], config_file_path: str=None):
         self.name = name
@@ -190,6 +191,17 @@ class GraphParser:
             return match.group(1)
         return config_file_path
 
+    def _add_orphan_raw_data_nodes(self) -> None:
+        all_raw_data_nodes = self._datascanner.list_tables(db_name=HARDCODED_DB_NAME, with_db_name=True)
+        raw_data_nodes_from_conf = [x.name for x in self.graph.nodes if x.node_type  == "raw-data"]
+
+        print("all_raw_data_nodes", all_raw_data_nodes)
+        print("raw_data_nodes_from_conf", raw_data_nodes_from_conf)
+        
+        for raw_data_node in all_raw_data_nodes:
+            if raw_data_node not in raw_data_nodes_from_conf:
+                self.graph.add_node(Node(raw_data_node, "raw-data", "batch-data", True, ["show"], None))
+
     def parse(self) -> Dict[str, Any]:
         # Directory of compiled files
         if self._directory_path_gbs and os.path.isdir(self._directory_path_gbs):
@@ -228,5 +240,5 @@ class GraphParser:
                     continue
         
 
-
+        self._add_orphan_raw_data_nodes()
         return self.graph.to_dict()

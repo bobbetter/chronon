@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 import duckdb
 import pandas as pd
 import numpy as np
+from pydantic_core.core_schema import none_schema
 
 
 class DataScanner:
@@ -51,7 +52,7 @@ class DataScanner:
         
         return sorted(set(dbs))
 
-    def list_tables(self, db_name: str) -> List[str]:
+    def list_tables(self, db_name: str, with_db_name: False) -> List[str]:
         """
         List all tables in a given database.
         
@@ -77,9 +78,11 @@ class DataScanner:
         db_dir = self.warehouse_path / f"{db_name}.db"
         if not db_dir.exists():
             return []
-        
-        tables = [p.name for p in db_dir.iterdir() if p.is_dir()]
-        return sorted(tables)
+        if with_db_name:
+            return [f"{db_name}.{p.name}" for p in db_dir.iterdir() if p.is_dir()]
+        else:
+            return [p.name for p in db_dir.iterdir() if p.is_dir()]
+
 
     def get_table_schema(self, db_name: str, table_name: str) -> List[Dict[str, str]]:
         """
