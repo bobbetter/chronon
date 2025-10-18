@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Default values
-GROUPBY_NAME="${1:-quickstart.returns.v1__1}"
+GROUPBY_NAME="${1:-quickstart.logins.v1__1}"
 KAFKA_BOOTSTRAP="${KAFKA_BOOTSTRAP:-kafka:9092}"
 FLINK_JOBMANAGER="${FLINK_JOBMANAGER:-flink-jobmanager:8081}"
 STREAMING_MANIFEST_PATH="${STREAMING_MANIFEST_PATH:-/tmp/flink/manifests}"

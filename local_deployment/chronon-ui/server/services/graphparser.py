@@ -84,7 +84,14 @@ class GraphParser:
 
     def _add_compiled_to_graph_gbs(self, compiled_data: Dict[str, Any], seen_nodes: set, seen_edges: set, config_file_path: str=None) -> None:
         conf_name: str = compiled_data["metaData"]["name"]
-        raw_table_name: str = compiled_data["sources"][0]["events"]["table"]
+        sources = compiled_data["sources"][0]
+        if "events" in sources:
+            raw_table_name = sources["events"]["table"]
+        elif "entities" in sources:
+            raw_table_name = sources["entities"]["snapshotTable"]
+        else:
+            raise ValueError(f"Invalid source type: {sources}")
+
         team_name: str = compiled_data["metaData"]["team"]
         backfill_name = f"{team_name}.{_underscore_name(conf_name)}"
         upload_name = f"{team_name}.{_underscore_name(conf_name)}__upload"
@@ -224,7 +231,7 @@ class GraphParser:
                         compiled_data = json.load(f)
                     self._add_compiled_to_graph_gbs(compiled_data, seen_nodes, seen_edges, short_config_file_path)
                 except Exception as exc:
-                    logger.debug("Skipping file %s: %s", file_path, exc)
+                    logger.error("Skipping file %s: %s", file_path, exc)
                     continue
 
         if self._directory_path_joins and os.path.isdir(self._directory_path_joins):

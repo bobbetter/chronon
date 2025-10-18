@@ -202,7 +202,7 @@ export function LineageNode({ data }: LineageNodeProps) {
     }
 
     // Show date dialog for actions that require a date parameter
-    if ((data.type === "conf-group_by" || data.type === "conf-join" ) && data.config_file_path) {
+    if ((data.type === "conf-group_by" || data.type === "conf-join" || data.type === "upload-group_by" ) && data.config_file_path) {
       setPendingAction(action);
       setShowDateDialog(true);
       return;

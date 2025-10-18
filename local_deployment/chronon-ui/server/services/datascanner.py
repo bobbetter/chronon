@@ -52,7 +52,7 @@ class DataScanner:
         
         return sorted(set(dbs))
 
-    def list_tables(self, db_name: str, with_db_name: False) -> List[str]:
+    def list_tables(self, db_name: str, with_db_name: bool=False) -> List[str]:
         """
         List all tables in a given database.
         

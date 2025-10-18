@@ -23,7 +23,7 @@ object FetcherDemoJoin {
     println("=" * 80)
 
     val joinName = if (args.length > 0) args(0) else "quickstart.training_set.v1__1"
-    val userId = if (args.length > 1) args(1) else "85"
+    val userId = if (args.length > 1) args(1) else "user_5"
 
     println(s"Fetching Join: $joinName")
     println(s"Key: user_id = $userId")

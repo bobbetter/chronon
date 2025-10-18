@@ -3,6 +3,7 @@ load-data:
 
 compile:
 	cd app && zipline compile
+	make upload-meta
 
 upload-meta:
 	cd metauploader && ./run.sh
@@ -47,4 +48,6 @@ connect-flink:
 	docker exec -it local_deployment-flink-jobmanager-1 bash
 
 
-docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && spark-shell --master local[*] --conf spark.chronon.table=quickstart_page_views_v1__1 -i ./scripts/delete-table.scala"
+docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && python3 run.py --conf=compiled/joins/quickstart/training_set.v1__1 --ds=2025-10-17"
+docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && python3 run.py --conf=compiled/group_bys/quickstart/profiles.v1__1 --ds 2025-10-17"
+docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && python3 run.py --mode upload-to-kv --conf=compiled/group_bys/quickstart/logins.v1__1 --ds 2025-10-15"

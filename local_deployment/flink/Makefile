@@ -21,11 +21,12 @@ clean-topics:
 	docker exec kafka kafka-topics --bootstrap-server localhost:9092 --delete --topic events.returns 2>/dev/null || echo "events.returns doesn't exist or already deleted"
 	@echo "Topics deleted!"
 
+
+# docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --topic source-events --partitions 1 --replication-factor 1 2>/dev/null || echo "source-events already exists"
+# docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --topic sink-aggregates --partitions 1 --replication-factor 1 2>/dev/null || echo "sink-aggregates already exists"
 create-topics:
 	@echo "Creating Kafka topics..."
-	docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --topic source-events --partitions 1 --replication-factor 1 2>/dev/null || echo "source-events already exists"
-	docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --topic sink-aggregates --partitions 1 --replication-factor 1 2>/dev/null || echo "sink-aggregates already exists"
-	docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --topic events.returns --partitions 1 --replication-factor 1 2>/dev/null || echo "events.returns already exists"
+	docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --topic events.logins --partitions 1 --replication-factor 1 2>/dev/null || echo "events.returns already exists"
 	@echo "Topics created!"
 
 recreate-topics: clean-topics
