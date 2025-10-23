@@ -21,9 +21,6 @@
     },
     {
       "argMap": {},
-      "buckets": [
-        "page_name"
-      ],
       "inputColumn": "user_id",
       "operation": 6,
       "windows": [
@@ -42,7 +39,7 @@
       ]
     }
   ],
-  "backfillStartDate": "2025-09-16",
+  "backfillStartDate": "2025-09-20",
   "keyColumns": [
     "user_id"
   ],
@@ -52,9 +49,9 @@
       "page_name_unique_count_30d": "b10910a8b72517a7c9d3ac3a3167f032",
       "page_name_unique_count_3d": "b10910a8b72517a7c9d3ac3a3167f032",
       "user_id": "01de5ae7e16db4373fd773f33e38e521",
-      "user_id_count_14d_by_page_name": "0286852d56d590d9f25d1a8a8340269a",
-      "user_id_count_30d_by_page_name": "0286852d56d590d9f25d1a8a8340269a",
-      "user_id_count_3d_by_page_name": "0286852d56d590d9f25d1a8a8340269a"
+      "user_id_count_14d": "0286852d56d590d9f25d1a8a8340269a",
+      "user_id_count_30d": "0286852d56d590d9f25d1a8a8340269a",
+      "user_id_count_3d": "0286852d56d590d9f25d1a8a8340269a"
     },
     "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_page_views_with_offset_0\", \"spec\": \"data.page_views/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}]}",
     "executionInfo": {
@@ -107,7 +104,7 @@
             "page_name": "page_name",
             "user_id": "user_id"
           },
-          "startPartition": "2025-09-16",
+          "startPartition": "2025-09-20",
           "timeColumn": "ts"
         },
         "table": "data.page_views"

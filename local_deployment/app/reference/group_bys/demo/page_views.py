@@ -15,7 +15,7 @@ source = EventSource(
     query=Query(
         selects=selects("user_id", "page_name"),
         time_column="ts",
-        start_partition="2025-09-20",
+        start_partition="2025-09-16",
     ),
 )
 
@@ -24,9 +24,9 @@ window_sizes = [Window(length=day, time_unit=TimeUnit.DAYS) for day in [3, 14, 3
 v1 = GroupBy(
     version=1,
     sources=[source],
-    keys=["user_id"],
+    keys=["user_id"], # We are aggregating by user
     online=True,
-    backfill_start_date="2025-09-20",
+    backfill_start_date="2025-09-16",
     aggregations=[
         Aggregation(
             input_column="page_name",
@@ -36,7 +36,8 @@ v1 = GroupBy(
         Aggregation(
             input_column="user_id",
             operation=Operation.COUNT,
-            windows=window_sizes
+            windows=window_sizes,
+            buckets=["page_name"]
         ),
     ],
 )

@@ -2,7 +2,7 @@
   "joinParts": [
     {
       "groupBy": {
-        "backfillStartDate": "2025-09-16",
+        "backfillStartDate": "2025-09-20",
         "keyColumns": [
           "user_id"
         ],
@@ -66,9 +66,6 @@
           },
           {
             "argMap": {},
-            "buckets": [
-              "page_name"
-            ],
             "inputColumn": "user_id",
             "operation": 6,
             "windows": [
@@ -87,7 +84,7 @@
             ]
           }
         ],
-        "backfillStartDate": "2025-09-16",
+        "backfillStartDate": "2025-09-20",
         "keyColumns": [
           "user_id"
         ],
@@ -97,9 +94,9 @@
             "page_name_unique_count_30d": "b10910a8b72517a7c9d3ac3a3167f032",
             "page_name_unique_count_3d": "b10910a8b72517a7c9d3ac3a3167f032",
             "user_id": "01de5ae7e16db4373fd773f33e38e521",
-            "user_id_count_14d_by_page_name": "0286852d56d590d9f25d1a8a8340269a",
-            "user_id_count_30d_by_page_name": "0286852d56d590d9f25d1a8a8340269a",
-            "user_id_count_3d_by_page_name": "0286852d56d590d9f25d1a8a8340269a"
+            "user_id_count_14d": "0286852d56d590d9f25d1a8a8340269a",
+            "user_id_count_30d": "0286852d56d590d9f25d1a8a8340269a",
+            "user_id_count_3d": "0286852d56d590d9f25d1a8a8340269a"
           },
           "executionInfo": {
             "historicalBackfill": 0,
@@ -119,7 +116,7 @@
                   "page_name": "page_name",
                   "user_id": "user_id"
                 },
-                "startPartition": "2025-09-16",
+                "startPartition": "2025-09-20",
                 "timeColumn": "ts"
               },
               "table": "data.page_views"
@@ -176,7 +173,7 @@
             ]
           }
         ],
-        "backfillStartDate": "2025-09-16",
+        "backfillStartDate": "2025-09-20",
         "keyColumns": [
           "user_id"
         ],
@@ -209,7 +206,7 @@
                   "login_method": "login_method",
                   "user_id": "user_id"
                 },
-                "startPartition": "2025-09-16",
+                "startPartition": "2025-09-20",
                 "timeColumn": "ts"
               },
               "table": "data.logins",
@@ -249,12 +246,12 @@
       "user_id_page_name_unique_count_30d": "d1f7ac120a677a50faea0e3ca7cc737d",
       "user_id_page_name_unique_count_3d": "d1f7ac120a677a50faea0e3ca7cc737d",
       "user_id_user_id": "bf48fe69b855db5805e82bf4f717045a",
+      "user_id_user_id_count_14d": "ac2e1107c95153472bfd8c569d03c995",
       "user_id_user_id_count_14d_by_device_type": "46846903aafa4729220837ae5ddd0251",
-      "user_id_user_id_count_14d_by_page_name": "ac2e1107c95153472bfd8c569d03c995",
+      "user_id_user_id_count_30d": "ac2e1107c95153472bfd8c569d03c995",
       "user_id_user_id_count_30d_by_device_type": "46846903aafa4729220837ae5ddd0251",
-      "user_id_user_id_count_30d_by_page_name": "ac2e1107c95153472bfd8c569d03c995",
-      "user_id_user_id_count_3d_by_device_type": "46846903aafa4729220837ae5ddd0251",
-      "user_id_user_id_count_3d_by_page_name": "ac2e1107c95153472bfd8c569d03c995"
+      "user_id_user_id_count_3d": "ac2e1107c95153472bfd8c569d03c995",
+      "user_id_user_id_count_3d_by_device_type": "46846903aafa4729220837ae5ddd0251"
     },
     "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_fraud_labels_with_offset_0\", \"spec\": \"data.fraud_labels/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_profiles_with_offset_0\", \"spec\": \"data.profiles/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_page_views_with_offset_0\", \"spec\": \"data.page_views/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_logins_with_offset_0\", \"spec\": \"data.logins/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}], \"label_join\": false}",
     "executionInfo": {

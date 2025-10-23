@@ -8,13 +8,14 @@ from ai.chronon.group_by import (
     TimeUnit,
 )
 
+
 source = EventSource(
     table="data.logins", 
     topic="events.logins/fields=ts,event_id,user_id,login_methd,device_type,ip_address/host=kafka/port=9092/serde=custom/provider_class=ai.chronon.flink.deser.LoginsSerDe",
     query=Query(
         selects=selects("user_id", "login_method", "device_type"),  # Select the fields we care about
         time_column="ts",
-        start_partition="2025-09-20",
+        start_partition="2025-09-16",
     ),
 )
 
@@ -25,7 +26,7 @@ v1 = GroupBy(
     sources=[source],
     keys=["user_id"],
     online=True,
-    backfill_start_date="2025-09-20",
+    backfill_start_date="2025-09-16",
     aggregations=[
         Aggregation(
             input_column="user_id",

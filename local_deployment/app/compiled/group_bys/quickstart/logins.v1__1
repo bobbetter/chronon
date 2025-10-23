@@ -44,7 +44,7 @@
       ]
     }
   ],
-  "backfillStartDate": "2025-09-16",
+  "backfillStartDate": "2025-09-20",
   "keyColumns": [
     "user_id"
   ],
@@ -110,7 +110,7 @@
             "login_method": "login_method",
             "user_id": "user_id"
           },
-          "startPartition": "2025-09-16",
+          "startPartition": "2025-09-20",
           "timeColumn": "ts"
         },
         "table": "data.logins",

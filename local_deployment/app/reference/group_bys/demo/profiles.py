@@ -15,9 +15,9 @@ source = EntitySource(
 
 v1 = GroupBy(
     sources=[source],
-    keys=["user_id"],
-    aggregations=None,
+    keys=["user_id"], # Primary key is the same as the primary key for the source table
+    aggregations=None,  # In this case, there are no aggregations or windows to define
     online=True,
     version=1,
-    backfill_start_date="2025-09-20",
+    backfill_start_date="2025-09-16",
 )
