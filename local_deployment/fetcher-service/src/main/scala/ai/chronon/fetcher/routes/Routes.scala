@@ -41,7 +41,7 @@ class Routes(implicit ec: ExecutionContext) {
     }
   }
   
-  // Try to use Swagger UI, fallback gracefully if it fails
+  // Try to serve Swagger UI assets, fallback if not present
   private val swaggerRoute: Route = Try {
     val swaggerEndpoints = SwaggerInterpreter()
       .fromEndpoints[Future](endpoints, "Chronon Fetcher Service", "1.0.0")

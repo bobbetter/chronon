@@ -1,0 +1,15 @@
+services:
+  fetcher-service:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      FETCHER_SERVICE_HOST: 0.0.0.0
+      FETCHER_SERVICE_PORT: "8080"
+      DYNAMO_ENDPOINT: http://host.docker.internal:8000
+      AWS_DEFAULT_REGION: us-west-2
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    volumes:
+      - ./fetcher-service.log:/opt/app/fetcher-service.log
+

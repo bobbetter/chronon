@@ -2,6 +2,8 @@ name := "fetcher-service"
 version := "0.1.0"
 scalaVersion := "2.12.18"
 
+enablePlugins(JavaAppPackaging)
+
 // Akka HTTP (server backend)
 val akkaVersion = "2.6.21"
 val akkaHttpVersion = "10.2.10"
@@ -37,24 +39,9 @@ libraryDependencies ++= Seq(
   "ch.qos.logback" % "logback-core" % "1.3.15"
 )
 
-// Main class
+// Main class for native packager
 Compile / mainClass := Some("ai.chronon.fetcher.FetcherServiceApp")
 
-// Assembly settings for creating fat JAR
-assembly / assemblyMergeStrategy := {
-  case PathList("META-INF", "versions", xs @ _*) => MergeStrategy.first
-  case PathList("META-INF", "io.netty.versions.properties") => MergeStrategy.first
-  case PathList("META-INF", xs @ _*) if xs.lastOption.contains("module-info.class") => MergeStrategy.discard
-  case x if x.endsWith("/module-info.class") => MergeStrategy.discard
-  case "reference.conf" => MergeStrategy.concat
-  case "application.conf" => MergeStrategy.concat
-  case x =>
-    val oldStrategy = (assembly / assemblyMergeStrategy).value
-    oldStrategy(x)
-}
-
-assembly / assemblyJarName := "fetcher-service.jar"
-
-
+// Include chronon-aws-assembly.jar in the classpath
 Compile / unmanagedJars += baseDirectory.value / "chronon-aws-assembly.jar"
 
