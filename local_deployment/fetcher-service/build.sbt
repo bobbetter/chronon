@@ -55,3 +55,6 @@ assembly / assemblyMergeStrategy := {
 
 assembly / assemblyJarName := "fetcher-service.jar"
 
+
+Compile / unmanagedJars += baseDirectory.value / "chronon-aws-assembly.jar"
+

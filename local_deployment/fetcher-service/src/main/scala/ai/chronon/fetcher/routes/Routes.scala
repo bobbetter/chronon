@@ -4,28 +4,28 @@ import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity}
 import sttp.tapir.server.akkahttp.AkkaHttpServerInterpreter
-import ai.chronon.fetcher.endpoints.HelloEndpoint
+import ai.chronon.fetcher.endpoints.{GroupByEndpoint, JoinEndpoint}
 import sttp.tapir.swagger.bundle.SwaggerInterpreter
 import sttp.tapir.docs.openapi.OpenAPIDocsInterpreter
 import sttp.apispec.openapi.circe.yaml._
 
-import scala.concurrent.Future
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
 class Routes(implicit ec: ExecutionContext) {
   
   // List of all endpoints
-  private val endpoints = List(HelloEndpoint.helloEndpoint)
+  private val endpoints = List(GroupByEndpoint.groupByEndpoint, JoinEndpoint.joinEndpoint)
   
-  // Convert Tapir endpoints to Akka HTTP routes
-  private val helloRoute: Route = 
+
+  private val groupByRoute: Route =
     AkkaHttpServerInterpreter().toRoute(
-      HelloEndpoint.helloEndpoint.serverLogicSuccess(_ => Future.successful(
-        HelloEndpoint.helloLogic(()).getOrElse(
-          HelloEndpoint.HelloResponse("Error", System.currentTimeMillis())
-        )
-      ))
+      GroupByEndpoint.groupByEndpoint.serverLogic(request => GroupByEndpoint.groupByLogic(request))
+    )
+
+  private val joinRoute: Route =
+    AkkaHttpServerInterpreter().toRoute(
+      JoinEndpoint.joinEndpoint.serverLogic(request => JoinEndpoint.joinLogic(request))
     )
   
   // Generate OpenAPI documentation
@@ -63,7 +63,8 @@ class Routes(implicit ec: ExecutionContext) {
   
   // Combine all routes
   val allRoutes: Route = concat(
-    helloRoute,
+    groupByRoute,
+    joinRoute,
     openApiRoute,
     swaggerRoute
   )
