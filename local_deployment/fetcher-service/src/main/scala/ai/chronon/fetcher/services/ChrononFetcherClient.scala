@@ -30,7 +30,7 @@ object ChrononFetcherClient {
       }
     }
 
-    sys.addShutdownHook(closeFn)
+    sys.addShutdownHook { closeFn() }
 
     FetcherClient(fetcher, closeFn)
   }

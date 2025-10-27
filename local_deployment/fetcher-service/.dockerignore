@@ -24,12 +24,3 @@ sttp/
 *.swo
 *~
 
-# Documentation and notes
-README.md
-DEBUG_NOTES.md
-
-# Demo scripts
-FetcherDemo.scala
-FetcherDemoJoin.scala
-run.sh
-

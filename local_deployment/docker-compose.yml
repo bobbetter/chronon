@@ -218,5 +218,24 @@ services:
     depends_on:
       - chronon-spark
 
+
+  fetcher-service:
+    build:
+      context: ..
+      dockerfile: local_deployment/fetcher-service/Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      FETCHER_SERVICE_HOST: 0.0.0.0
+      FETCHER_SERVICE_PORT: "8083"
+      DYNAMO_ENDPOINT: http://host.docker.internal:8000
+      AWS_DEFAULT_REGION: us-west-2
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    volumes:
+      - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/opt/app/lib/chronon-aws-assembly.jar:ro
+      - ./fetcher-service/fetcher-service.log:/opt/app/fetcher-service.log
+    networks:
+      - chronon-net
 networks:
   chronon-net:
