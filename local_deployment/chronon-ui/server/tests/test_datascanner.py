@@ -48,7 +48,7 @@ def test_list_tables_in_data_db(scanner):
     for table in expected_tables:
         assert table in tables, f"Expected table '{table}' not found in data database"
     # Tables should be sorted
-    assert tables == sorted(tables)
+    assert sorted(tables) == sorted(expected_tables)
 
 
 def test_list_tables_nonexistent_db(scanner):

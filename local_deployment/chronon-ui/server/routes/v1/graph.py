@@ -1,8 +1,10 @@
 import os
 import logging
 from pathlib import Path
+from typing import List
 from fastapi import APIRouter
 from server.services.graphparser import GraphParser
+from server.services.confparser import ConfParser, ConfType
 from server.services.datascanner import DataScanner
 from fastapi import Depends
 from server.routes.v1.spark_data import get_datascanner
@@ -13,8 +15,11 @@ logger = logging.getLogger("uvicorn.error")
 
 current_dir = Path(__file__).parent
 server_root = current_dir.parent.parent
+
+## TODO: Make this dynamic HARDCODED to ONE TEAM NOW
 compiled_dir_gbs = server_root / "chronon_config" / "compiled" / "group_bys" / "quickstart"
 compiled_dir_joins = server_root / "chronon_config" / "compiled" / "joins" / "quickstart"
+
 @router.get("/graph_data")
 def get_graph(scanner: DataScanner = Depends(get_datascanner)):
     parser = GraphParser(
@@ -30,3 +35,19 @@ def get_graph(scanner: DataScanner = Depends(get_datascanner)):
         # Best-effort logging; never fail the request due to logging
         logger.debug("Graph parsed; unable to compute counts for logging")
     return graph_dict
+
+
+@router.get("/list_joins")
+def list_joins():
+    conf_parser = ConfParser(
+        directory_path=compiled_dir_joins
+    )
+    return conf_parser.parse()
+
+
+@router.get("/list_group_bys")
+def list_group_bys():
+    conf_parser = ConfParser(
+        directory_path=compiled_dir_gbs
+    )
+    return conf_parser.parse()

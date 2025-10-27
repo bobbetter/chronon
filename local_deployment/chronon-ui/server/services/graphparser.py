@@ -66,6 +66,9 @@ def _underscore_name(name: str) -> str:
 
 
 class GraphParser:
+    """This parses all configuration files and creates a "full graph" all configuration files, 
+    raw data nodes, streaming data nodes, online data nodes, and edges between them.
+    """
     IGNORE_FILES = ["schema.v1__1"]
     def __init__(self, directory_path_gbs: str, directory_path_joins: str = None,datascanner: DataScanner = None):
         self._directory_path_gbs = directory_path_gbs
@@ -199,6 +202,8 @@ class GraphParser:
         return config_file_path
 
     def _add_orphan_raw_data_nodes(self) -> None:
+        if self._datascanner is None:
+            return
         all_raw_data_nodes = self._datascanner.list_tables(db_name=HARDCODED_DB_NAME, with_db_name=True)
         raw_data_nodes_from_conf = [x.name for x in self.graph.nodes if x.node_type  == "raw-data"]
         
@@ -207,6 +212,8 @@ class GraphParser:
                 self.graph.add_node(Node(raw_data_node, "raw-data", "batch-data", True, ["show"], None))
 
     def _add_orphan_streaming_data_nodes_FAKE(self) -> None:
+        if self._datascanner is None:
+            return
         all_streaming_data_nodes = ["events.page_views", "events.logins"]
         streaming_data_nodes_from_conf = [x.name for x in self.graph.nodes if x.node_type  == "streaming-data"]
 
