@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import LineagePage from "@/pages/LineagePage";
 import BatchDataPageV2 from "@/pages/BatchDataPageV2";
+import OnlineDataPage from "@/pages/OnlineDataPage";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -15,6 +16,7 @@ function Router() {
     <Switch>
       <Route path="/" component={LineagePage} />
       <Route path="/batch-data" component={BatchDataPageV2} />
+      <Route path="/online-data" component={OnlineDataPage} />
 
       <Route component={NotFound} />
     </Switch>

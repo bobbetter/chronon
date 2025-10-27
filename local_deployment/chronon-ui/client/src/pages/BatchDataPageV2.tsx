@@ -67,10 +67,10 @@ export default function BatchDataPageV2() {
   });
 
   // Fetch sample data
-  const { 
-    data: sampleData, 
+  const {
+    data: sampleData,
     isLoading: isLoadingSample,
-    error: sampleError 
+    error: sampleError
   } = useQuery<SampleDataResponse>({
     queryKey: [
       `/v1/spark-data/databases/${selectedDatabase}/tables/${selectedTable}/sample?limit=${pageSize}&offset=${page * pageSize}`
@@ -111,7 +111,7 @@ export default function BatchDataPageV2() {
                   <Database className="h-6 w-6 text-node-batch" />
                 </div>
                 <div>
-                  <CardTitle>Batch Data Explorer V2</CardTitle>
+                  <CardTitle>Batch Data Explorer</CardTitle>
                   <CardDescription>Browse databases and tables with improved layout</CardDescription>
                 </div>
               </div>
@@ -137,77 +137,77 @@ export default function BatchDataPageV2() {
           </CardHeader>
           {isSelectorExpanded && (
             <CardContent className="flex flex-col gap-4">
-            {/* Database and Table Selection - Fixed width container */}
-            <div className="flex gap-4 items-end">
-              <div className="flex-1">
-                <label className="text-sm font-medium mb-2 block">Database</label>
-                <Select 
-                  value={selectedDatabase} 
-                  onValueChange={handleDatabaseChange}
-                  disabled={isLoadingDatabases}
+              {/* Database and Table Selection - Fixed width container */}
+              <div className="flex gap-4 items-end">
+                <div className="flex-1">
+                  <label className="text-sm font-medium mb-2 block">Database</label>
+                  <Select
+                    value={selectedDatabase}
+                    onValueChange={handleDatabaseChange}
+                    disabled={isLoadingDatabases}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={isLoadingDatabases ? "Loading..." : "Select a database"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {databasesData?.databases.map((db) => (
+                        <SelectItem key={db} value={db}>
+                          {db}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex-1">
+                  <label className="text-sm font-medium mb-2 block">Table</label>
+                  <Select
+                    value={selectedTable}
+                    onValueChange={handleTableChange}
+                    disabled={!selectedDatabase || isLoadingTables}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          !selectedDatabase
+                            ? "Select a database first"
+                            : isLoadingTables
+                              ? "Loading..."
+                              : "Select a table"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tablesData?.tables.map((table) => (
+                        <SelectItem key={table} value={table}>
+                          {table}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button
+                  onClick={() => setPage(0)}
+                  disabled={!selectedTable || isLoadingSample}
+                  className="gap-2"
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder={isLoadingDatabases ? "Loading..." : "Select a database"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {databasesData?.databases.map((db) => (
-                      <SelectItem key={db} value={db}>
-                        {db}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <Search className="h-4 w-4" />
+                  Sample Data
+                </Button>
               </div>
 
-              <div className="flex-1">
-                <label className="text-sm font-medium mb-2 block">Table</label>
-                <Select 
-                  value={selectedTable} 
-                  onValueChange={handleTableChange}
-                  disabled={!selectedDatabase || isLoadingTables}
-                >
-                  <SelectTrigger>
-                    <SelectValue 
-                      placeholder={
-                        !selectedDatabase 
-                          ? "Select a database first" 
-                          : isLoadingTables 
-                          ? "Loading..." 
-                          : "Select a table"
-                      } 
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tablesData?.tables.map((table) => (
-                      <SelectItem key={table} value={table}>
-                        {table}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <Button 
-                onClick={() => setPage(0)}
-                disabled={!selectedTable || isLoadingSample}
-                className="gap-2"
-              >
-                <Search className="h-4 w-4" />
-                Sample Data
-              </Button>
-            </div>
-
-            {/* Table Info */}
-            {selectedDatabase && selectedTable && sampleData && (
-              <div className="flex gap-2 items-center text-sm text-muted-foreground">
-                <TableIcon className="h-4 w-4" />
-                <span>
-                  <strong>{selectedDatabase}.{selectedTable}</strong> 
-                  {" · "}
-                  {sampleData.row_count.toLocaleString()} total rows
-                </span>
-              </div>
-            )}
+              {/* Table Info */}
+              {selectedDatabase && selectedTable && sampleData && (
+                <div className="flex gap-2 items-center text-sm text-muted-foreground">
+                  <TableIcon className="h-4 w-4" />
+                  <span>
+                    <strong>{selectedDatabase}.{selectedTable}</strong>
+                    {" · "}
+                    {sampleData.row_count.toLocaleString()} total rows
+                  </span>
+                </div>
+              )}
             </CardContent>
           )}
         </Card>

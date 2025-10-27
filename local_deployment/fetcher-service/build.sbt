@@ -32,6 +32,9 @@ libraryDependencies ++= Seq(
   "io.circe" %% "circe-core" % circeVersion,
   "io.circe" %% "circe-generic" % circeVersion,
   "io.circe" %% "circe-parser" % circeVersion,
+
+  // CORS support
+  "ch.megard" %% "akka-http-cors" % "1.1.3",
   
   // Logging
   "org.slf4j" % "slf4j-api" % "1.7.36",

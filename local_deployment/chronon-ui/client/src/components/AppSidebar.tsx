@@ -1,4 +1,4 @@
-import { GitBranch, Database, Settings } from "lucide-react";
+import { GitBranch, Database, Globe } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -21,6 +21,11 @@ const menuItems = [
     title: "Batch Data",
     url: "/batch-data",
     icon: Database,
+  },
+  {
+    title: "Online Data",
+    url: "/online-data",
+    icon: Globe,
   },
 ];
 

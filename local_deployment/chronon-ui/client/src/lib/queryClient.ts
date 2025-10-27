@@ -3,6 +3,9 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 // API base URL - defaults to FastAPI backend
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8005";
 
+// Fetcher service base URL - defaults to dedicated fetcher backend
+const FETCHER_API_BASE_URL = import.meta.env.VITE_FETCHER_API_URL || "http://localhost:8083";
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -26,6 +29,28 @@ export async function apiRequest(
 
   await throwIfResNotOk(res);
   return res;
+}
+
+export async function fetcherRequest<T>(
+  method: string,
+  url: string,
+  data?: unknown | undefined,
+): Promise<T> {
+  const fullUrl = url.startsWith("http") ? url : `${FETCHER_API_BASE_URL}${url}`;
+
+  const headers: Record<string, string> = {};
+  if (data !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const res = await fetch(fullUrl, {
+    method,
+    headers,
+    body: data !== undefined ? JSON.stringify(data) : undefined,
+  });
+
+  await throwIfResNotOk(res);
+  return (await res.json()) as T;
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";

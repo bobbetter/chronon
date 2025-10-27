@@ -8,6 +8,9 @@ import ai.chronon.fetcher.endpoints.{GroupByEndpoint, JoinEndpoint}
 import sttp.tapir.swagger.bundle.SwaggerInterpreter
 import sttp.tapir.docs.openapi.OpenAPIDocsInterpreter
 import sttp.apispec.openapi.circe.yaml._
+import ch.megard.akka.http.cors.scaladsl.CorsDirectives.{cors, corsRejectionHandler}
+import ch.megard.akka.http.cors.scaladsl.settings.CorsSettings
+import ch.megard.akka.http.cors.scaladsl.model.HttpOriginMatcher
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
@@ -61,12 +64,21 @@ class Routes(implicit ec: ExecutionContext) {
       }
   }
   
-  // Combine all routes
-  val allRoutes: Route = concat(
-    groupByRoute,
-    joinRoute,
-    openApiRoute,
-    swaggerRoute
-  )
+  private val corsSettings: CorsSettings = CorsSettings.defaultSettings
+    .withAllowGenericHttpRequests(true)
+    .withAllowCredentials(false)
+    .withAllowedOrigins(HttpOriginMatcher.*)
+
+  // Combine all routes with CORS support
+  val allRoutes: Route = handleRejections(corsRejectionHandler) {
+    cors(corsSettings) {
+      concat(
+        groupByRoute,
+        joinRoute,
+        openApiRoute,
+        swaggerRoute
+      )
+    }
+  }
 }
 

@@ -37,17 +37,17 @@ def get_graph(scanner: DataScanner = Depends(get_datascanner)):
     return graph_dict
 
 
-@router.get("/list_joins")
-def list_joins():
-    conf_parser = ConfParser(
-        directory_path=compiled_dir_joins
-    )
-    return conf_parser.parse()
 
-
-@router.get("/list_group_bys")
-def list_group_bys():
+@router.get("/list_confs")
+def list_confs(
+    conf_type: ConfType
+):
+    
+    if conf_type == ConfType.GROUP_BY:
+        directory_path = compiled_dir_gbs
+    else:
+        directory_path = compiled_dir_joins
     conf_parser = ConfParser(
-        directory_path=compiled_dir_gbs
+        directory_path=directory_path
     )
     return conf_parser.parse()
