@@ -26,14 +26,7 @@ WORKDIR /opt/app
 COPY --from=build /workspace/target/universal/stage ./
 COPY chronon-aws-assembly.jar ./lib/
 
-EXPOSE 8080
-
-ENV FETCHER_SERVICE_HOST=0.0.0.0 \
-    FETCHER_SERVICE_PORT=8080 \
-    DYNAMO_ENDPOINT=http://localhost:8000 \
-    AWS_DEFAULT_REGION=us-west-2 \
-    AWS_ACCESS_KEY_ID=local \
-    AWS_SECRET_ACCESS_KEY=local
+EXPOSE 8083
 
 # Use the generated start script from stage
 ENTRYPOINT ["./bin/fetcher-service"]

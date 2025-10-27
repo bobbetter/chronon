@@ -3,7 +3,6 @@ package ai.chronon.fetcher
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import ai.chronon.fetcher.routes.Routes
-import com.typesafe.config.ConfigFactory
 
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.Duration
@@ -14,19 +13,8 @@ object FetcherServiceApp extends App {
   implicit val system: ActorSystem = ActorSystem("fetcher-service-system")
   implicit val ec: ExecutionContext = system.dispatcher
 
-  private val config = ConfigFactory.load()
-
-  private val host: String = if (config.hasPath("fetcher-service.http.host")) {
-    config.getString("fetcher-service.http.host")
-  } else {
-    "0.0.0.0"
-  }
-
-  private val port: Int = if (config.hasPath("fetcher-service.http.port")) {
-    config.getInt("fetcher-service.http.port")
-  } else {
-    8080
-  }
+  private val host: String = sys.env.getOrElse("FETCHER_SERVICE_HOST", "0.0.0.0")
+  private val port: Int = sys.env.get("FETCHER_SERVICE_PORT").map(_.toInt).getOrElse(8080)
 
   private val routes = new Routes()
 
