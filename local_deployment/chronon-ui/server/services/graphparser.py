@@ -98,7 +98,7 @@ class GraphParser:
         team_name: str = compiled_data["metaData"]["team"]
         backfill_name = f"{team_name}.{_underscore_name(conf_name)}"
         upload_name = f"{team_name}.{_underscore_name(conf_name)}__upload"
-        online_data_batch_name = f"{team_name}.{_underscore_name(conf_name)}_batch"
+        online_data_batch_name = f"{_underscore_name(conf_name)}_batch"
 
         try:
             stream_event_name: str = compiled_data["sources"][0]["events"]["topic"]
@@ -108,11 +108,11 @@ class GraphParser:
             stream_event_name = None
 
         nodes = [
-            Node(conf_name, "conf-group_by", "conf", True, ["backfill", "pre-compute-upload"], config_file_path),
+            Node(conf_name, "conf-group_by", "conf", True, ["backfill", "pre-compute-upload", "show-online-data"], config_file_path),
             Node(raw_table_name, "raw-data", "batch-data", self._get_batch_data_exists(raw_table_name), ["show"], None),
             Node(backfill_name, "backfill-group_by", "batch-data", self._get_batch_data_exists(backfill_name), ["show"], None),
             Node(upload_name, "upload-group_by", "batch-data", self._get_batch_data_exists(upload_name), ["show", "upload-to-kv"], config_file_path),
-            Node(online_data_batch_name, "online-data-batch", "online-data", self._get_batch_data_exists(upload_name), ["show"], None),
+            Node(online_data_batch_name, "online-data-batch", "online-data", self._get_batch_data_exists(upload_name), None, None),
         ]
 
         if stream_event_name:
@@ -156,7 +156,7 @@ class GraphParser:
                 actions=["show"],
                 config_file_path=None
             ),
-            Node(conf_name, "conf-join", "conf", True, ["backfill"], config_file_path),
+            Node(conf_name, "conf-join", "conf", True, ["backfill", "show-online-data"], config_file_path),
             Node(
                 name=training_data_set_name,
                 node_type="backfill-join",

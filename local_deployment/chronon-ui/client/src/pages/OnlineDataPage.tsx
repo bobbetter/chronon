@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
     Card,
@@ -88,8 +88,14 @@ export default function OnlineDataPage() {
     const [requestPayload, setRequestPayload] = useState<FetcherRequestPayload | null>(null);
     const [keysInput, setKeysInput] = useState<string>("{}");
     const { toast } = useToast();
+    const skipNextReset = useRef(false);
 
     useEffect(() => {
+        if (skipNextReset.current) {
+            skipNextReset.current = false;
+            return;
+        }
+
         setSelectedDataset("");
         setKeysInput("{}");
     }, [dataKind]);
@@ -111,6 +117,37 @@ export default function OnlineDataPage() {
         () => datasets?.find((conf) => conf.name === selectedDataset) ?? null,
         [datasets, selectedDataset],
     );
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const typeParam = params.get("type");
+        const datasetParam = params.get("dataset");
+
+        if (typeParam === "group_by" || typeParam === "join") {
+            if (typeParam !== dataKind) {
+                skipNextReset.current = true;
+                setDataKind(typeParam);
+            }
+        }
+
+        if (datasetParam) {
+            setSelectedDataset(datasetParam);
+        }
+    }, []);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        params.set("type", dataKind);
+
+        if (selectedDataset) {
+            params.set("dataset", selectedDataset);
+        } else {
+            params.delete("dataset");
+        }
+
+        const newRelativePathQuery = `${window.location.pathname}?${params.toString()}`;
+        window.history.replaceState(null, "", newRelativePathQuery);
+    }, [dataKind, selectedDataset]);
 
     useEffect(() => {
         if (!selectedConfig) {

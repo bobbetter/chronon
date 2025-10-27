@@ -53,12 +53,12 @@ export function LineageNode({ data }: LineageNodeProps) {
   const deleteTableMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/v1/actions/delete-table?table_name=${encodeURIComponent(data.name)}`, null);
-      
+
       if (!res.ok) {
         const errorText = await res.text();
         throw new Error(errorText || `HTTP ${res.status}`);
       }
-      
+
       return await res.json();
     },
     onSuccess: () => {
@@ -84,29 +84,29 @@ export function LineageNode({ data }: LineageNodeProps) {
     mutationFn: async ({ action, ds }: { action: string; ds?: string }) => {
       try {
         // Special handling for conf-group_by nodes
-        if ((data.type === "conf-group_by" || data.type === "conf-join" || data.type === "upload-group_by" ) && data.config_file_path) {
+        if ((data.type === "conf-group_by" || data.type === "conf-join" || data.type === "upload-group_by") && data.config_file_path) {
           const res = await apiRequest("POST", "/v1/actions/run-spark-job", {
             conf_path: data.config_file_path,
             ds: ds || "2023-12-01", // Use provided date or fallback
             mode: action,
           });
-          
+
           if (!res.ok) {
             const errorText = await res.text();
             throw new Error(errorText || `HTTP ${res.status}`);
           }
-          
+
           return await res.json();
         }
-        
+
         // Default behavior for other node types
         const res = await apiRequest("POST", "/node_action", { nodeName: data.name, action });
-        
+
         if (!res.ok) {
           const errorText = await res.text();
           throw new Error(errorText || `HTTP ${res.status}`);
         }
-        
+
         return await res.json();
       } catch (error) {
         console.error("Action execution error:", error);
@@ -146,13 +146,13 @@ export function LineageNode({ data }: LineageNodeProps) {
     if (!dateRegex.test(date)) {
       return false;
     }
-    
+
     // Validate it's a real date
     const parsedDate = new Date(date);
     if (isNaN(parsedDate.getTime())) {
       return false;
     }
-    
+
     // Validate the format matches the parsed date (catches invalid dates like 2025-13-45)
     const [year, month, day] = date.split('-').map(Number);
     return (
@@ -167,12 +167,12 @@ export function LineageNode({ data }: LineageNodeProps) {
       setDateError("Date is required");
       return;
     }
-    
+
     if (!validateDateFormat(dateValue)) {
       setDateError("Invalid date format. Please use YYYY-MM-DD");
       return;
     }
-    
+
     if (pendingAction) {
       executeActionMutation.mutate({ action: pendingAction, ds: dateValue });
       setShowDateDialog(false);
@@ -183,6 +183,27 @@ export function LineageNode({ data }: LineageNodeProps) {
   };
 
   const handleAction = (action: string) => {
+    if (action === "show-online-data" && data.type_visual === "conf") {
+      const params = new URLSearchParams();
+
+      if (data.type.includes("group_by")) {
+        params.set("type", "group_by");
+      } else if (data.type.includes("join")) {
+        params.set("type", "join");
+      } else {
+        toast({
+          title: "Unsupported configuration",
+          description: `Could not determine online data type for ${data.name}`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      params.set("dataset", data.name);
+      setLocation(`/online-data?${params.toString()}`);
+      return;
+    }
+
     // Deep link to Batch Data when raw-data or backfill-group_by node with "show" action is clicked
     if ((data.type === "raw-data" || data.type === "backfill-group_by" || data.type === "upload-group_by" || data.type === "backfill-join") && action === "show" && data.exists) {
       const dotIndex = data.name.indexOf(".");
@@ -202,7 +223,7 @@ export function LineageNode({ data }: LineageNodeProps) {
     }
 
     // Show date dialog for actions that require a date parameter
-    if ((data.type === "conf-group_by" || data.type === "conf-join" || data.type === "upload-group_by" ) && data.config_file_path) {
+    if ((data.type === "conf-group_by" || data.type === "conf-join" || data.type === "upload-group_by") && data.config_file_path) {
       setPendingAction(action);
       setShowDateDialog(true);
       return;
