@@ -27,7 +27,9 @@ To-do:
 - clean up "metastore" folder, name it something like datastore and move into chronon-spark folder.
   - Also, there seems to be duplicated metastore_db folder in the chronon-spark folder. Also derby.log is duplicated.
 - Spark scripts will currently fail if new team names are used because a schema is not present. `CREATE SCHEMA IF NOT EXISTS <team_name>;`
-- Build a separate Scala service that handles the Fetcher and MetaData upload operations that are currently standalone Scala scripts (./fetcher/... and ./metauploader/...)
+- Build a separate Scala service that handles:
+-- the Fetcher and (DONE)
+-- MetaData upload 
 -- Also should handle table creation for _STREAMING tables (and _BATCH)
 
 
