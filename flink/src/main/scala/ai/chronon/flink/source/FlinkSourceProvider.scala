@@ -12,6 +12,8 @@ object FlinkSourceProvider {
         new KafkaFlinkSource(props, deserializationSchema, topicInfo)
       case "pubsub" =>
         loadPubsubSource(props, deserializationSchema, topicInfo)
+      case "kinesis" =>
+        loadKinesisSource(props, deserializationSchema, topicInfo)
       case _ =>
         throw new IllegalArgumentException(s"Unsupported message bus: ${topicInfo.messageBus}")
     }
@@ -27,5 +29,12 @@ object FlinkSourceProvider {
     val constructor = cls.getConstructors.apply(0)
     val onlineImpl = constructor.newInstance(props, deserializationSchema, topicInfo)
     onlineImpl.asInstanceOf[FlinkSource[T]]
+  }
+
+  private def loadKinesisSource[T](props: Map[String, String],
+                                  deserializationSchema: DeserializationSchema[T],
+                                  topicInfo: TopicInfo): FlinkSource[T] = {
+    // TODO: Implement Kinesis source loading via reflection
+    throw new UnsupportedOperationException("Kinesis source loading via reflection is not implemented")
   }
 }
