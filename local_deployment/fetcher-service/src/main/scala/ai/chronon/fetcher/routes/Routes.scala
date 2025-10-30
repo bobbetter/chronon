@@ -4,7 +4,7 @@ import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity}
 import sttp.tapir.server.akkahttp.AkkaHttpServerInterpreter
-import ai.chronon.fetcher.endpoints.{GroupByEndpoint, JoinEndpoint}
+import ai.chronon.fetcher.endpoints.{GroupByEndpoint, JoinEndpoint, MetadataEndpoint}
 import sttp.tapir.swagger.bundle.SwaggerInterpreter
 import sttp.tapir.docs.openapi.OpenAPIDocsInterpreter
 import sttp.apispec.openapi.circe.yaml._
@@ -18,7 +18,11 @@ import scala.util.{Failure, Success, Try}
 class Routes(implicit ec: ExecutionContext) {
   
   // List of all endpoints
-  private val endpoints = List(GroupByEndpoint.groupByEndpoint, JoinEndpoint.joinEndpoint)
+  private val endpoints = List(
+    GroupByEndpoint.groupByEndpoint, 
+    JoinEndpoint.joinEndpoint,
+    MetadataEndpoint.metadataEndpoint
+  )
   
 
   private val groupByRoute: Route =
@@ -29,6 +33,11 @@ class Routes(implicit ec: ExecutionContext) {
   private val joinRoute: Route =
     AkkaHttpServerInterpreter().toRoute(
       JoinEndpoint.joinEndpoint.serverLogic(request => JoinEndpoint.joinLogic(request))
+    )
+
+  private val metadataRoute: Route =
+    AkkaHttpServerInterpreter().toRoute(
+      MetadataEndpoint.metadataEndpoint.serverLogic(groupByName => MetadataEndpoint.metadataLogic(groupByName))
     )
   
   // Generate OpenAPI documentation
@@ -75,6 +84,7 @@ class Routes(implicit ec: ExecutionContext) {
       concat(
         groupByRoute,
         joinRoute,
+        metadataRoute,
         openApiRoute,
         swaggerRoute
       )

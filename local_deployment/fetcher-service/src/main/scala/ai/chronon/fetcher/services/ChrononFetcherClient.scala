@@ -2,6 +2,7 @@ package ai.chronon.fetcher.services
 
 import ai.chronon.integrations.aws.AwsApiImpl
 import ai.chronon.online.fetcher.Fetcher
+import ai.chronon.api.ThriftJsonCodec
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
@@ -17,6 +18,11 @@ object ChrononFetcherClient {
 
   def fetchJoin(requests: Seq[Fetcher.Request])(implicit ec: ExecutionContext): Future[Seq[Fetcher.Response]] =
     client.fetcher.fetchJoin(requests)
+
+  def getGroupByServingInfo(groupByName: String): Try[String] =
+    client.fetcher.metadataStore.getGroupByServingInfo(groupByName).map { servingInfoParsed =>
+      ThriftJsonCodec.toJsonStr(servingInfoParsed.groupByServingInfo)
+    }
 
   private def build(): FetcherClient = {
     val awsApi = new AwsApiImpl(Map.empty[String, String])
