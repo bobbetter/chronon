@@ -5,7 +5,7 @@ set -e
 # Usage: ./run_flink_job.sh <groupby-name> [options]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Default values
 GROUPBY_NAME="${1:-quickstart.logins.v1__1}"
