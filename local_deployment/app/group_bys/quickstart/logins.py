@@ -10,7 +10,7 @@ from ai.chronon.group_by import (
 
 source = EventSource(
     table="data.logins", 
-    topic="events.logins/fields=ts,event_id,user_id,login_methd,device_type,ip_address/host=kafka/port=9092/serde=custom/provider_class=ai.chronon.flink.deser.LoginsSerDe",
+    topic="kinesis://login-events/fields=ts,event_id,user_id,login_methd,device_type,ip_address/host=kafka/port=9092/serde=custom/provider_class=ai.chronon.flink.deser.LoginsSerDe",
     query=Query(
         selects=selects("user_id", "login_method", "device_type"),  # Select the fields we care about
         time_column="ts",

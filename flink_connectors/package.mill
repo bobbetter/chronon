@@ -19,6 +19,7 @@ object `package` extends build.BaseModule {
       .exclude("com.fasterxml.jackson.core" -> "jackson-databind")
       .exclude("com.fasterxml.jackson.core" -> "jackson-annotations"),
     mvn"io.netty:netty-codec-http2:4.1.124.Final",
+    mvn"org.apache.flink:flink-connector-kinesis:4.2.0-1.17",
   )
 
   object test extends build.BaseTestModule {

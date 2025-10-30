@@ -104,7 +104,8 @@ FLINK_RUN_CMD="flink run \
   -ZDYNAMO_ENDPOINT=http://dynamodb-local:8000 \
   -ZAWS_DEFAULT_REGION=us-west-2 \
   -ZAWS_ACCESS_KEY_ID=local \
-  -ZAWS_SECRET_ACCESS_KEY=local"
+  -ZAWS_SECRET_ACCESS_KEY=local \
+  -ZKINESIS_ENDPOINT=http://localhost:4566"
 
 # Add debug flag if enabled
 if [ "$ENABLE_DEBUG" = "true" ]; then

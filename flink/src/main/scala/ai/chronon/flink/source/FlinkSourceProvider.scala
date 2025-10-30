@@ -31,10 +31,15 @@ object FlinkSourceProvider {
     onlineImpl.asInstanceOf[FlinkSource[T]]
   }
 
+  // Kinesis source is loaded via reflection as we don't want the Flink module to depend on the Kinesis connector
+  // module as we don't want to pull in AWS deps in contexts such as running in GCP
   private def loadKinesisSource[T](props: Map[String, String],
                                   deserializationSchema: DeserializationSchema[T],
                                   topicInfo: TopicInfo): FlinkSource[T] = {
-    // TODO: Implement Kinesis source loading via reflection
-    throw new UnsupportedOperationException("Kinesis source loading via reflection is not implemented")
+    val cl = Thread.currentThread().getContextClassLoader // Use Flink's classloader
+    val cls = cl.loadClass("ai.chronon.flink_connectors.kinesis.KinesisFlinkSource")
+    val constructor = cls.getConstructors.apply(0)
+    val onlineImpl = constructor.newInstance(props, deserializationSchema, topicInfo)
+    onlineImpl.asInstanceOf[FlinkSource[T]]
   }
 }

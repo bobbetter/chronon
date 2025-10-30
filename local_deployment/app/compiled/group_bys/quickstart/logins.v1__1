@@ -114,7 +114,7 @@
           "timeColumn": "ts"
         },
         "table": "data.logins",
-        "topic": "events.logins/fields=ts,event_id,user_id,login_methd,device_type,ip_address/host=kafka/port=9092/serde=custom/provider_class=ai.chronon.flink.deser.LoginsSerDe"
+        "topic": "kinesis://login-events/fields=ts,event_id,user_id,login_methd,device_type,ip_address/host=kafka/port=9092/serde=custom/provider_class=ai.chronon.flink.deser.LoginsSerDe"
       }
     }
   ]

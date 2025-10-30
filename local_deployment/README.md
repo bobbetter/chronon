@@ -33,6 +33,8 @@ To-do:
 -- Also should handle table creation for _STREAMING tables (and _BATCH)
 
 
+- Metadata cache (e.g. GroupBy Serving Info) is not refreshing at all it seems like.
+
 Strange behaviors:
 - Streaming jobs will look up metadata in KV that has been previously uploaded through the batch upload.
 -- And this uploaded metadata must be up-to-date with the latest version of the GroupBy config, meaning, if the GroupBy config has changed, the batch-upload must run again.
