@@ -365,6 +365,17 @@ object FlinkJob {
     }
 
     val maybeServingInfo = metadataStore.getGroupByServingInfo(groupByName)
+    if (enableDebug) {
+      val logger = LoggerFactory.getLogger(getClass)
+      maybeServingInfo match {
+        case scala.util.Success(servingInfo) =>
+          logger.info(s"Debug: Successfully retrieved serving info for GroupBy '$groupByName'")
+          logger.info(s"Debug: Maybe Serving Info: ${maybeServingInfo}")
+        case scala.util.Failure(e) =>
+          logger.error(s"Debug: Failed to retrieve serving info for GroupBy '$groupByName'", e)
+        }
+    }
+
     val flinkJob =
       maybeServingInfo
         .map { servingInfo =>

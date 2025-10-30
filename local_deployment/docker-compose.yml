@@ -42,7 +42,7 @@ services:
     environment:
       FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager"
       JAVA_HOME: /usr/lib/jvm/java-11-openjdk-arm64
-      CLASSPATH: /srv/chronon/jars/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar
+      CLASSPATH: /srv/chronon/jars/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-flink-connectors-assembly.jar
       DYNAMO_ENDPOINT: http://dynamodb-local:8000
       AWS_DEFAULT_REGION: us-west-2
       AWS_ACCESS_KEY_ID: local
@@ -50,8 +50,11 @@ services:
     volumes:
       - ../out/flink/assembly.dest/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-flink-assembly.jar:ro
       - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:ro
+      - ../out/flink_connectors/assembly.dest/out.jar:/srv/chronon/jars/chronon-flink-connectors-assembly.jar:ro
     ports:
       - "8081:8081"
+    depends_on:
+      - localstack
     networks:
       - chronon-net
 
@@ -71,8 +74,10 @@ services:
     volumes:
       - ../out/flink/assembly.dest/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-flink-assembly.jar:ro
       - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:ro
+      - ../out/flink_connectors/assembly.dest/out.jar:/srv/chronon/jars/chronon-flink-connectors-assembly.jar:ro
     depends_on:
       - flink-jobmanager
+      - localstack
     networks:
       - chronon-net
 
@@ -132,6 +137,26 @@ services:
     networks:
       - chronon-net
     user: "1000:1000"
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566"      # LocalStack Gateway (all services)
+      - "4571:4571"      # Kinesis (deprecated, but kept for compatibility)
+    environment:
+      - SERVICES=kinesis
+      - DEBUG=1
+      - AWS_DEFAULT_REGION=us-west-2
+      - AWS_REGION=us-west-2
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
+      - KINESIS_INITIALIZE_STREAMS=login-events:1
+    volumes:
+      - ./localstack-data:/var/lib/localstack
+    restart: unless-stopped
+    networks:
+      - chronon-net
 
   dynamodb-admin:
     image: aaronshaf/dynamodb-admin:latest

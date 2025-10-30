@@ -51,9 +51,14 @@ class KinesisFlinkSource[T](props: Map[String, String],
                                                                  parallelism: Int): SingleOutputStreamOperator[T] = {
     val consumerConfig = buildConsumerConfig(props, topicInfo)
 
+    // Wrap the deserialization schema to handle Collector-based deserialization
+    // This is needed because FlinkKinesisConsumer doesn't support DeserializationSchema
+    // that uses the Collector API (which allows producing multiple records per input)
+    val wrappedSchema = new KinesisDeserializationSchemaWrapper[T](deserializationSchema)
+    
     val kinesisConsumer = new FlinkKinesisConsumer[T](
       streamName,
-      deserializationSchema,
+      wrappedSchema,
       consumerConfig
     )
 
@@ -129,8 +134,7 @@ object KinesisFlinkSource {
   val EnableEfo = "enable_efo"
   val EfoConsumerName = "efo_consumer_name"
 
-  // Default parallelism - go with a default of 10 as that gives us some room to handle
-  // decent load without too many tasks
-  val DefaultParallelism = 10
+
+  val DefaultParallelism = 1
 }
 

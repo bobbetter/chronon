@@ -65,16 +65,18 @@ ensure_ddb_table() {
   java -cp "$OUTPUT_DIR:$AWS_JAR" CreateDdbTable
 }
 
-ensure_ddb_table "$STREAMING_TABLE_NAME"
+# ensure_ddb_table "$STREAMING_TABLE_NAME"
 
 # JAR paths inside containers (mounted via docker-compose volumes)
 FLINK_JAR="/srv/chronon/jars/chronon-flink-assembly.jar"
 AWS_JAR="/srv/chronon/jars/chronon-aws-assembly.jar"
+FLINK_CONNECTORS_JAR="/srv/chronon/jars/chronon-flink-connectors-assembly.jar"
 ONLINE_CLASS="ai.chronon.integrations.aws.AwsApiImpl"
 
 echo "Using mounted jars inside containers:"
 echo "  FLINK_JAR=$FLINK_JAR"
 echo "  AWS_JAR=$AWS_JAR"
+echo "  FLINK_CONNECTORS_JAR=$FLINK_CONNECTORS_JAR"
 
 echo "=========================================="
 echo "Chronon Flink Job Submission"
@@ -85,16 +87,18 @@ echo "Flink JobManager: $FLINK_JOBMANAGER"
 echo "Online Class: $ONLINE_CLASS"
 echo "Flink JAR (container): $FLINK_JAR"
 echo "AWS JAR (container): $AWS_JAR"
+echo "Flink Connectors JAR (container): $FLINK_CONNECTORS_JAR"
 echo "=========================================="
 
 # Build the flink run command
-# Note: We use -C to add AWS JAR to classpath (not --jars which has parsing issues)
+# Note: We use -C to add AWS JAR and Flink Connectors JAR to classpath (not --jars which has parsing issues)
 FLINK_RUN_CMD="flink run \
   -Dclassloader.check-leaked-classloader=false \
   -Dclassloader.resolve-order=child-first \
   -m $FLINK_JOBMANAGER \
   -c ai.chronon.flink.FlinkJob \
   -C file://$AWS_JAR \
+  -C file://$FLINK_CONNECTORS_JAR \
   --detached \
   $FLINK_JAR \
   --groupby-name $GROUPBY_NAME \
@@ -105,7 +109,7 @@ FLINK_RUN_CMD="flink run \
   -ZAWS_DEFAULT_REGION=us-west-2 \
   -ZAWS_ACCESS_KEY_ID=local \
   -ZAWS_SECRET_ACCESS_KEY=local \
-  -ZKINESIS_ENDPOINT=http://localhost:4566"
+  -ZKINESIS_ENDPOINT=http://localstack:4566"
 
 # Add debug flag if enabled
 if [ "$ENABLE_DEBUG" = "true" ]; then
