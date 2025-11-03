@@ -1,3 +1,8 @@
+x-aws-config: &aws-config
+  AWS_DEFAULT_REGION: us-west-2
+  AWS_ACCESS_KEY_ID: local
+  AWS_SECRET_ACCESS_KEY: local
+
 services:
   chronon-spark:
     build:
@@ -18,9 +23,7 @@ services:
       DRIVER_MEMORY: 1G
       DDB_BULKPUT_BATCH_SIZE: 100
       DYNAMO_ENDPOINT: http://dynamodb-local:8000
-      AWS_DEFAULT_REGION: us-west-2
-      AWS_ACCESS_KEY_ID: local
-      AWS_SECRET_ACCESS_KEY: local
+      <<: *aws-config
       CLOUD_PROVIDER: AWS
 
     volumes:
@@ -43,9 +46,7 @@ services:
       FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager"
       CLASSPATH: /srv/chronon/jars/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-flink-connectors-assembly.jar
       DYNAMO_ENDPOINT: http://dynamodb-local:8000
-      AWS_DEFAULT_REGION: us-west-2
-      AWS_ACCESS_KEY_ID: local
-      AWS_SECRET_ACCESS_KEY: local
+      <<: *aws-config
     volumes:
       - ../out/flink/assembly.dest/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-flink-assembly.jar:ro
       - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:ro
@@ -67,9 +68,7 @@ services:
       FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager\ntaskmanager.numberOfTaskSlots: 4"
       CLASSPATH: /srv/chronon/jars/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-flink-connectors-assembly.jar
       DYNAMO_ENDPOINT: http://dynamodb-local:8000
-      AWS_DEFAULT_REGION: us-west-2
-      AWS_ACCESS_KEY_ID: local
-      AWS_SECRET_ACCESS_KEY: local
+      <<: *aws-config
     volumes:
       - ../out/flink/assembly.dest/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-flink-assembly.jar:ro
       - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:ro
@@ -123,10 +122,8 @@ services:
       dockerfile: dynamodb-local/Dockerfile
     container_name: dynamodb-local
     environment:
-      - AWS_DEFAULT_REGION=us-west-2
-      - AWS_REGION=us-west-2
-      - AWS_ACCESS_KEY_ID=local
-      - AWS_SECRET_ACCESS_KEY=local
+      <<: *aws-config
+      AWS_REGION: us-west-2  # dynamodb-local needs both AWS_DEFAULT_REGION and AWS_REGION
     ports:
       - "8000:8000"
     volumes:
@@ -157,10 +154,9 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - DYNAMO_ENDPOINT=http://dynamodb-local:8000
-      - AWS_REGION=us-west-2
-      - AWS_ACCESS_KEY_ID=local
-      - AWS_SECRET_ACCESS_KEY=local
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
+      <<: *aws-config
+      AWS_REGION: us-west-2  # dynamodb-local needs both AWS_DEFAULT_REGION and AWS_REGION
     depends_on:
       - dynamodb-local
     restart: unless-stopped
@@ -220,7 +216,10 @@ services:
     ports:
       - "8005:8005"
     environment:
-      - PYTHONUNBUFFERED=1
+      PYTHONUNBUFFERED: 1
+      KINESIS_ENDPOINT_URL: http://localstack:4566
+      <<: *aws-config
+
     volumes:
       - ./chronon-ui/server:/app/server
       - ./app:/app/server/chronon_config
@@ -247,9 +246,7 @@ services:
       FETCHER_SERVICE_HOST: 0.0.0.0
       FETCHER_SERVICE_PORT: "8083"
       DYNAMO_ENDPOINT: http://host.docker.internal:8000
-      AWS_DEFAULT_REGION: us-west-2
-      AWS_ACCESS_KEY_ID: local
-      AWS_SECRET_ACCESS_KEY: local
+      <<: *aws-config
     volumes:
       - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/opt/app/lib/chronon-aws-assembly.jar:ro
       - ./fetcher-service/fetcher-service.log:/opt/app/fetcher-service.log
