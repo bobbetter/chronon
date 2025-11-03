@@ -221,3 +221,41 @@ class KinesisClient:
             "approximate_arrival": arrival_str,
             "data": payload,
         }
+
+    def create_stream(self, stream_name: str, shard_count: int = 1) -> Dict[str, Any]:
+        """Create a new Kinesis stream with the specified number of shards."""
+        response = self.client.create_stream(
+            StreamName=stream_name,
+            ShardCount=shard_count
+        )
+        
+        # Wait for the stream to become active
+        waiter = self.client.get_waiter('stream_exists')
+        waiter.wait(StreamName=stream_name, WaiterConfig={'Delay': 1, 'MaxAttempts': 60})
+        
+        print(f"Successfully created stream '{stream_name}' with {shard_count} shard(s).")
+        return response
+
+    def delete_stream(self, stream_name: str, enforce_consumer_deletion: bool = False) -> Dict[str, Any]:
+        """Delete a Kinesis stream."""
+        response = self.client.delete_stream(
+            StreamName=stream_name,
+            EnforceConsumerDeletion=enforce_consumer_deletion
+        )
+        
+        # Wait for deletion to complete
+        waiter = self.client.get_waiter('stream_not_exists')
+        waiter.wait(StreamName=stream_name, WaiterConfig={'Delay': 1, 'MaxAttempts': 60})
+        
+        print(f"Successfully deleted stream '{stream_name}'.")
+        return response
+
+    def clear_stream(self, stream_name: str, shard_count: int = 1, enforce_consumer_deletion: bool = False) -> None:
+        """Delete and recreate a stream to effectively clear all records."""
+        # Delete the stream
+        self.delete_stream(stream_name, enforce_consumer_deletion)
+        
+        # Recreate the stream
+        self.create_stream(stream_name, shard_count)
+        
+        print(f"Successfully cleared stream '{stream_name}' (deleted and recreated with {shard_count} shard(s)).")

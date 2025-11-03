@@ -91,14 +91,45 @@ class ListStreamsResponse(BaseModel):
     stream_count: int
 
 
+class CreateStreamRequest(BaseModel):
+    """Request model for creating a stream."""
+    shard_count: int 
+
+class CreateStreamResponse(BaseModel):
+    """Response model for stream creation."""
+    status: str
+    message: str
+    stream_name: str
+    shard_count: int
+
+
+class DeleteStreamResponse(BaseModel):
+    """Response model for stream deletion."""
+    status: str
+    message: str
+    stream_name: str
+
+
+class ClearStreamRequest(BaseModel):
+    """Request model for clearing stream records."""
+    shard_count: int 
+    enforce_consumer_deletion: bool = Field(
+        False,
+        description="Force deletion even if consumers are registered"
+    )
+
+
+class ClearStreamResponse(BaseModel):
+    """Response model for clearing stream records."""
+    status: str
+    message: str
+    stream_name: str
+    shard_count: int
+
+
 @router.get("/streams", response_model=ListStreamsResponse)
 async def list_streams(
-    limit: Optional[int] = Query(
-        None,
-        description="Maximum number of streams to return (no limit if not specified)",
-        gt=0,
-        le=10000
-    )
+    limit: int = 100
 ):
     """
     List all available Kinesis streams.
@@ -341,6 +372,167 @@ async def read_records(
         raise HTTPException(
             status_code=500,
             detail=f"Unexpected error: {str(e)}"
+        )
+
+
+@router.post("/{stream_name}", response_model=CreateStreamResponse)
+async def create_stream(stream_name: str, request: CreateStreamRequest):
+    """
+    Create a new Kinesis stream.
+    
+    Creates a new Kinesis stream with the specified number of shards.
+    The operation will wait for the stream to become active before returning.
+    
+    Args:
+        stream_name: The name of the stream to create
+        request: Request specifying the number of shards
+        
+    Returns:
+        CreateStreamResponse with success status
+        
+    Raises:
+        HTTPException: If the stream already exists or creation fails
+    """
+    try:
+        logger.info(f"Creating stream '{stream_name}' with {request.shard_count} shard(s)")
+        
+        kinesis_client.create_stream(stream_name, request.shard_count)
+        
+        return CreateStreamResponse(
+            status="success",
+            message=f"Successfully created stream '{stream_name}' with {request.shard_count} shard(s)",
+            stream_name=stream_name,
+            shard_count=request.shard_count
+        )
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Failed to create stream '{stream_name}': {error_msg}")
+        
+        # Check if stream already exists
+        if "ResourceInUseException" in error_msg:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Stream '{stream_name}' already exists"
+            )
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create stream: {error_msg}"
+        )
+
+
+@router.delete("/{stream_name}", response_model=DeleteStreamResponse)
+async def delete_stream(
+    stream_name: str,
+    enforce_consumer_deletion: bool = Query(
+        False,
+        description="Force deletion even if consumers are registered"
+    )
+):
+    """
+    Delete a Kinesis stream.
+    
+    Deletes the specified Kinesis stream. The operation will wait for
+    the deletion to complete before returning.
+    
+    Args:
+        stream_name: The name of the stream to delete
+        enforce_consumer_deletion: Force deletion even if consumers exist
+        
+    Returns:
+        DeleteStreamResponse with success status
+        
+    Raises:
+        HTTPException: If the stream doesn't exist or deletion fails
+    """
+    try:
+        logger.info(f"Deleting stream '{stream_name}' (enforce_consumer_deletion={enforce_consumer_deletion})")
+        
+        kinesis_client.delete_stream(stream_name, enforce_consumer_deletion)
+        
+        return DeleteStreamResponse(
+            status="success",
+            message=f"Successfully deleted stream '{stream_name}'",
+            stream_name=stream_name
+        )
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Failed to delete stream '{stream_name}': {error_msg}")
+        
+        # Check if stream doesn't exist
+        if "ResourceNotFoundException" in error_msg:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Stream '{stream_name}' not found"
+            )
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete stream: {error_msg}"
+        )
+
+
+@router.delete("/{stream_name}/records", response_model=ClearStreamResponse)
+async def clear_stream_records(stream_name: str, request: ClearStreamRequest):
+    """
+    Clear all records from a Kinesis stream by deleting and recreating it.
+    
+    This is the only way to effectively "clear" a Kinesis stream since
+    Kinesis is an append-only log and doesn't support deleting individual
+    records or dropping all records.
+    
+    ⚠️ WARNING: This operation will:
+    - Delete the stream and all its data
+    - Change the stream ARN (consumers need to be reconfigured)
+    - Reset all stream configuration to defaults
+    
+    The operation will wait for deletion and recreation to complete.
+    
+    Args:
+        stream_name: The name of the stream to clear
+        request: Request specifying shard count and consumer deletion settings
+        
+    Returns:
+        ClearStreamResponse with success status
+        
+    Raises:
+        HTTPException: If the operation fails
+    """
+    try:
+        logger.info(
+            f"Clearing stream '{stream_name}' (will recreate with {request.shard_count} shard(s), "
+            f"enforce_consumer_deletion={request.enforce_consumer_deletion})"
+        )
+        
+        kinesis_client.clear_stream(
+            stream_name=stream_name,
+            shard_count=request.shard_count,
+            enforce_consumer_deletion=request.enforce_consumer_deletion
+        )
+        
+        return ClearStreamResponse(
+            status="success",
+            message=f"Successfully cleared stream '{stream_name}' (deleted and recreated with {request.shard_count} shard(s))",
+            stream_name=stream_name,
+            shard_count=request.shard_count
+        )
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Failed to clear stream '{stream_name}': {error_msg}")
+        
+        # Check if stream doesn't exist
+        if "ResourceNotFoundException" in error_msg:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Stream '{stream_name}' not found"
+            )
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to clear stream: {error_msg}"
         )
 
 

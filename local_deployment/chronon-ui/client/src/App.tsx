@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import LineagePage from "@/pages/LineagePage";
 import BatchDataPageV2 from "@/pages/BatchDataPageV2";
 import OnlineDataPage from "@/pages/OnlineDataPage";
+import StreamingDataPage from "@/pages/StreamingDataPage";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -17,6 +18,7 @@ function Router() {
       <Route path="/" component={LineagePage} />
       <Route path="/batch-data" component={BatchDataPageV2} />
       <Route path="/online-data" component={OnlineDataPage} />
+      <Route path="/streaming-data" component={StreamingDataPage} />
 
       <Route component={NotFound} />
     </Switch>

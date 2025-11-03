@@ -1,4 +1,4 @@
-import { GitBranch, Database, Globe } from "lucide-react";
+import { GitBranch, Database, Globe, Activity } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -26,6 +26,11 @@ const menuItems = [
     title: "Online Data",
     url: "/online-data",
     icon: Globe,
+  },
+  {
+    title: "Streaming Data",
+    url: "/streaming-data",
+    icon: Activity,
   },
 ];
 
