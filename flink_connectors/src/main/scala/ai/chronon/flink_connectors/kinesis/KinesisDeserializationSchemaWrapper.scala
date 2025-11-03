@@ -7,12 +7,18 @@ import org.apache.flink.util.Collector
 
 import java.util
 
-/** Wrapper around a Flink DeserializationSchema to allow it to work with Kinesis consumer.
-  * This wrapper handles the case where the underlying schema uses Collector-based deserialization
-  * (which produces multiple output records per input record) by collecting results into a list
-  * and returning them.
+/** Adapter that bridges the API mismatch between FlinkKinesisConsumer and Chronon's DeserializationSchema.
+  * 
+  * FlinkKinesisConsumer expects a method that returns a single value (T), but Chronon's schemas
+  * use the Collector-based API that can emit 0+ records per input. This wrapper creates a local
+  * collector to capture results and returns only the first one.
+  * 
+  * **Limitation**: If the underlying schema emits multiple records, only the first is returned.
+  * This is acceptable for typical use cases (CDC events with null 'before', single events per record)
+  * but would cause data loss for multi-record scenarios. For full multi-record support, implement
+  * a custom source similar to PubSubSource.
   *
-  * @param deserializationSchema The Flink DeserializationSchema to wrap
+  * @param deserializationSchema The Chronon DeserializationSchema to wrap
   * @tparam T The type of elements produced
   */
 class KinesisDeserializationSchemaWrapper[T](deserializationSchema: DeserializationSchema[T])
@@ -30,27 +36,15 @@ class KinesisDeserializationSchemaWrapper[T](deserializationSchema: Deserializat
       stream: String,
       shardId: String
   ): T = {
-    // Collect results into a list - for schemas that use the Collector API
     val results = new util.ArrayList[T]()
     val collector = new Collector[T] {
       override def collect(record: T): Unit = results.add(record)
       override def close(): Unit = {}
     }
 
-    try {
-      // Try the Collector-based deserialization first
-      deserializationSchema.deserialize(recordValue, collector)
-      
-      // Return the first result, or null if none
-      // Note: Kinesis consumer expects one record per call, so if there are multiple
-      // results, only the first is returned. For full support of multi-record outputs,
-      // a flatMap operator should be used downstream.
-      if (results.size() > 0) results.get(0) else null.asInstanceOf[T]
-    } catch {
-      case _: UnsupportedOperationException =>
-        // Fall back to simple deserialization if Collector-based is not supported
-        deserializationSchema.deserialize(recordValue)
-    }
+    deserializationSchema.deserialize(recordValue, collector)
+    
+    if (!results.isEmpty) results.get(0) else null.asInstanceOf[T]
   }
 
   override def getProducedType: TypeInformation[T] = deserializationSchema.getProducedType
