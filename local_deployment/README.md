@@ -1,6 +1,8 @@
 The stack relies on certain .jars and the zipline Python package to be available:
 - Build the spark jar: `./mill spark.assembly`
 - Build the online jar: `./mill online.assembly`
+- Build the flink jar: `./mill flink.assembly`
+- Build the flink connectors jar: `./mill flink_connectors.assembly`
 - Install the Python package locally: `./mill python.installEditable`
 
 

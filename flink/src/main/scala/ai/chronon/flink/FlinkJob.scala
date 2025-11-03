@@ -371,7 +371,6 @@ object FlinkJob {
       maybeServingInfo match {
         case scala.util.Success(servingInfo) =>
           logger.info(s"Debug: Successfully retrieved serving info for GroupBy '$groupByName'")
-          logger.info(s"Debug: TopicInfo - name: ${servingInfo.topicInfo.name}, messageBus: ${servingInfo.topicInfo.messageBus}, params: ${servingInfo.topicInfo.params}")
           logger.info(s"Debug: GroupBy metadata: ${servingInfo.groupBy.getMetaData}")
         case scala.util.Failure(e) =>
           logger.error(s"Debug: Failed to retrieve serving info for GroupBy '$groupByName'", e)

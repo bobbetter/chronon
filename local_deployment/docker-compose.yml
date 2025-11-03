@@ -41,7 +41,6 @@ services:
     command: ["jobmanager"]
     environment:
       FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager"
-      JAVA_HOME: /usr/lib/jvm/java-11-openjdk-arm64
       CLASSPATH: /srv/chronon/jars/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-flink-connectors-assembly.jar
       DYNAMO_ENDPOINT: http://dynamodb-local:8000
       AWS_DEFAULT_REGION: us-west-2
@@ -66,7 +65,7 @@ services:
     command: ["taskmanager"]
     environment:
       FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager\ntaskmanager.numberOfTaskSlots: 4"
-      JAVA_HOME: /usr/lib/jvm/java-11-openjdk-arm64
+      CLASSPATH: /srv/chronon/jars/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-flink-connectors-assembly.jar
       DYNAMO_ENDPOINT: http://dynamodb-local:8000
       AWS_DEFAULT_REGION: us-west-2
       AWS_ACCESS_KEY_ID: local
