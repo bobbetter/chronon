@@ -8,29 +8,26 @@ import org.apache.flink.streaming.connectors.kinesis.config.ConsumerConfigConsta
 import java.util.Properties
 
 object KinesisConfig {
-  // AWS property keys
-  val AwsRegion = "AWS_REGION"
-  val AwsDefaultRegion = "AWS_DEFAULT_REGION"
-  val AwsAccessKeyId = "AWS_ACCESS_KEY_ID"
-  val AwsSecretAccessKey = "AWS_SECRET_ACCESS_KEY"
-  val KinesisEndpoint = "KINESIS_ENDPOINT"
-  
-  // Kinesis consumer property keys
-  val TaskParallelism = "tasks"
-  val InitialPosition = "initial_position"
-  val EnableEfo = "enable_efo"
-  val EfoConsumerName = "efo_consumer_name"
+  case class ConsumerConfig(properties: Properties, parallelism: Int)
 
-  val DefaultParallelism = 1
+  object Keys {
+    val AwsRegion = "AWS_REGION"
+    val AwsDefaultRegion = "AWS_DEFAULT_REGION"
+    val AwsAccessKeyId = "AWS_ACCESS_KEY_ID"
+    val AwsSecretAccessKey = "AWS_SECRET_ACCESS_KEY"
+    val KinesisEndpoint = "KINESIS_ENDPOINT"
+    val TaskParallelism = "tasks"
+    val InitialPosition = "initial_position"
+    val EnableEfo = "enable_efo"
+    val EfoConsumerName = "efo_consumer_name"
+  }
 
-  private def getRequiredProperty(key: String, props: Map[String, String], topicInfo: TopicInfo): String =
-    FlinkUtils.getProperty(key, props, topicInfo)
-      .getOrElse(throw new IllegalArgumentException(s"Missing required property: $key"))
+  object Defaults {
+    val Parallelism = 1
+    val InitialPosition: String = ConsumerConfigConstants.InitialPosition.LATEST.toString
+  }
 
-  private def getOptionalProperty(key: String, props: Map[String, String], topicInfo: TopicInfo): Option[String] =
-    FlinkUtils.getProperty(key, props, topicInfo)
-
-  /** Builds a Properties object with Kinesis consumer configuration.
+  /** Builds Kinesis consumer configuration including both the Flink Properties and parallelism.
     *
     * Required properties:
     * - AWS_REGION (or AWS_DEFAULT_REGION): The AWS region where the Kinesis stream exists
@@ -38,48 +35,56 @@ object KinesisConfig {
     * - AWS_SECRET_ACCESS_KEY: AWS secret access key for authentication
     *
     * Optional properties:
+    * - tasks: Override the default parallelism
     * - KINESIS_ENDPOINT: Custom Kinesis endpoint (useful for local testing)
     * - initial_position: Starting position (LATEST, TRIM_HORIZON, or AT_TIMESTAMP)
     * - enable_efo: Enable Enhanced Fan-Out (EFO) for the consumer
     * - efo_consumer_name: Consumer name for EFO
     */
-  def buildConsumerConfig(props: Map[String, String], topicInfo: TopicInfo): Properties = {
-    val config = new Properties()
+  def buildConsumerConfig(props: Map[String, String], topicInfo: TopicInfo): ConsumerConfig = {
+    val lookup = new PropertyLookup(props, topicInfo)
+    val properties = new Properties()
 
-    // Configure AWS region (try AWS_REGION first, fall back to AWS_DEFAULT_REGION)
-    val region = getOptionalProperty(AwsRegion, props, topicInfo)
-      .orElse(getOptionalProperty(AwsDefaultRegion, props, topicInfo))
-      .getOrElse(throw new IllegalArgumentException(s"Missing required property: $AwsRegion or $AwsDefaultRegion"))
-    config.put(AWSConfigConstants.AWS_REGION, region)
+    val region = lookup.requiredOneOf(Keys.AwsRegion, Keys.AwsDefaultRegion)
+    val accessKeyId = lookup.required(Keys.AwsAccessKeyId)
+    val secretAccessKey = lookup.required(Keys.AwsSecretAccessKey)
 
-    // Configure AWS credentials
-    config.put(AWSConfigConstants.AWS_CREDENTIALS_PROVIDER, "BASIC")
-    config.put(AWSConfigConstants.AWS_ACCESS_KEY_ID, getRequiredProperty(AwsAccessKeyId, props, topicInfo))
-    config.put(AWSConfigConstants.AWS_SECRET_ACCESS_KEY, getRequiredProperty(AwsSecretAccessKey, props, topicInfo))
+    properties.setProperty(AWSConfigConstants.AWS_REGION, region)
+    properties.setProperty(AWSConfigConstants.AWS_CREDENTIALS_PROVIDER, "BASIC")
+    properties.setProperty(AWSConfigConstants.AWS_ACCESS_KEY_ID, accessKeyId)
+    properties.setProperty(AWSConfigConstants.AWS_SECRET_ACCESS_KEY, secretAccessKey)
 
-    // Configure custom endpoint (optional, for local testing)
-    getOptionalProperty(KinesisEndpoint, props, topicInfo)
-      .foreach(config.put(AWSConfigConstants.AWS_ENDPOINT, _))
 
-    // Configure initial position (defaults to LATEST)
-    val initialPosition = getOptionalProperty(InitialPosition, props, topicInfo)
-      .getOrElse(ConsumerConfigConstants.InitialPosition.LATEST.toString)
-    config.put(ConsumerConfigConstants.STREAM_INITIAL_POSITION, initialPosition)
+    val initialPosition = lookup.optional(Keys.InitialPosition).getOrElse(Defaults.InitialPosition)
+    properties.setProperty(ConsumerConfigConstants.STREAM_INITIAL_POSITION, initialPosition)
 
-    // Configure Enhanced Fan-Out (EFO) if enabled
-    getOptionalProperty(EnableEfo, props, topicInfo).foreach { efoEnabled =>
-      val publisherType = if (efoEnabled.toBoolean) {
-        ConsumerConfigConstants.RecordPublisherType.EFO
-      } else {
-        ConsumerConfigConstants.RecordPublisherType.POLLING
-      }
-      config.put(ConsumerConfigConstants.RECORD_PUBLISHER_TYPE, publisherType.toString)
+    
+    val endpoint = lookup.optional(Keys.KinesisEndpoint)
+    val publisherType = lookup.optional(Keys.EnableEfo).map { enabledFlag =>
+      if (enabledFlag.toBoolean) ConsumerConfigConstants.RecordPublisherType.EFO.toString
+      else ConsumerConfigConstants.RecordPublisherType.POLLING.toString
     }
+    val efoConsumerName = lookup.optional(Keys.EfoConsumerName)
+    val parallelism = lookup.optional(Keys.TaskParallelism).map(_.toInt).getOrElse(Defaults.Parallelism)
 
-    // Configure EFO consumer name if provided
-    getOptionalProperty(EfoConsumerName, props, topicInfo)
-      .foreach(config.put(ConsumerConfigConstants.EFO_CONSUMER_NAME, _))
+    endpoint.foreach(properties.setProperty(AWSConfigConstants.AWS_ENDPOINT, _))
+    publisherType.foreach(properties.setProperty(ConsumerConfigConstants.RECORD_PUBLISHER_TYPE, _))
+    efoConsumerName.foreach(properties.setProperty(ConsumerConfigConstants.EFO_CONSUMER_NAME, _))
 
-    config
+    ConsumerConfig(properties, parallelism)
+  }
+
+  private final class PropertyLookup(props: Map[String, String], topicInfo: TopicInfo) {
+    def optional(key: String): Option[String] =
+      FlinkUtils.getProperty(key, props, topicInfo)
+
+    def required(key: String): String =
+      optional(key).getOrElse(missing(key))
+
+    def requiredOneOf(primary: String, fallback: String): String =
+      optional(primary).orElse(optional(fallback)).getOrElse(missing(s"$primary or $fallback"))
+
+    private def missing(name: String): Nothing =
+      throw new IllegalArgumentException(s"Missing required property: $name")
   }
 }

@@ -1,8 +1,6 @@
 package ai.chronon.flink_connectors.kinesis
 
-import ai.chronon.flink.FlinkUtils
 import ai.chronon.flink.source.FlinkSource
-import ai.chronon.flink_connectors.kinesis.KinesisConfig._
 import ai.chronon.online.TopicInfo
 import org.apache.flink.api.common.eventtime.WatermarkStrategy
 import org.apache.flink.api.common.serialization.DeserializationSchema
@@ -37,14 +35,14 @@ class KinesisFlinkSource[T](props: Map[String, String],
                              topicInfo: TopicInfo)
     extends FlinkSource[T] {
 
-  implicit val parallelism: Int =
-    FlinkUtils.getProperty(TaskParallelism, props, topicInfo).map(_.toInt).getOrElse(DefaultParallelism)
+  private val config = KinesisConfig.buildConsumerConfig(props, topicInfo)
+
+  implicit val parallelism: Int = config.parallelism
 
   val streamName: String = topicInfo.name
 
   override def getDataStream(topic: String, groupByName: String)(env: StreamExecutionEnvironment,
                                                                  parallelism: Int): SingleOutputStreamOperator[T] = {
-    val consumerConfig = KinesisConfig.buildConsumerConfig(props, topicInfo)
 
     // Wrap the deserialization schema to handle Collector-based deserialization
     // This is needed because FlinkKinesisConsumer doesn't support DeserializationSchema
@@ -54,7 +52,7 @@ class KinesisFlinkSource[T](props: Map[String, String],
     val kinesisConsumer = new FlinkKinesisConsumer[T](
       streamName,
       wrappedSchema,
-      consumerConfig
+      config.properties
     )
 
     // skip watermarks at the source as we derive them post Spark expr eval
