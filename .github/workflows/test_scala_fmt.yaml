@@ -1,0 +1,37 @@
+name: Scala Fmt
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.scala'
+      - '.github/workflows/test_scala_fmt.yaml'
+      - '.scalafmt.conf'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '**/*.scala'
+      - '.github/workflows/test_scala_fmt.yaml'
+      - '.scalafmt.conf'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scala_compile_fmt_fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Check Scalafmt
+        run: |
+          ./mill __.checkFormat

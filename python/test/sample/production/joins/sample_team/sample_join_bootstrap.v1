@@ -1,0 +1,176 @@
+{
+  "metaData": {
+    "name": "sample_team.sample_join_bootstrap.v1",
+    "team": "sample_team",
+    "outputNamespace": "chronon_db",
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "online": 1,
+    "production": 0,
+    "samplePercent": 100.0,
+    "executionInfo": {
+      "scheduleCron": "@daily"
+    }
+  },
+  "left": {
+    "events": {
+      "table": "sample_namespace.sample_table_group_by",
+      "query": {
+        "selects": {
+          "event": "event_expr",
+          "group_by_subject": "group_by_expr",
+          "ts": "ts"
+        },
+        "startPartition": "2021-04-09",
+        "timeColumn": "ts"
+      }
+    }
+  },
+  "joinParts": [
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "sample_team.event_sample_group_by.v1",
+          "team": "sample_team",
+          "outputNamespace": "sample_namespace",
+          "tableProperties": {
+            "source": "chronon"
+          },
+          "online": 1,
+          "executionInfo": {
+            "scheduleCron": "@daily",
+            "historicalBackfill": 0
+          }
+        },
+        "sources": [
+          {
+            "events": {
+              "table": "sample_namespace.sample_table_group_by",
+              "query": {
+                "selects": {
+                  "event": "event_expr",
+                  "group_by_subject": "group_by_expr"
+                },
+                "startPartition": "2021-04-09",
+                "timeColumn": "ts"
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "group_by_subject"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "event",
+            "operation": 7,
+            "argMap": {},
+            "windows": [
+              {
+                "length": 7,
+                "timeUnit": 1
+              }
+            ]
+          },
+          {
+            "inputColumn": "event",
+            "operation": 7,
+            "argMap": {}
+          },
+          {
+            "inputColumn": "event",
+            "operation": 12,
+            "argMap": {
+              "k": "200",
+              "percentiles": "[0.99, 0.95, 0.5]"
+            }
+          }
+        ]
+      },
+      "keyMapping": {
+        "subject": "group_by_subject"
+      }
+    },
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "sample_team.entity_sample_group_by_from_module.v1",
+          "team": "sample_team",
+          "outputNamespace": "chronon_db",
+          "tableProperties": {
+            "source": "chronon"
+          },
+          "online": 1,
+          "executionInfo": {
+            "scheduleCron": "@daily",
+            "historicalBackfill": 0
+          }
+        },
+        "sources": [
+          {
+            "entities": {
+              "snapshotTable": "sample_table.sample_entity_snapshot",
+              "mutationTable": "sample_table.sample_entity_mutations/hr=00:00",
+              "mutationTopic": "sample_topic",
+              "query": {
+                "selects": {
+                  "group_by_subject": "group_by_subject_expr",
+                  "entity": "entity_expr"
+                },
+                "startPartition": "2021-03-01",
+                "timeColumn": "ts"
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "group_by_subject"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "entity",
+            "operation": 3,
+            "argMap": {}
+          },
+          {
+            "inputColumn": "entity",
+            "operation": 3,
+            "argMap": {},
+            "windows": [
+              {
+                "length": 7,
+                "timeUnit": 1
+              }
+            ]
+          }
+        ]
+      },
+      "keyMapping": {
+        "subject": "group_by_subject"
+      }
+    }
+  ],
+  "bootstrapParts": [
+    {
+      "table": "chronon_db.test_bootstrap_table",
+      "query": {
+        "selects": {
+          "field_a": "field_a",
+          "field_b": "field_b"
+        },
+        "startPartition": "2022-01-01",
+        "endPartition": "2022-02-01"
+      },
+      "keyColumns": [
+        "request_id"
+      ]
+    },
+    {
+      "table": "chronon_db.sample_team_sample_join_bootstrap_v1_logged"
+    }
+  ],
+  "rowIds": [
+    "request_id"
+  ]
+}

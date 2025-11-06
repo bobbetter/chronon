@@ -1,0 +1,149 @@
+{
+  "metaData": {
+    "name": "quickstart.purchases.v1",
+    "team": "quickstart",
+    "outputNamespace": "data",
+    "online": 1,
+    "sourceFile": "/Users/dhan/customer/zipline/group_bys/quickstart/purchases.py",
+    "executionInfo": {
+      "env": {
+        "common": {
+          "VERSION": "latest",
+          "GCP_PROJECT_ID": "customer-zipline-dev",
+          "GCP_REGION": "us-central1",
+          "CUSTOMER_ID": "customer",
+          "GCP_DATAPROC_CLUSTER_NAME": "zipline-customer-cluster",
+          "GCP_BIGTABLE_INSTANCE_ID": "zipline-customer-instance",
+          "FLINK_STATE_URI": "gs://zipline-warehouse-customer/flink-state",
+          "CLOUD_PROVIDER": "GCP"
+        },
+        "modeEnvironments":{}
+      },
+      "conf": {
+        "modeConfigs": {
+            "backfill": {
+                "spark.dummy": "value"
+            }
+        },
+        "common": {
+          "spark.chronon.partition.format": "yyyy-MM-dd",
+          "spark.chronon.partition.column": "_DATE",
+          "spark.chronon.coalesce.factor": "8",
+          "spark.chronon.table.gcs.connector_output_dataset": "search",
+          "spark.chronon.table.gcs.connector_output_project": "customer-zipline-dev",
+          "spark.chronon.table.format_provider.class": "ai.chronon.integrations.cloud_gcp.GcpFormatProvider",
+          "spark.chronon.table.gcs.temporary_gcs_bucket": "zipline-warehouse-customer",
+          "spark.chronon.table_write.format": "iceberg",
+          "spark.default.parallelism": "11000",
+          "spark.sql.shuffle.partitions": "30000",
+          "spark.chronon.write.repartition": "false",
+          "spark.sql.parquet.columnarReaderBatchSize": "40",
+          "spark.sql.adaptive.advisoryPartitionSizeInBytes": "512MB",
+          "spark.chronon.backfill.small_mode.enabled": "false",
+          "spark.chronon.join.backfill.carry_only_required_cols": "true",
+          "spark.sql.defaultCatalog": "default_iceberg",
+          "spark.sql.catalog.default_iceberg": "ai.chronon.integrations.cloud_gcp.DelegatingBigQueryMetastoreCatalog",
+          "spark.sql.catalog.default_iceberg.catalog-impl": "org.apache.iceberg.gcp.bigquery.BigQueryMetastoreCatalog",
+          "spark.sql.catalog.default_iceberg.io-impl": "org.apache.iceberg.io.ResolvingFileIO",
+          "spark.sql.catalog.default_iceberg.warehouse": "gs://zipline-warehouse-customer/data/tables/",
+          "spark.sql.catalog.default_iceberg.gcp_location": "us",
+          "spark.sql.catalog.default_iceberg.gcp_project": "customer-zipline-dev",
+          "spark.sql.defaultUrlStreamHandlerFactory.enabled": "false",
+          "spark.kryo.registrator": "ai.chronon.integrations.cloud_gcp.ChrononIcebergKryoRegistrator",
+          "spark.sql.catalog.lakehouse_output": "org.apache.iceberg.spark.SparkCatalog",
+          "spark.sql.catalog.lakehouse_output.catalog-impl": "org.apache.iceberg.gcp.bigquery.BigQueryMetastoreCatalog",
+          "spark.sql.catalog.lakehouse_output.io-impl": "org.apache.iceberg.io.ResolvingFileIO",
+          "spark.sql.catalog.lakehouse_output.warehouse": "gs://zipline-warehouse-customer/data/tables/",
+          "spark.sql.catalog.lakehouse_output.gcp_location": "us",
+          "spark.sql.catalog.lakehouse_output.gcp_project": "customer-zipline-dev"
+        }
+      },
+      "scheduleCron": "@daily",
+      "historicalBackfill": 0
+    }
+  },
+  "sources": [
+    {
+      "events": {
+        "table": "data.purchases",
+        "query": {
+          "selects": {
+            "user_id": "user_id",
+            "purchase_price": "purchase_price"
+          },
+          "timeColumn": "ts"
+        }
+      }
+    }
+  ],
+  "keyColumns": [
+    "user_id"
+  ],
+  "aggregations": [
+    {
+      "inputColumn": "purchase_price",
+      "operation": 7,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 3,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "purchase_price",
+      "operation": 6,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 3,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "purchase_price",
+      "operation": 8,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 3,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "purchase_price",
+      "operation": 13,
+      "argMap": {
+        "k": "10"
+      }
+    }
+  ],
+  "backfillStartDate": "2023-11-01"
+}

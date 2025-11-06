@@ -1,0 +1,163 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
+package ai.chronon.api
+
+import ai.chronon.api.Extensions._
+import org.apache.commons.lang3.time.FastDateFormat
+
+import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.{Calendar, Locale, TimeZone}
+import scala.collection.mutable.ListBuffer
+
+case class PartitionSpec(column: String, format: String, spanMillis: Long) {
+
+  private def partitionFormatter =
+    DateTimeFormatter
+      .ofPattern(format, Locale.US)
+      .withZone(ZoneOffset.UTC)
+
+  def expandRange(startDateStr: String, endDateStr: String): List[String] = {
+    // Parse/format in UTC with a stable locale
+    val tz = TimeZone.getTimeZone("UTC")
+    val dateFormat = FastDateFormat.getInstance(format, tz, Locale.US)
+
+    // Parse start and end dates
+    val startDate = dateFormat.parse(startDateStr)
+    val endDate = dateFormat.parse(endDateStr)
+
+    if (startDate.after(endDate)) return List.empty
+
+    // List to store all dates
+    val dates = ListBuffer[String]()
+
+    // Use Calendar for date iteration
+    val calendar = Calendar.getInstance(tz, Locale.US)
+    calendar.setTime(startDate)
+
+    // Iterate from start to end date
+    while (!calendar.getTime.after(endDate)) {
+      // Format current date and add to list
+      dates += dateFormat.format(calendar.getTime)
+
+      // Move to next day
+      calendar.add(Calendar.DAY_OF_MONTH, 1)
+    }
+
+    dates.toList
+  }
+
+  private def sdf = {
+    val formatter = new SimpleDateFormat(format)
+    formatter.setTimeZone(TimeZone.getTimeZone("UTC"))
+    formatter
+  }
+
+  def epochMillis(partition: String): Long = {
+    sdf.parse(partition).getTime
+  }
+
+  // what is the date portion of this timestamp
+  def at(millis: Long): String = partitionFormatter.format(Instant.ofEpochMilli(millis))
+
+  def before(s: String): String = shift(s, -1)
+
+  def calendarGrain(window: Window): Int = window.timeUnit match {
+    case TimeUnit.DAYS    => Calendar.DAY_OF_MONTH
+    case TimeUnit.HOURS   => Calendar.HOUR_OF_DAY
+    case TimeUnit.MINUTES => Calendar.MINUTE
+  }
+
+  // TODO-test:
+  // takes a string and a window and returns the string representing the advancement by window
+  def plusFast(s: String, window: Window, sign: Int = 1): String = {
+    // Parse/format in UTC with a stable locale
+    val tz = TimeZone.getTimeZone("UTC")
+    val dateFormat = FastDateFormat.getInstance(format, tz, Locale.US)
+
+    // Parse the given timestamp
+    val date = dateFormat.parse(s)
+
+    // Use Calendar for date math in UTC/Locale.US
+    val calendar = Calendar.getInstance(tz, Locale.US)
+    calendar.setTime(date)
+
+    // Advance by the window length
+    calendar.add(calendarGrain(window), sign * window.length)
+
+    // Format back to string
+    dateFormat.format(calendar.getTime)
+  }
+
+  def afterFast(s: String): String = plusFast(s, WindowUtils.Day)
+
+  // TODO-test:
+  def minusFast(s: String, window: Window): String = plusFast(s, window, -1)
+
+  def minus(s: String, window: Window): String = at(epochMillis(s) - window.millis)
+
+  def plus(s: String, window: Window): String = at(epochMillis(s) + window.millis)
+
+  def minus(partition: String, window: Option[Window]): String = {
+    if (partition == null) return null
+    window.map(minus(partition, _)).getOrElse(partition)
+  }
+
+  def plus(partition: String, window: Option[Window]): String = {
+    if (partition == null) return null
+    window.map(plus(partition, _)).getOrElse(partition)
+  }
+
+  def after(s: String): String = shift(s, 1)
+
+  // all partitions `count` ahead of `s` including `s` - result size will be count + 1
+  // used to compute effected output partitions for a given partition
+  def partitionsFrom(s: String, count: Int): Seq[String] = s +: (1 to count).map(shift(s, _))
+
+  def partitionsFrom(s: String, window: Window): Seq[String] = {
+    val count = math.ceil(window.millis.toDouble / spanMillis).toInt
+    partitionsFrom(s, count)
+  }
+
+  def before(millis: Long): String = at(millis - spanMillis)
+
+  def shift(date: String, days: Int): String =
+    partitionFormatter.format(Instant.ofEpochMilli(epochMillis(date) + days * spanMillis))
+
+  def now: String = at(System.currentTimeMillis())
+
+  def shiftBackFromNow(days: Int): String = shift(now, 0 - days)
+
+  def intervalWindow: Window = {
+    if (spanMillis == WindowUtils.Day.millis) WindowUtils.Day
+    else if (spanMillis == WindowUtils.Hour.millis) WindowUtils.Hour
+    else
+      throw new UnsupportedOperationException(
+        s"Partition Intervals should be either hour or day - found ${spanMillis / 60 * 1000} minutes")
+  }
+
+  def translate(date: String, targetSpec: PartitionSpec): String = {
+    val millis = epochMillis(date)
+    targetSpec.at(millis)
+  }
+}
+
+object PartitionSpec {
+  val daily: PartitionSpec = PartitionSpec("ds", "yyyy-MM-dd", 24 * 60 * 60 * 1000)
+}

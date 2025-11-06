@@ -1,0 +1,25 @@
+{
+  "executionInfo": {
+    "env": {
+      "common": {
+        "GCP_PROJECT_ID": "customer-zipline-dev",
+        "GCP_REGION": "us-central1",
+        "CUSTOMER_ID": "customer",
+        "GCP_DATAPROC_CLUSTER_NAME": "zipline-customer-cluster",
+        "GCP_BIGTABLE_INSTANCE_ID": "zipline-customer-instance",
+        "FLINK_STATE_URI": "gs://zipline-warehouse-customer/flink-state",
+        "CLOUD_PROVIDER": "GCP",
+        "ARTIFACT_PREFIX": "gs://zipline-artifacts-customer",
+        "STREAMING_MANIFEST_BUCKET_PATH": "gs://zipline-warehouse-customer/flink-manifest"
+      },
+      "modeEnvironments":{}
+    },
+    "conf": {
+      "common": {
+        "spark.chronon.partition.format": "yyyy-MM-dd",
+        "spark.chronon.partition.column": "_DATE"
+      },
+      "modeConfigs":{}
+    }
+  }
+}

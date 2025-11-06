@@ -1,0 +1,9 @@
+-r base.in
+tox==4.20.0
+pytest-cov
+black
+pre-commit
+isort
+autoflake
+zipp==3.19.1
+importlib-metadata==8.4.0

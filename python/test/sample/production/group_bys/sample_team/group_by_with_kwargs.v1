@@ -1,0 +1,73 @@
+{
+  "metaData": {
+    "name": "sample_team.group_by_with_kwargs.v1",
+    "team": "sample_team",
+    "outputNamespace": "chronon_db",
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "online": 1,
+    "executionInfo": {
+      "scheduleCron": "@daily",
+      "historicalBackfill": 0
+    }
+  },
+  "sources": [
+    {
+      "events": {
+        "table": "sample_namespace.sample_table_group_by",
+        "query": {
+          "selects": {
+            "group_by_subject": "group_by_subject_expr_old_version",
+            "event": "event_expr_old_version"
+          },
+          "startPartition": "2021-03-01",
+          "endPartition": "2021-04-09",
+          "timeColumn": "UNIX_TIMESTAMP(ts) * 1000"
+        }
+      }
+    },
+    {
+      "events": {
+        "table": "sample_namespace.another_sample_table_group_by",
+        "query": {
+          "selects": {
+            "group_by_subject": "possibly_different_group_by_subject_expr",
+            "event": "possibly_different_event_expr"
+          },
+          "startPartition": "2021-03-01",
+          "timeColumn": "__timestamp"
+        }
+      }
+    }
+  ],
+  "keyColumns": [
+    "group_by_subject"
+  ],
+  "aggregations": [
+    {
+      "inputColumn": "event",
+      "operation": 7,
+      "argMap": {}
+    },
+    {
+      "inputColumn": "event",
+      "operation": 12,
+      "argMap": {
+        "k": "20",
+        "percentiles": "[0.5]"
+      }
+    },
+    {
+      "inputColumn": "event",
+      "operation": 7,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,248 @@
+{
+  "metaData": {
+    "name": "risk.user_transactions.txn_join_d",
+    "online": 1,
+    "production": 0,
+    "customJson": "{\"check_consistency\": false, \"lag\": 0, \"join_tags\": null, \"join_part_tags\": {}}",
+    "dependencies": [
+      "{\"name\": \"wait_for_data.users_ds\", \"spec\": \"data.users/ds={{ ds }}\", \"start\": null, \"end\": null}",
+      "{\"name\": \"wait_for_data.txn_events_ds\", \"spec\": \"data.txn_events/ds={{ ds }}\", \"start\": null, \"end\": null}",
+      "{\"name\": \"wait_for_data.merchants_ds\", \"spec\": \"data.merchants/ds={{ ds }}\", \"start\": null, \"end\": null}"
+    ],
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "outputNamespace": "default",
+    "team": "risk",
+    "samplePercent": 100.0,
+    "offlineSchedule": "@daily"
+  },
+  "left": {
+    "events": {
+      "table": "data.users",
+      "query": {
+        "selects": {
+          "user_id": "user_id",
+          "ts": "ts"
+        },
+        "timeColumn": "ts",
+        "setups": []
+      }
+    }
+  },
+  "joinParts": [
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "risk.transaction_events.txn_group_by_user",
+          "online": 1,
+          "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+          "dependencies": [
+            "{\"name\": \"wait_for_data.txn_events_ds\", \"spec\": \"data.txn_events/ds={{ ds }}\", \"start\": null, \"end\": null}"
+          ],
+          "team": "risk",
+          "offlineSchedule": "@daily"
+        },
+        "sources": [
+          {
+            "events": {
+              "table": "data.txn_events",
+              "query": {
+                "selects": {
+                  "user_id": "user_id",
+                  "transaction_amount": "transaction_amount",
+                  "transaction_type": "transaction_type"
+                },
+                "timeColumn": "transaction_time",
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "user_id"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "transaction_amount",
+            "operation": 6,
+            "argMap": {},
+            "windows": [
+              {
+                "length": 1,
+                "timeUnit": 0
+              },
+              {
+                "length": 1,
+                "timeUnit": 1
+              },
+              {
+                "length": 30,
+                "timeUnit": 1
+              },
+              {
+                "length": 365,
+                "timeUnit": 1
+              }
+            ]
+          },
+          {
+            "inputColumn": "transaction_amount",
+            "operation": 7,
+            "argMap": {},
+            "windows": [
+              {
+                "length": 1,
+                "timeUnit": 0
+              }
+            ]
+          }
+        ]
+      },
+      "prefix": "user"
+    },
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "risk.transaction_events.txn_group_by_merchant",
+          "online": 1,
+          "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+          "dependencies": [
+            "{\"name\": \"wait_for_data.txn_events_ds\", \"spec\": \"data.txn_events/ds={{ ds }}\", \"start\": null, \"end\": null}"
+          ],
+          "team": "risk",
+          "offlineSchedule": "@daily"
+        },
+        "sources": [
+          {
+            "events": {
+              "table": "data.txn_events",
+              "query": {
+                "selects": {
+                  "merchant_id": "merchant_id",
+                  "transaction_amount": "transaction_amount",
+                  "transaction_type": "transaction_type"
+                },
+                "timeColumn": "transaction_time",
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "merchant_id"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "transaction_amount",
+            "operation": 6,
+            "argMap": {},
+            "windows": [
+              {
+                "length": 1,
+                "timeUnit": 0
+              },
+              {
+                "length": 1,
+                "timeUnit": 1
+              },
+              {
+                "length": 30,
+                "timeUnit": 1
+              },
+              {
+                "length": 365,
+                "timeUnit": 1
+              }
+            ]
+          },
+          {
+            "inputColumn": "transaction_amount",
+            "operation": 7,
+            "argMap": {},
+            "windows": [
+              {
+                "length": 1,
+                "timeUnit": 0
+              }
+            ]
+          }
+        ]
+      },
+      "prefix": "merchant"
+    },
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "risk.user_data.user_group_by",
+          "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+          "dependencies": [
+            "{\"name\": \"wait_for_data.users_ds\", \"spec\": \"data.users/ds={{ ds }}\", \"start\": null, \"end\": null}"
+          ],
+          "team": "risk",
+          "offlineSchedule": "@daily"
+        },
+        "sources": [
+          {
+            "entities": {
+              "snapshotTable": "data.users",
+              "query": {
+                "selects": {
+                  "user_id": "user_id",
+                  "account_age": "account_age",
+                  "account_balance": "account_balance",
+                  "credit_score": "credit_score",
+                  "number_of_devices": "number_of_devices",
+                  "country": "country",
+                  "account_type": "account_type",
+                  "preferred_language": "preferred_language"
+                },
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "user_id"
+        ]
+      },
+      "prefix": "user"
+    },
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "risk.merchant_data.merchant_group_by",
+          "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+          "dependencies": [
+            "{\"name\": \"wait_for_data.merchants_ds\", \"spec\": \"data.merchants/ds={{ ds }}\", \"start\": null, \"end\": null}"
+          ],
+          "team": "risk",
+          "offlineSchedule": "@daily"
+        },
+        "sources": [
+          {
+            "entities": {
+              "snapshotTable": "data.merchants",
+              "query": {
+                "selects": {
+                  "merchant_id": "merchant_id",
+                  "account_age": "account_age",
+                  "zipcode": "zipcode",
+                  "is_big_merchant": "is_big_merchant",
+                  "country": "country",
+                  "account_type": "account_type",
+                  "preferred_language": "preferred_language"
+                },
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "merchant_id"
+        ]
+      },
+      "prefix": "merchant"
+    }
+  ]
+}

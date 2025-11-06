@@ -1,0 +1,116 @@
+{
+  "metaData": {
+    "name": "quickstart.purchases.v1",
+    "team": "quickstart",
+    "outputNamespace": "data",
+    "online": 1,
+    "sourceFile": "/Users/customer/zipline/group_bys/quickstart/purchases.py",
+    "executionInfo": {
+      "env": {
+        "common": {
+          "VERSION": "latest",
+          "GCP_PROJECT_ID": "customer-zipline-dev",
+          "GCP_REGION": "us-central1",
+          "CUSTOMER_ID": "customer",
+          "GCP_DATAPROC_CLUSTER_NAME": "zipline-customer-cluster",
+          "GCP_BIGTABLE_INSTANCE_ID": "zipline-customer-instance",
+          "FLINK_STATE_URI": "gs://zipline-warehouse-customer/flink-state",
+          "CLOUD_PROVIDER": "GCP"
+        },
+        "modeEnvironments":{}
+      },
+      "conf": {
+        "common": {
+          "spark.chronon.partition.format": "yyyy-MM-dd"
+        },
+        "modeConfigs": {}
+      },
+      "scheduleCron": "@daily",
+      "historicalBackfill": 0
+    }
+  },
+  "sources": [
+    {
+      "events": {
+        "table": "data.purchases",
+        "query": {
+          "selects": {
+            "user_id": "user_id",
+            "purchase_price": "purchase_price"
+          },
+          "timeColumn": "ts"
+        }
+      }
+    }
+  ],
+  "keyColumns": [
+    "user_id"
+  ],
+  "aggregations": [
+    {
+      "inputColumn": "purchase_price",
+      "operation": 7,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 3,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "purchase_price",
+      "operation": 6,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 3,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "purchase_price",
+      "operation": 8,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 3,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "purchase_price",
+      "operation": 13,
+      "argMap": {
+        "k": "10"
+      }
+    }
+  ],
+  "backfillStartDate": "2023-11-01"
+}

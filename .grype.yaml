@@ -1,0 +1,17 @@
+ignore:
+  # CVE-2025-7709: Integer overflow in SQLite FTS5 extension
+  # Medium severity vulnerability in libsqlite3-0 version 3.46.1-7
+  # No fix available in Debian Trixie - marked as "wont-fix"
+  - vulnerability: "CVE-2025-7709"
+    package:
+      name: "libsqlite3-0"
+    fix-state: "wont-fix"
+
+  # Curl CVE exceptions - required for fetcher container functionality
+  # Used for Amazon Corretto key download, Google Cloud Profiler download, and healthcheck
+  - package:
+      name: "curl"
+      type: "deb"
+  - package:
+      name: "libcurl4t64"
+      type: "deb"

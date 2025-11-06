@@ -1,0 +1,77 @@
+name: Push to Platform
+
+on:
+  push:
+    branches: [main-passing-tests]
+
+jobs:
+  subtree-pull:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout platform repo
+        uses: actions/checkout@v4
+        with:
+          repository: "zipline-ai/platform"
+          ssh-key: ${{ secrets.PLATFORM_REPO_DEPLOY_KEY }}
+          fetch-depth: 0  # Required for subtree operations
+          ref: main       # Ensure we're on the main branch
+
+      - name: Set up Git config
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+      - name: Set up SSH key for Chronon access and pull subtree
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.CHRONON_REPO_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          # Add GitHub's SSH key to known_hosts
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          
+          # Set up SSH agent
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_rsa
+          
+          # Create basic SSH config
+          cat > ~/.ssh/config << EOF
+          Host github.com
+            User git
+            IdentityFile ~/.ssh/id_rsa
+            StrictHostKeyChecking no
+          EOF
+          
+          # Add the SSH remote
+          git remote add chronon git@github.com:zipline-ai/chronon.git || true
+          
+          git fetch chronon main
+          git subtree pull --prefix=chronon chronon main-passing-tests
+
+      - name: Push changes to platform
+        run: git push origin main
+
+  on_fail_notify_slack:
+    needs: [ subtree-pull]
+    if: failure()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Failure Notification
+        uses: slackapi/slack-github-action@v1
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_TESTS_WEBHOOK_URL }}
+        with:
+          payload: |
+            {
+              "text": "Merging to Platform Failed\n\n There was an error merging to platform on commit <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|${{ github.sha }}> on branch ${{ github.ref }}. Please check the logs for more details.",
+              "attachments": [
+                {
+                  "text": "",
+                  "color": "#ff0000"
+                }
+              ]
+            }

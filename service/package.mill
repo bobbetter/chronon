@@ -1,0 +1,56 @@
+package build.service
+import mill._
+import mill.scalalib._
+
+// Service module (Java-based HTTP service)
+object `package` extends build.BaseModule {
+  def moduleDeps = Seq(build.online, build.api, build.service_commons)
+
+  def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingDeps ++ build.Constants.utilityDeps ++
+    Seq(
+      mvn"io.vertx:vertx-core:4.5.22",
+      mvn"io.vertx:vertx-web:4.5.22",
+      mvn"io.micrometer:micrometer-registry-otlp:1.13.6".exclude("com.google.protobuf" -> "protobuf-java"),
+      mvn"io.micrometer:micrometer-registry-prometheus:1.10.13".exclude("com.google.protobuf" -> "protobuf-java"),
+      mvn"io.netty:netty-all:4.1.128.Final",
+      mvn"org.scala-lang:scala-reflect:${scalaVersion()}",
+      mvn"org.scala-lang:scala-compiler:${scalaVersion()}",
+      // add the version of protobuf that is compatible with our cloud deps 
+      mvn"com.google.protobuf:protobuf-java:${build.Constants.protobufVersion}",
+      // Spark CU deps for derivations - we exclude hadoop-client runtime as it transitively brings in an older protobuf 
+      // that we don't want (we use the version defined in Constants)
+      mvn"org.apache.spark::spark-catalyst:${build.Constants.sparkVersion}".exclude("org.apache.hadoop" -> "hadoop-client-runtime"),
+      mvn"org.apache.spark::spark-sql:${build.Constants.sparkVersion}".exclude("org.apache.hadoop" -> "hadoop-client-runtime"),
+      ) ++ Seq(
+        // Force specific versions to get around security vulnerabilities in older versions
+        mvn"com.fasterxml.woodstox:woodstox-core:5.4.0",
+        mvn"org.apache.commons:commons-configuration2:2.10.1",
+        mvn"dnsjava:dnsjava:3.6.1",
+        mvn"com.nimbusds:nimbus-jose-jwt:9.37.4",
+        mvn"commons-net:commons-net:3.9.0",
+        mvn"org.eclipse.jetty:jetty-server:12.0.12",
+        mvn"org.eclipse.jetty:jetty-http:12.0.12",
+        mvn"org.eclipse.jetty:jetty-xml:12.0.12",
+        mvn"net.minidev:json-smart:2.5.2",
+        mvn"commons-beanutils:commons-beanutils:1.11.0",
+        mvn"org.apache.hadoop:hadoop-common:3.4.1",
+      ).map(_.forceVersion())
+
+  override def resources = Task.Sources(
+    moduleDir / "src" / "main" / "resources"
+  )
+  
+  def mainClass = Some("ai.chronon.service.ChrononServiceLauncher")
+
+  def prependShellScript = ""
+
+  object test extends build.BaseJUnit4TestModule {
+    def moduleDeps = Seq(build.service)
+    def mvnDeps = Seq(
+      mvn"junit:junit:4.13.2",
+      mvn"com.novocode:junit-interface:0.11",
+      mvn"org.mockito:mockito-core:5.12.0",
+      mvn"io.vertx:vertx-unit:4.5.22"
+    )
+  }
+}

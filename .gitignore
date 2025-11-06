@@ -1,0 +1,129 @@
+**/target/
+**/target-*/
+**/target-embedded/
+**/target-31/
+**/.bsp/
+*.class
+*.jar
+*.war
+*.ear
+*.logs
+*.iml
+*.db
+.idea/
+.ijwb/
+**/local_warehouse/
+.eclipse
+**/.vscode/
+**/__pycache__/
+**/.DS_Store
+api/python/ai/chronon/resources/gcp/compiled/
+api/python/test/sample/compiled/
+api/python/test/sample/production/
+api/python/ai/chronon/api/
+api/python/ai/chronon/observability/
+api/python/ai/chronon/fetcher/
+api/python/ai/chronon/hub/
+api/python/ai/chronon/lineage/
+api/python/ai/chronon/orchestration/
+api/python/ai/chronon/planner/
+api/python/ai/chronon/agent/
+api/python/agent/
+api/python/.coverage
+api/python/htmlcov/
+**/derby.log
+cs
+
+# Documentation builds
+docs/build/
+
+# Python distribution and packaging
+python/dist/
+python/eggs/
+python/sdist/
+python/build/
+python/ai/chronon/thrift/
+python/*.egg-info/
+*.egg
+**/*.egg-info/
+python/src/agent/
+python/src/gen_thrift/
+
+# spark test scratch area
+**/spark-warehouse/
+**/metastore_db/
+mvn_settings.xml
+/.run/spark Clean.run.xml
+
+# Release folder
+releases
+
+# Frontend build assets
+/hub/public
+
+# Frontend node_modules
+/frontend/node_modules
+
+# Frontend Output
+/frontend/.output
+/frontend/.vercel
+/frontend/.svelte-kit
+/frontend/build
+
+# Frontend OS
+/frontend/Thumbs.db
+
+# Frontend Env
+/frontend/.env
+/frontend/.env.*
+!/frontend/.env.example
+!/frontend/.env.test
+
+# Docker environment files
+docker/fetcher/.env
+docker/**/.env
+
+# Frontend Vite
+/frontend/vite.config.js.timestamp-*
+/frontend/vite.config.ts.timestamp-*
+
+# Frontend Test Results
+/frontend/test-results
+
+# Frontend Thrift generated types
+/frontend/src/lib/types/codegen
+
+# Generated during dynamodb kv store tests
+/cloud_aws/dynamodb-local-metadata.json
+
+# Elastic Search files
+/docker-init/elasticsearch-data
+
+# Metals and Bloop
+.metals/
+.bloop/
+.worksheet/
+.project/
+
+# Metals-generated sbt files
+/project/**/metals.sbt
+/project/**/metals.sbt.lock
+
+# Bazel temporary output
+/bazel-*
+
+# Local bazelrc setup
+.bazelrc.local
+
+# Bazel mod files (currently unused)
+MODULE.bazel*
+
+/plugins/vscode/node_modules
+
+.claude/
+
+**/api/py/ai/chronon/observability/__init__.py
+
+
+# mill build output
+out/**

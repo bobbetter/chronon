@@ -1,0 +1,76 @@
+name: "gcp-docker-quickstart"
+services:
+  bigtable:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    command: gcloud beta emulators bigtable start --host-port=0.0.0.0:8086
+    ports:
+      - "8086:8086"
+  bigtable-init:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    environment:
+      - BIGTABLE_EMULATOR_HOST=bigtable:8086
+      - GOOGLE_APPLICATION_CREDENTIALS=/dev/null  # Disable credentials lookup
+    depends_on:
+      - bigtable
+    command: >
+      bash -c "
+        until cbt -project quickstart-project -instance quickstart-instance ls > /dev/null; do echo 'Waiting for BigTable emulator'; sleep 1; done &&
+        echo 'Creating tables...' &&
+        cbt -project quickstart-project -instance quickstart-instance createtable GROUPBY_BATCH &&
+        cbt -project quickstart-project -instance quickstart-instance createfamily GROUPBY_BATCH cf &&
+        cbt -project quickstart-project -instance quickstart-instance createtable GROUPBY_STREAMING &&
+        cbt -project quickstart-project -instance quickstart-instance createfamily GROUPBY_STREAMING cf &&
+        echo 'BigTable Chronon tables created!'"
+  load-serving-data:
+    build:
+      context: ../..
+      dockerfile: ../../Dockerfile
+    depends_on:
+      - bigtable-init
+    environment:
+      - USER=chronon
+      - SPARK_SUBMIT_PATH=spark-submit
+      - GCP_PROJECT_ID=quickstart-project
+      - GCP_INSTANCE_ID=quickstart-instance
+      - JAVA_OPTS="-Xms8g -Xmx8g"
+      - CHRONON_ONLINE_CLASS=ai.chronon.integrations.cloud_gcp.GcpApiImpl
+      - BIGTABLE_EMULATOR_HOST=bigtable:8086 # BT spark connector etc expects the host:port
+      - CLASSPATH=/opt/spark/jars/* # add Spark jars to classpath
+    volumes:
+        - ./scripts:/srv/chronon/quickstart
+    command: >
+      bash -c "
+        /srv/chronon/quickstart/load_data.sh"
+  statsd:
+    image: node:latest
+    ports:
+      - "8125:8125/udp"
+    command: sh -c "npm install -g statsd-logger && statsd-logger > /dev/null 2>&1"
+  app:
+    build:
+      context: ../..
+      dockerfile: ../../Dockerfile
+    depends_on:
+      - load-serving-data
+      - statsd
+    environment:
+      - USER=chronon
+      - GCP_PROJECT_ID=quickstart-project
+      - GCP_INSTANCE_ID=quickstart-instance
+      - JAVA_OPTS="-Xms8g -Xmx8g"
+      - CHRONON_ONLINE_CLASS=ai.chronon.integrations.cloud_gcp.GcpApiImpl
+      - STATSD_HOST=statsd
+      - BIGTABLE_EMULATOR_HOST=bigtable:8086 # BT spark connector etc expects the host:port
+    volumes:
+      - ./scripts:/srv/chronon/quickstart
+    command: >
+      bash -c "
+        /srv/chronon/quickstart/fetcher_launch.sh"
+    ports:
+      - "9000:9000"
+    healthcheck:
+      interval: 1s
+      retries: 5
+      start_period: 60s
+      test: curl -sS --fail http://app:9000/ping
+      timeout: 5s

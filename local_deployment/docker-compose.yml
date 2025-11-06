@@ -1,0 +1,256 @@
+x-aws-config: &aws-config
+  AWS_DEFAULT_REGION: us-west-2
+  AWS_ACCESS_KEY_ID: local
+  AWS_SECRET_ACCESS_KEY: local
+
+services:
+  chronon-spark:
+    build:
+      context: ..
+      dockerfile: local_deployment/chronon-spark/Dockerfile
+
+    environment:
+      CHRONON_DRIVER_JAR: /srv/chronon/jars/chronon-spark-assembly.jar
+      CHRONON_ONLINE_JAR: /srv/chronon/jars/chronon-aws-assembly.jar
+      CHRONON_ONLINE_CLASS: ai.chronon.integrations.aws.AwsApiImpl
+      USER: spark
+      SPARK_SUBMIT_PATH: /opt/spark/bin/spark-submit
+      SPARK_CONF_DIR: /srv/chronon/conf
+      JOB_MODE: local[*]
+      PARALLELISM: 2
+      EXECUTOR_MEMORY: 2G
+      EXECUTOR_CORES: 4
+      DRIVER_MEMORY: 1G
+      DDB_BULKPUT_BATCH_SIZE: 100
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
+      <<: *aws-config
+      CLOUD_PROVIDER: AWS
+
+    volumes:
+      - ../out/spark/assembly.dest/chronon-spark-assembly.jar:/srv/chronon/jars/chronon-spark-assembly.jar:ro
+      - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:ro
+      - ./app:/srv/chronon/app
+      - ./chronon-spark:/srv/chronon/conf:ro
+      - ./chronon-spark/metastore:/srv/chronon/metastore
+    restart: unless-stopped
+    networks:
+      - chronon-net
+
+  flink-jobmanager:
+    build:
+      context: .
+      dockerfile: chronon-flink/Dockerfile
+    container_name: flink-jobmanager
+    command: ["jobmanager"]
+    environment:
+      FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager"
+      CLASSPATH: /srv/chronon/jars/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-flink-connectors-assembly.jar
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
+      <<: *aws-config
+    volumes:
+      - ../out/flink/assembly.dest/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-flink-assembly.jar:ro
+      - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:ro
+      - ../out/flink_connectors/assembly.dest/out.jar:/srv/chronon/jars/chronon-flink-connectors-assembly.jar:ro
+    ports:
+      - "8081:8081"
+    depends_on:
+      - localstack
+    networks:
+      - chronon-net
+
+  flink-taskmanager:
+    build:
+      context: .
+      dockerfile: chronon-flink/Dockerfile
+    container_name: flink-taskmanager
+    command: ["taskmanager"]
+    environment:
+      FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager\ntaskmanager.numberOfTaskSlots: 4"
+      CLASSPATH: /srv/chronon/jars/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-flink-connectors-assembly.jar
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
+      <<: *aws-config
+    volumes:
+      - ../out/flink/assembly.dest/chronon-flink-assembly.jar:/srv/chronon/jars/chronon-flink-assembly.jar:ro
+      - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/srv/chronon/jars/chronon-aws-assembly.jar:ro
+      - ../out/flink_connectors/assembly.dest/out.jar:/srv/chronon/jars/chronon-flink-connectors-assembly.jar:ro
+    depends_on:
+      - flink-jobmanager
+      - localstack
+    networks:
+      - chronon-net
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "19092:19092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:19092"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:19092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"  # static for single-node KRaft
+    networks:
+      - chronon-net
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      DYNAMIC_CONFIG_ENABLED: 'true'
+    depends_on:
+      - kafka
+    restart: unless-stopped
+    networks:
+      - chronon-net
+
+  dynamodb-local:
+    build:
+      context: .
+      dockerfile: dynamodb-local/Dockerfile
+    container_name: dynamodb-local
+    environment:
+      <<: *aws-config
+      AWS_REGION: us-west-2  # dynamodb-local needs both AWS_DEFAULT_REGION and AWS_REGION
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./dynamodb-data:/home/dynamodblocal/data
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
+    restart: unless-stopped
+    networks:
+      - chronon-net
+    user: "1000:1000"
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566"      # LocalStack Gateway (all services)
+    environment:
+      - SERVICES=kinesis
+      - DEBUG=1
+    volumes:
+      - ./localstack-data:/var/lib/localstack
+    restart: unless-stopped
+    networks:
+      - chronon-net
+
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin:latest
+    container_name: dynamodb-admin
+    ports:
+      - "8001:8001"
+    environment:
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
+      <<: *aws-config
+      AWS_REGION: us-west-2  # dynamodb-local needs both AWS_DEFAULT_REGION and AWS_REGION
+    depends_on:
+      - dynamodb-local
+    restart: unless-stopped
+    networks:
+      - chronon-net
+
+  duckui:
+    build:
+      context: ./duckui
+    environment:
+      SPARK_WAREHOUSE_PATH: /srv/chronon/metastore/warehouse
+    volumes:
+      - ./duckui:/srv/chronon/duckui
+      - ./chronon-spark/metastore:/srv/chronon/metastore:ro
+    working_dir: /srv/chronon/duckui
+    ports:
+      - "8501:8501"
+    command: ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    depends_on:
+      - chronon-spark
+    networks:
+      - chronon-net
+
+  ui-client:
+    build:
+      context: ./chronon-ui
+      dockerfile: client/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=development
+      - PORT=5000
+      - VITE_API_URL=http://localhost:8005
+    depends_on:
+      - ui-server
+    volumes:
+      # Mount source code for hot reload
+      - ./chronon-ui/client:/app/client
+      - ./chronon-ui/vite.config.ts:/app/vite.config.ts
+      - ./chronon-ui/tsconfig.json:/app/tsconfig.json
+      - ./chronon-ui/tailwind.config.ts:/app/tailwind.config.ts
+      - ./chronon-ui/postcss.config.js:/app/postcss.config.js
+      - ./chronon-ui/components.json:/app/components.json
+      # Preserve node_modules in container
+      - /app/node_modules
+    restart: unless-stopped
+    container_name: chronon-ui-client
+    stdin_open: true
+    tty: true
+    networks:
+      - chronon-net
+
+  ui-server:
+    build:
+      context: .
+      dockerfile: chronon-ui/server/Dockerfile
+    ports:
+      - "8005:8005"
+    environment:
+      PYTHONUNBUFFERED: 1
+      KINESIS_ENDPOINT_URL: http://localstack:4566
+      <<: *aws-config
+
+    volumes:
+      - ./chronon-ui/server:/app/server
+      - ./app:/app/server/chronon_config
+      - ./chronon-spark/metastore:/app/server/spark-data:ro
+      # Mount Docker socket to allow triggering Spark jobs via Docker API
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    container_name: chronon-ui-server
+    stdin_open: true
+    tty: true
+    networks:
+      - chronon-net
+    depends_on:
+      - chronon-spark
+
+
+  fetcher-service:
+    build:
+      context: ..
+      dockerfile: local_deployment/fetcher-service/Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      FETCHER_SERVICE_HOST: 0.0.0.0
+      FETCHER_SERVICE_PORT: "8083"
+      DYNAMO_ENDPOINT: http://host.docker.internal:8000
+      <<: *aws-config
+    volumes:
+      - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/opt/app/lib/chronon-aws-assembly.jar:ro
+      - ./fetcher-service/fetcher-service.log:/opt/app/fetcher-service.log
+    networks:
+      - chronon-net
+networks:
+  chronon-net:

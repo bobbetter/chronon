@@ -1,0 +1,270 @@
+{
+  "metaData": {
+    "name": "sample_team.sample_join_with_derivations_on_external_parts.v1",
+    "team": "sample_team",
+    "outputNamespace": "chronon_db",
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "online": 0,
+    "production": 0,
+    "samplePercent": 100.0,
+    "executionInfo": {
+      "scheduleCron": "@daily"
+    }
+  },
+  "left": {
+    "events": {
+      "table": "sample_namespace.sample_table_group_by",
+      "query": {
+        "selects": {
+          "event": "event_expr",
+          "group_by_subject": "group_by_expr",
+          "ts": "ts"
+        },
+        "startPartition": "2021-04-09",
+        "timeColumn": "ts"
+      }
+    }
+  },
+  "joinParts": [
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "sample_team.event_sample_group_by.v1",
+          "team": "sample_team",
+          "outputNamespace": "sample_namespace",
+          "tableProperties": {
+            "source": "chronon"
+          },
+          "online": 1,
+          "executionInfo": {
+            "scheduleCron": "@daily",
+            "historicalBackfill": 0
+          }
+        },
+        "sources": [
+          {
+            "events": {
+              "table": "sample_namespace.sample_table_group_by",
+              "query": {
+                "selects": {
+                  "event": "event_expr",
+                  "group_by_subject": "group_by_expr"
+                },
+                "startPartition": "2021-04-09",
+                "timeColumn": "ts"
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "group_by_subject"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "event",
+            "operation": 7,
+            "argMap": {},
+            "windows": [
+              {
+                "length": 7,
+                "timeUnit": 1
+              }
+            ]
+          },
+          {
+            "inputColumn": "event",
+            "operation": 7,
+            "argMap": {}
+          },
+          {
+            "inputColumn": "event",
+            "operation": 12,
+            "argMap": {
+              "k": "200",
+              "percentiles": "[0.99, 0.95, 0.5]"
+            }
+          }
+        ]
+      },
+      "keyMapping": {
+        "subject": "group_by_subject"
+      }
+    },
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "sample_team.entity_sample_group_by_from_module.v1",
+          "team": "sample_team",
+          "outputNamespace": "chronon_db",
+          "tableProperties": {
+            "source": "chronon"
+          },
+          "online": 1,
+          "executionInfo": {
+            "scheduleCron": "@daily",
+            "historicalBackfill": 0
+          }
+        },
+        "sources": [
+          {
+            "entities": {
+              "snapshotTable": "sample_table.sample_entity_snapshot",
+              "mutationTable": "sample_table.sample_entity_mutations/hr=00:00",
+              "mutationTopic": "sample_topic",
+              "query": {
+                "selects": {
+                  "group_by_subject": "group_by_subject_expr",
+                  "entity": "entity_expr"
+                },
+                "startPartition": "2021-03-01",
+                "timeColumn": "ts"
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "group_by_subject"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "entity",
+            "operation": 3,
+            "argMap": {}
+          },
+          {
+            "inputColumn": "entity",
+            "operation": 3,
+            "argMap": {},
+            "windows": [
+              {
+                "length": 7,
+                "timeUnit": 1
+              }
+            ]
+          }
+        ]
+      },
+      "keyMapping": {
+        "subject": "group_by_subject"
+      }
+    }
+  ],
+  "onlineExternalParts": [
+    {
+      "source": {
+        "metadata": {
+          "name": "test_external_source",
+          "team": "chronon"
+        },
+        "keySchema": {
+          "kind": 13,
+          "params": [
+            {
+              "name": "key",
+              "dataType": {
+                "kind": 4
+              }
+            }
+          ],
+          "name": "ext_test_external_source_keys"
+        },
+        "valueSchema": {
+          "kind": 13,
+          "params": [
+            {
+              "name": "value_str",
+              "dataType": {
+                "kind": 7
+              }
+            },
+            {
+              "name": "value_long",
+              "dataType": {
+                "kind": 4
+              }
+            },
+            {
+              "name": "value_bool",
+              "dataType": {
+                "kind": 0
+              }
+            }
+          ],
+          "name": "ext_test_external_source_values"
+        }
+      }
+    },
+    {
+      "source": {
+        "metadata": {
+          "name": "contextual",
+          "team": "chronon"
+        },
+        "keySchema": {
+          "kind": 13,
+          "params": [
+            {
+              "name": "context_str",
+              "dataType": {
+                "kind": 7
+              }
+            },
+            {
+              "name": "context_long",
+              "dataType": {
+                "kind": 4
+              }
+            }
+          ],
+          "name": "contextual_keys"
+        },
+        "valueSchema": {
+          "kind": 13,
+          "params": [
+            {
+              "name": "context_str",
+              "dataType": {
+                "kind": 7
+              }
+            },
+            {
+              "name": "context_long",
+              "dataType": {
+                "kind": 4
+              }
+            }
+          ],
+          "name": "contextual_values"
+        }
+      }
+    }
+  ],
+  "derivations": [
+    {
+      "name": "value_str",
+      "expression": "ext_test_external_source_value_str"
+    },
+    {
+      "name": "value_long",
+      "expression": "ext_test_external_source_value_long"
+    },
+    {
+      "name": "value_bool",
+      "expression": "ext_test_external_source_value_bool"
+    },
+    {
+      "name": "context_str",
+      "expression": "ext_contextual_context_str"
+    },
+    {
+      "name": "context_long",
+      "expression": "ext_contextual_context_long"
+    },
+    {
+      "name": "*",
+      "expression": "*"
+    }
+  ]
+}

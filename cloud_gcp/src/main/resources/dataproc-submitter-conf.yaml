@@ -1,0 +1,4 @@
+# configurations for testing
+projectId: "canary-443022"
+region: "us-central1"
+clusterName: "zipline-canary-cluster"

@@ -1,0 +1,6 @@
+asdf-plugin-manager  https://github.com/asdf-community/asdf-plugin-manager.git  b5862c1
+bazelisk             https://github.com/josephtate/asdf-bazelisk.git            9b1cd87
+gcloud               https://github.com/jthegedus/asdf-gcloud.git               00cdf06
+python               https://github.com/danhper/asdf-python.git                 a3a0185
+scala                https://github.com/asdf-community/asdf-scala.git           0533444
+thrift               https://github.com/alisaifee/asdf-thrift.git               fecdd6c
