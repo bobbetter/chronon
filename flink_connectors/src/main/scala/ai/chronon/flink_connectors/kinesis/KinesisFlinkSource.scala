@@ -39,8 +39,6 @@ class KinesisFlinkSource[T](props: Map[String, String],
 
   implicit val parallelism: Int = config.parallelism
 
-  val streamName: String = topicInfo.name
-
   override def getDataStream(topic: String, groupByName: String)(env: StreamExecutionEnvironment,
                                                                  parallelism: Int): SingleOutputStreamOperator[T] = {
 
@@ -50,7 +48,7 @@ class KinesisFlinkSource[T](props: Map[String, String],
     val wrappedSchema = new KinesisDeserializationSchemaWrapper[T](deserializationSchema)
     
     val kinesisConsumer = new FlinkKinesisConsumer[T](
-      streamName,
+      topicInfo.name,
       wrappedSchema,
       config.properties
     )
