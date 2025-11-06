@@ -42,7 +42,7 @@ class TestZiplineHub:
 
         assert result == {"workflowId": "456"}
         mock_post.assert_called_once_with(
-            "http://example.com/workflow/start",
+            "http://example.com/workflow/v2/start",
             json={
                 "confName": "test_conf",
                 "confHash": "hash123",
@@ -51,7 +51,6 @@ class TestZiplineHub:
                 "user": "user1",
                 "start": expected_start,
                 "end": expected_end,
-                "forceRecompute": False,
                 "skipLongRunningNodes": False
             },
             headers={"Content-Type": "application/json"}

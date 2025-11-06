@@ -28,9 +28,8 @@ default = Team(
             "GCP_DATAPROC_CLUSTER_NAME": "zipline-canary-cluster",
             "GCP_BIGTABLE_INSTANCE_ID": "zipline-canary-instance",
             "FLINK_STATE_URI": "gs://zipline-warehouse-canary/flink-state",
-            "FRONTEND_URL": "http://localhost:3000", # gcp_compose:localhost:3000  canary:https://canary-gke.zipline.ai",
-            "HUB_URL": "http://localhost:3903", #  gcp_compose:localhost:3903  canary:https://canary-gke-orch.zipline.ai",
-            # "SA_NAME": "zipline-user", # needed for gcp authentication
+            "FRONTEND_URL": "http://localhost:3000", # gcp_compose:localhost:3000  canary:https://canary.zipline.ai",
+            "HUB_URL": "http://localhost:3903", #  gcp_compose:localhost:3903  canary:https://canary-orch.zipline.ai",
         },
     ),
 )
@@ -116,6 +115,7 @@ gcp = Team(
         modeClusterConfigs={
             RunMode.UPLOAD: {
                 "dataproc.config": generate_dataproc_cluster_config(2, "canary-443022", "gs://zipline-artifacts-canary",
+                                                                    idle_timeout="300s",
                                                                     worker_host_type="n2-highmem-4",
                                                                     master_host_type="n2-highmem-8")
             }

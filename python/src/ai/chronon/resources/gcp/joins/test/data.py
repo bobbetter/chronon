@@ -12,8 +12,11 @@ source = Source(
     events=EventSource(
         table="data.checkouts",
         query=Query(
-            selects=selects("user_id"),  # The primary key used to join various GroupBys together
+            selects=selects(
+                "user_id"
+            ),  # The primary key used to join various GroupBys together
             time_column="ts",
+            start_partition="2023-11-01",
         ),  # The event time used to compute feature values as-of
     )
 )

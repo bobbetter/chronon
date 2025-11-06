@@ -67,6 +67,12 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
 
   private val tableWriteFormat = sparkSession.conf.get("spark.chronon.table_write.format", "").toLowerCase
 
+  // TODO: This should be at the level of groupBy in theory
+  val skewFreeMode: Boolean = sparkSession.conf
+    .get("spark.chronon.join.backfill.mode.skewFree", "true")
+    .toLowerCase()
+    .toBoolean
+
   // transient because the format provider is not always serializable.
   // for example, BigQueryImpl during reflecting with bq flavor
   @transient private lazy val tableFormatProvider: FormatProvider = FormatProvider.from(sparkSession)

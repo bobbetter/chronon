@@ -76,6 +76,11 @@ class DataStreamBuilderTest extends AnyFlatSpec {
                    TopicInfo("topic_name", "kafka", Map("host" -> "X", "port" -> "Y")))
     checkTopicInfo(parse("topic_name"), TopicInfo("topic_name", "kafka", Map.empty))
   }
+  
+  it should "topic info parsing slash in config values" in {
+    checkTopicInfo(parse("kafka://topic_name/host=X/ssl.truststore.location=//etc//kafka//truststore.jks"),
+      TopicInfo("topic_name", "kafka", Map("host" -> "X", "ssl.truststore.location" -> "/etc/kafka/truststore.jks")))
+  }
 
   def checkTopicInfo(actual: TopicInfo, expected: TopicInfo): Unit = {
     if (actual != expected) {

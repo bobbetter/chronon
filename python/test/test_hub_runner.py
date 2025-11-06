@@ -47,9 +47,9 @@ class TestHubRunner:
             'backfill',
             '--repo', canary,
             '--conf', online_join_conf,
+            '--no-use-auth',
             '--start-ds', '2024-01-15',
             '--end-ds', '2024-02-15',
-            '--force-recompute'
         ])
 
         assert result.exit_code == 0
@@ -59,7 +59,7 @@ class TestHubRunner:
         call_args = mock_post.call_args
 
         # Check URL
-        assert call_args[0][0].endswith("/workflow/start")
+        assert call_args[0][0].endswith("/workflow/v2/start")
 
         # Check JSON payload
         json_payload = call_args[1]['json']
@@ -67,7 +67,6 @@ class TestHubRunner:
         assert json_payload['mode'] == "backfill"
         assert json_payload['start'] == "2024-01-15"
         assert json_payload['end'] == "2024-02-15"
-        assert json_payload['forceRecompute'] == True
         assert json_payload['branch'] == "test-branch"
 
         # Check headers
@@ -93,9 +92,9 @@ class TestHubRunner:
             'run-adhoc',
             '--repo', canary,
             '--conf', online_join_conf,
+            '--no-use-auth',
             '--start-ds', '2024-01-15',
             '--end-ds', '2024-02-15',
-            '--force-recompute'
         ])
 
         # start-ds is not supported
@@ -104,6 +103,7 @@ class TestHubRunner:
             'run-adhoc',
             '--repo', canary,
             '--conf', online_join_conf,
+            '--no-use-auth',
             '--end-ds', '2024-02-15',
         ])
         assert result.exit_code == 0
@@ -113,7 +113,7 @@ class TestHubRunner:
         call_args = mock_post.call_args
 
         # Check URL
-        assert call_args[0][0].endswith("/workflow/start")
+        assert call_args[0][0].endswith("/workflow/v2/start")
 
         # Check JSON payload
         json_payload = call_args[1]['json']
@@ -145,6 +145,7 @@ class TestHubRunner:
             'schedule',
             '--repo', canary,
             '--conf', online_join_conf,
+            '--no-use-auth',
         ])
         assert result.exit_code == 0
 
@@ -153,7 +154,7 @@ class TestHubRunner:
         call_args = mock_post.call_args
 
         # Check URL
-        assert call_args[0][0].endswith("/schedule/v1/schedules")
+        assert call_args[0][0].endswith("/schedule/v2/schedules")
 
         # Check JSON payload
         json_payload = call_args[1]['json']

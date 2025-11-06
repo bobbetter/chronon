@@ -158,20 +158,22 @@ object UnionJoin {
     // analyzing with profiler indicates that the catalyst generated code creates
     // too much garbage when dealing with UDF outputs
     // and it particularly memory intensive.
-    val outputRdd: RDD[Row] = unionDf.df.rdd.flatMap { row: Row =>
-      val leftData = row.get(leftIdx).asInstanceOf[mutable.WrappedArray[Row]]
-      val rightData = row.get(rightIdx).asInstanceOf[mutable.WrappedArray[Row]]
-      val aggregatedData: Array[CGenericRow] = aggregationInfo.aggregate(leftData, rightData)
-      val keys = leftKeyIndices.map(row.get)
+    val outputRdd: RDD[Row] = unionDf.df.rdd.mapPartitions { rows: Iterator[Row] =>
+      rows.flatMap { row =>
+        val leftData = row.get(leftIdx).asInstanceOf[mutable.WrappedArray[Row]]
+        val rightData = row.get(rightIdx).asInstanceOf[mutable.WrappedArray[Row]]
+        val aggregatedData: Iterator[CGenericRow] = aggregationInfo.aggregate(leftData, rightData)
+        val keys = leftKeyIndices.map(row.get)
 
-      aggregatedData.iterator.map { data =>
-        val values = data.values
-        val result = new Array[Any](keys.length + values.length)
+        aggregatedData.map { data =>
+          val values = data.values
+          val result = new Array[Any](keys.length + values.length)
 
-        System.arraycopy(keys, 0, result, 0, keys.length)
-        System.arraycopy(values, 0, result, keys.length, values.length)
+          System.arraycopy(keys, 0, result, 0, keys.length)
+          System.arraycopy(values, 0, result, keys.length, values.length)
 
-        new GenericRow(result)
+          new GenericRow(result)
+        }
       }
     }
 
@@ -190,26 +192,21 @@ object UnionJoin {
     }
   }
 
-  def computeJoin(joinConf: api.Join, dateRange: PartitionRange, includeAllLeftColumns: Boolean = true)(implicit
-      tableUtils: TableUtils): DataFrame = {
+  def computeJoin(joinConf: api.Join, dateRange: PartitionRange)(implicit tableUtils: TableUtils): DataFrame = {
 
     val disclaimer = "Support is coming soon."
     require(joinConf.left.isSetEvents, s"Only events sources are supported on the left side of the join. $disclaimer")
     require(!joinConf.isSetBootstrapParts, s"Bootstraps on fast mode are not supported yet. $disclaimer")
     require(!joinConf.isSetLabelParts, s"Label Parts on fast mode are not supported yet. $disclaimer")
-
-    // For multi-join-part case, only validate single join part when includeAllLeftColumns is true
-    if (includeAllLeftColumns) {
-      require(joinConf.getJoinParts.size() == 1, s"Only one join-part is supported on fast mode. $disclaimer")
-    }
+    require(joinConf.getJoinParts.size() == 1, s"Only one join-part is supported on fast mode. $disclaimer")
 
     val joinPart = joinConf.getJoinParts.get(0)
     val leftDf = JoinUtils.leftDf(joinConf, dateRange, tableUtils).get
 
-    val groupByDerivedDf = computeJoinPart(leftDf, joinPart, dateRange, includeAllLeftColumns)
+    val groupByDerivedDf = computeJoinPart(leftDf, joinPart, dateRange, produceFinalJoinOutput = true)
 
     // Apply Join derivations if they exist
-    if (joinConf.isSetDerivations && !joinConf.derivations.isEmpty()) {
+    if (joinConf.isSetDerivations && !joinConf.derivations.isEmpty) {
       val derivations = joinConf.derivations.toScala
       val finalOutputColumns = derivations.finalOutputColumn(groupByDerivedDf.columns)
       groupByDerivedDf.select(finalOutputColumns: _*)
@@ -218,8 +215,16 @@ object UnionJoin {
     }
   }
 
+  def isEligibleForStandaloneRun(joinConf: api.Join): Boolean = {
+    joinConf.left.isSetEvents &&
+    joinConf.getJoinParts.size() == 1 &&
+    joinConf.getJoinParts.get(0).groupBy.inferredAccuracy == Accuracy.TEMPORAL &&
+    !joinConf.isSetBootstrapParts &&
+    !joinConf.isSetLabelParts
+  }
+
   def computeJoinAndSave(joinConf: api.Join, dateRange: PartitionRange)(implicit tableUtils: TableUtils): Unit = {
-    val resultDf = computeJoin(joinConf, dateRange, includeAllLeftColumns = true)
+    val resultDf = computeJoin(joinConf, dateRange)
     logger.info(s"Saving output to ${joinConf.metaData.outputTable}")
     resultDf.save(joinConf.metaData.outputTable)
   }

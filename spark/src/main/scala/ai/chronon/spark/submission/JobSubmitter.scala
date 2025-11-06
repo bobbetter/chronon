@@ -7,6 +7,7 @@ import ai.chronon.spark.submission.JobSubmitterConstants.LocalConfPathArgKeyword
 import ai.chronon.spark.submission.JobSubmitterConstants.OriginalModeArgKeyword
 import ai.chronon.api.{MetaData, ThriftJsonCodec}
 import ai.chronon.api.thrift.TBase
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.reflect.ClassTag
 
@@ -15,6 +16,7 @@ case object SparkJob extends JobType
 case object FlinkJob extends JobType
 
 trait JobSubmitter {
+  @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
   def submit(jobType: JobType,
              submissionProperties: Map[String, String],
@@ -29,6 +31,7 @@ trait JobSubmitter {
 }
 
 object JobSubmitter {
+  @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
   def getArgValue(args: Array[String], argKeyword: String): Option[String] = {
     args
@@ -95,7 +98,7 @@ object JobSubmitter {
       }
     } else None
 
-    println(s"Setting job properties: $modeConfigProperties")
+    logger.info(s"Setting job properties: $modeConfigProperties")
 
     modeConfigProperties
   }

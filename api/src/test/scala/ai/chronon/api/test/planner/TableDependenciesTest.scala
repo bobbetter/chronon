@@ -1,6 +1,6 @@
 package ai.chronon.api.test.planner
 
-import ai.chronon.api.Extensions.WindowUtils
+import ai.chronon.api.Extensions.{WindowUtils, MetadataOps}
 import ai.chronon.api.planner.TableDependencies
 import ai.chronon.api.{Builders, TimeUnit, Window}
 import org.scalatest.flatspec.AnyFlatSpec
@@ -218,5 +218,64 @@ class TableDependenciesTest extends AnyFlatSpec with Matchers {
     result.getEndOffset should equal(WindowUtils.zero())
     result.getStartCutOff should be(null)
     result.getEndCutOff should be(null)
+  }
+
+  "TableDependencies.fromJoinSources" should "create dependencies for JoinSources" in {
+    import ai.chronon.api.Builders._
+
+    // Create upstream join
+    val upstreamJoin = Join(
+      metaData = MetaData(namespace = "test_namespace", name = "upstream_join"),
+      left = Source.events(Query(), table = "test_namespace.upstream_events"),
+      joinParts = Seq.empty,
+      bootstrapParts = Seq.empty
+    )
+
+    // Create sources with JoinSource (as Java List to match actual usage)
+    import scala.jdk.CollectionConverters._
+    val sources = Seq(
+      Source.joinSource(upstreamJoin, Query()),
+      Source.events(Query(), table = "test_namespace.regular_events"), // Regular source (should be filtered out)
+      Source.joinSource(upstreamJoin, Query()) // Another JoinSource
+    ).asJava
+
+    val result = TableDependencies.fromJoinSources(sources)
+
+    // Should only return dependencies for the 2 JoinSources, not the regular source
+    result should have size 2
+
+    result.foreach { dep =>
+      dep.getTableInfo should not be null
+      dep.getTableInfo.getTable should equal(upstreamJoin.metaData.outputTable + "__metadata_upload")
+      dep.getStartOffset should equal(WindowUtils.zero())
+      dep.getEndOffset should equal(WindowUtils.zero())
+    }
+  }
+
+  it should "return empty sequence when no JoinSources are present" in {
+    import ai.chronon.api.Builders._
+    import scala.jdk.CollectionConverters._
+
+    val sources = Seq(
+      Source.events(Query(), table = "test_namespace.events1"),
+      Source.events(Query(), table = "test_namespace.events2")
+    ).asJava
+
+    val result = TableDependencies.fromJoinSources(sources)
+
+    result should be(empty)
+  }
+
+  it should "handle empty source list" in {
+    import scala.jdk.CollectionConverters._
+    val result = TableDependencies.fromJoinSources(Seq.empty.asJava)
+
+    result should be(empty)
+  }
+
+  it should "handle null source list" in {
+    val result = TableDependencies.fromJoinSources(null)
+
+    result should be(empty)
   }
 }

@@ -13,7 +13,7 @@ if __name__ == "__main__":
                                       json=[{"listing_id": "1", "user_id": "user_7"}])
 
     if features_response.status_code != 200:
-        raise Exception(f"Failed to fetch features: {features_response.text}")
+        raise Exception(f"Failed to fetch features. Text:{features_response.text}. Status code: {features_response.status_code}. json: {features_response.json()}")
 
     results = features_response.json()['results'][0]
     features = results['features']

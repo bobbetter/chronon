@@ -2,7 +2,7 @@ package ai.chronon.api.test.planner
 
 import ai.chronon.api
 import ai.chronon.api.Builders.{Join, MetaData}
-import ai.chronon.api.planner.{LocalRunner, MonolithJoinPlanner}
+import ai.chronon.api.planner.{GroupByPlanner, LocalRunner, MonolithJoinPlanner}
 import ai.chronon.api.{Builders, ExecutionInfo, PartitionSpec}
 import ai.chronon.planner.{ConfPlan, Mode}
 import org.scalatest.flatspec.AnyFlatSpec
@@ -373,5 +373,293 @@ class MonolithJoinPlannerTest extends AnyFlatSpec with Matchers {
     // Should have no GroupBy dependencies
     val tableDeps = metadataUploadNode.metaData.executionInfo.tableDependencies.asScala
     tableDeps.size should be(0)
+  }
+
+  // Join Chaining Tests
+
+  it should "include upstream join dependency when GroupBy has JoinSource" in {
+    import ai.chronon.api.Builders._
+
+    // Create upstream GroupBy
+    val upstreamGroupBy = GroupBy(
+      sources = Seq(Source.events(Query(), table = "test_namespace.raw_events")),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(Aggregation(ai.chronon.api.Operation.COUNT, "event_count")),
+      metaData = MetaData(namespace = "test_namespace", name = "upstream_gb")
+    )
+
+    // Create upstream Join
+    val upstreamJoinPart = new ai.chronon.api.JoinPart()
+      .setGroupBy(upstreamGroupBy)
+
+    val upstreamJoin = Join(
+      metaData = MetaData(namespace = "test_namespace", name = "upstream_join"),
+      left = Source.events(Query(), table = "test_namespace.left_events"),
+      joinParts = Seq(upstreamJoinPart),
+      bootstrapParts = Seq.empty
+    )
+
+    // Create downstream GroupBy that uses JoinSource
+    val downstreamGroupBy = GroupBy(
+      sources = Seq(Source.joinSource(upstreamJoin, Query())),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(Aggregation(ai.chronon.api.Operation.SUM, "total_count")),
+      metaData = MetaData(namespace = "test_namespace", name = "downstream_gb")
+    )
+
+    // Create downstream Join
+    val downstreamJoinPart = new ai.chronon.api.JoinPart()
+      .setGroupBy(downstreamGroupBy)
+
+    val downstreamJoin = Join(
+      metaData = MetaData(name = "downstream_join"),
+      left = Source.events(Query(), table = "test_namespace.downstream_left"),
+      joinParts = Seq(downstreamJoinPart),
+      bootstrapParts = Seq.empty
+    )
+
+    val planner = MonolithJoinPlanner(downstreamJoin)
+    val plan = planner.buildPlan
+
+    validateJoinPlan(plan)
+
+    // Verify dependencies in metadata upload node
+    val metadataUploadNode = plan.nodes.asScala.find(_.content.isSetJoinMetadataUpload).get
+    val tableDeps = metadataUploadNode.metaData.executionInfo.tableDependencies.asScala
+
+    // Should have dependencies on both downstream GroupBy and upstream join
+    tableDeps.size should be >= 2
+
+    // Should have dependency on downstream GroupBy (uploadToKV table)
+    val groupByDep = tableDeps.find(_.tableInfo.table.contains("downstream_gb__uploadToKV"))
+    groupByDep should be(defined)
+    
+    // Should have dependency on upstream join's metadata upload
+    val upstreamJoinDep = tableDeps.find(_.tableInfo.table.contains("upstream_join__metadata_upload"))
+    upstreamJoinDep should be(defined)
+  }
+
+  it should "handle multiple upstream join dependencies correctly" in {
+    import ai.chronon.api.Builders._
+
+    // Create first upstream join chain
+    val upstreamGroupBy1 = GroupBy(
+      sources = Seq(Source.events(Query(), table = "test_namespace.events1")),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(Aggregation(ai.chronon.api.Operation.COUNT, "count1")),
+      metaData = MetaData(namespace = "test_namespace", name = "upstream_gb1")
+    )
+
+    val upstreamJoin1 = Join(
+      metaData = MetaData(namespace = "test_namespace", name = "upstream_join1"),
+      left = Source.events(Query(), table = "test_namespace.left1"),
+      joinParts = Seq(new ai.chronon.api.JoinPart().setGroupBy(upstreamGroupBy1)),
+      bootstrapParts = Seq.empty
+    )
+
+    // Create second upstream join chain
+    val upstreamGroupBy2 = GroupBy(
+      sources = Seq(Source.events(Query(), table = "test_namespace.events2")),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(Aggregation(ai.chronon.api.Operation.SUM, "sum2")),
+      metaData = MetaData(namespace = "test_namespace", name = "upstream_gb2")
+    )
+
+    val upstreamJoin2 = Join(
+      metaData = MetaData(namespace = "test_namespace", name = "upstream_join2"),
+      left = Source.events(Query(), table = "test_namespace.left2"),
+      joinParts = Seq(new ai.chronon.api.JoinPart().setGroupBy(upstreamGroupBy2)),
+      bootstrapParts = Seq.empty
+    )
+
+    // Create downstream GroupBys that use both JoinSources
+    val downstreamGroupBy1 = GroupBy(
+      sources = Seq(Source.joinSource(upstreamJoin1, Query())),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(Aggregation(ai.chronon.api.Operation.AVERAGE, "avg1")),
+      metaData = MetaData(namespace = "test_namespace", name = "downstream_gb1")
+    )
+
+    val downstreamGroupBy2 = GroupBy(
+      sources = Seq(Source.joinSource(upstreamJoin2, Query())),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(Aggregation(ai.chronon.api.Operation.MAX, "max2")),
+      metaData = MetaData(namespace = "test_namespace", name = "downstream_gb2")
+    )
+
+    // Create final Join with both chained GroupBys
+    val finalJoin = Join(
+      metaData = MetaData(name = "final_join"),
+      left = Source.events(Query(), table = "test_namespace.final_left"),
+      joinParts = Seq(
+        new ai.chronon.api.JoinPart().setGroupBy(downstreamGroupBy1),
+        new ai.chronon.api.JoinPart().setGroupBy(downstreamGroupBy2)
+      ),
+      bootstrapParts = Seq.empty
+    )
+
+    val planner = MonolithJoinPlanner(finalJoin)
+    val plan = planner.buildPlan
+
+    validateJoinPlan(plan)
+
+    // Verify dependencies include both upstream joins
+    val metadataUploadNode = plan.nodes.asScala.find(_.content.isSetJoinMetadataUpload).get
+    val tableDeps = metadataUploadNode.metaData.executionInfo.tableDependencies.asScala
+
+    // Should have dependencies on both downstream GroupBys and both upstream joins
+    tableDeps.size should be >= 4
+
+    // Verify all expected dependencies exist
+    val gb1Dep = tableDeps.find(_.tableInfo.table.contains("downstream_gb1__uploadToKV"))
+    gb1Dep should be(defined)
+    
+    val gb2Dep = tableDeps.find(_.tableInfo.table.contains("downstream_gb2__uploadToKV"))
+    gb2Dep should be(defined)
+    
+    val join1Dep = tableDeps.find(_.tableInfo.table.contains("upstream_join1__metadata_upload"))
+    join1Dep should be(defined)
+    
+    val join2Dep = tableDeps.find(_.tableInfo.table.contains("upstream_join2__metadata_upload"))
+    join2Dep should be(defined)
+  }
+
+  it should "skip upstream join dependencies for streaming GroupBys with JoinSource" in {
+    import ai.chronon.api.Builders._
+
+    // Create upstream Join
+    val upstreamJoin = Join(
+      metaData = MetaData(namespace = "test_namespace", name = "upstream_join"),
+      left = Source.events(Query(), table = "test_namespace.left_events"),
+      joinParts = Seq.empty,
+      bootstrapParts = Seq.empty
+    )
+
+    // Create streaming GroupBy that uses JoinSource
+    // Note: A GroupBy needs both a JoinSource and a regular source with topic for streaming
+    val streamingGroupBy = GroupBy(
+      sources = Seq(
+        Source.joinSource(upstreamJoin, Query()),
+        Source.events(Query(), table = "test_namespace.streaming_events", topic = "streaming_topic")
+      ),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(Aggregation(ai.chronon.api.Operation.COUNT, "stream_count")),
+      metaData = MetaData(namespace = "test_namespace", name = "streaming_chained_gb")
+    )
+
+    // Create Join with streaming GroupBy
+    val joinWithStreamingGroupBy = Join(
+      metaData = MetaData(name = "join_with_streaming_chained"),
+      left = Source.events(Query(), table = "test_namespace.final_left"),
+      joinParts = Seq(new ai.chronon.api.JoinPart().setGroupBy(streamingGroupBy)),
+      bootstrapParts = Seq.empty
+    )
+
+    val planner = MonolithJoinPlanner(joinWithStreamingGroupBy)
+    val plan = planner.buildPlan
+
+    validateJoinPlan(plan)
+
+    // Verify dependencies - should NOT include upstream join metadata upload dependency
+    // because the streaming GroupBy node will handle it
+    val metadataUploadNode = plan.nodes.asScala.find(_.content.isSetJoinMetadataUpload).get
+    val tableDeps = metadataUploadNode.metaData.executionInfo.tableDependencies.asScala
+
+    // Should only have dependency on the streaming GroupBy (streaming table)
+    tableDeps.size should be(1)
+    
+    val streamingDep = tableDeps.find(_.tableInfo.table.contains("streaming_chained_gb__streaming"))
+    streamingDep should be(defined)
+    
+    // Should NOT have upstream join metadata upload dependency (streaming node handles it)
+    val upstreamJoinDeps = tableDeps.filter(_.tableInfo.table.contains("upstream_join__metadata_upload"))
+    upstreamJoinDeps should be(empty)
+  }
+
+  it should "include upstream join dependencies for non-streaming GroupBys with JoinSource" in {
+    import ai.chronon.api.Builders._
+
+    // Create upstream Join
+    val upstreamJoin = Join(
+      metaData = MetaData(namespace = "test_namespace", name = "upstream_join"),
+      left = Source.events(Query(), table = "test_namespace.left_events"),
+      joinParts = Seq.empty,
+      bootstrapParts = Seq.empty
+    )
+
+    // Create non-streaming GroupBy that uses JoinSource
+    val nonStreamingGroupBy = GroupBy(
+      sources = Seq(Source.joinSource(upstreamJoin, Query())),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(Aggregation(ai.chronon.api.Operation.COUNT, "batch_count")),
+      metaData = MetaData(namespace = "test_namespace", name = "batch_chained_gb")
+    )
+    // NO streaming source - this is a batch GroupBy
+
+    // Create Join with non-streaming GroupBy
+    val joinWithBatchGroupBy = Join(
+      metaData = MetaData(name = "join_with_batch_chained"),
+      left = Source.events(Query(), table = "test_namespace.final_left"),
+      joinParts = Seq(new ai.chronon.api.JoinPart().setGroupBy(nonStreamingGroupBy)),
+      bootstrapParts = Seq.empty
+    )
+
+    val planner = MonolithJoinPlanner(joinWithBatchGroupBy)
+    val plan = planner.buildPlan
+
+    validateJoinPlan(plan)
+
+    // Verify dependencies - should include BOTH the GroupBy dependency AND upstream join dependency
+    val metadataUploadNode = plan.nodes.asScala.find(_.content.isSetJoinMetadataUpload).get
+    val tableDeps = metadataUploadNode.metaData.executionInfo.tableDependencies.asScala
+
+    // Should have dependencies on both the batch GroupBy and upstream join
+    tableDeps.size should be(2)
+    
+    val groupByDep = tableDeps.find(_.tableInfo.table.contains("batch_chained_gb__uploadToKV"))
+    groupByDep should be(defined)
+    
+    // Should have upstream join metadata upload dependency since it's not streaming
+    val upstreamJoinDep = tableDeps.find(_.tableInfo.table.contains("upstream_join__metadata_upload"))
+    upstreamJoinDep should be(defined)
+  }
+
+  it should "not add upstream join dependencies for regular (non-chained) GroupBys" in {
+    import ai.chronon.api.Builders._
+
+    // Create regular GroupBy (no JoinSource)
+    val regularGroupBy = GroupBy(
+      sources = Seq(Source.events(Query(), table = "test_namespace.regular_events")),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(Aggregation(ai.chronon.api.Operation.COUNT, "regular_count")),
+      metaData = MetaData(namespace = "test_namespace", name = "regular_gb")
+    )
+
+    // Create Join with regular GroupBy
+    val regularJoin = Join(
+      metaData = MetaData(name = "regular_join"),
+      left = Source.events(Query(), table = "test_namespace.regular_left"),
+      joinParts = Seq(new ai.chronon.api.JoinPart().setGroupBy(regularGroupBy)),
+      bootstrapParts = Seq.empty
+    )
+
+    val planner = MonolithJoinPlanner(regularJoin)
+    val plan = planner.buildPlan
+
+    validateJoinPlan(plan)
+
+    // Verify only regular dependencies (no upstream join dependencies)
+    val metadataUploadNode = plan.nodes.asScala.find(_.content.isSetJoinMetadataUpload).get
+    val tableDeps = metadataUploadNode.metaData.executionInfo.tableDependencies.asScala
+
+    // Should only have dependency on the regular GroupBy
+    tableDeps.size should be(1)
+    
+    val regularGbDep = tableDeps.find(_.tableInfo.table.contains("regular_gb__uploadToKV"))
+    regularGbDep should be(defined)
+    
+    // Should not have any upstream join dependencies
+    val upstreamJoinDeps = tableDeps.filter(_.tableInfo.table.contains("__metadata_upload"))
+    upstreamJoinDeps should be(empty)
   }
 }

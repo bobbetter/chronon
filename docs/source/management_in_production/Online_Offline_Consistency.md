@@ -14,23 +14,23 @@ This framework allows users to measure inconsistency automatically.
 
 While 100% consistency is desirable, it is not always possible.
 
-Realtime features consume streams of data(kafka topics) that have inherent 
-network latencies. For kafka, in at-least-once mode producers need to write 
+Realtime features consume streams of data (Kafka topics) that have inherent 
+network latencies. For Kafka, in at-least-once mode producers need to write 
 to multiple disks before the message can be sent to the consumers. Finally, 
-there is additional latency to write kv-store before the model can fetch the 
-update feature for inference. This is usually in the order of ms to seconds.
+there is additional latency to write to the KV store before the model can fetch the 
+updated feature for inference. This is usually in the order of ms to seconds.
 
-Computing and uploading non-realtime features to kv-store 
-takes time. For example, midnight accurate features, need to wait for their 
+Computing and uploading non-realtime features to the KV store 
+takes time. For example, midnight accurate features need to wait for their 
 upstream data to arrive and then need to be transformed into features and 
-uploaded into kv-store. The total time to refresh batch features could be in
+uploaded into the KV store. The total time to refresh batch features could be in
 the order of minutes or hours. This inconsistency is usually centered around 
-midnight until the bulk upload of new features to kv store finishes - for 
-features that need to refreshed daily.     
+midnight until the bulk upload of new features to the KV store finishes - for 
+features that need to be refreshed daily.     
 
 ## Design
 
-We log inference queries, the chronon's responses along with their timestamps.
+We log inference queries, Chronon's responses along with their timestamps.
 
 ```sql
 CREATE TABLE IF NOT EXISTS <namespace>.query_logs (
@@ -105,21 +105,21 @@ Filtering in fetcher using:
 
 "Compressing" a series of values into a histogram is what we want - 
 to "summarize" inconsistencies across various data points. There are several available
-sketching algorithms in java. These algorithms broadly falls into two categories,
+sketching algorithms in Java. These algorithms broadly fall into two categories,
 "practical" & "theoretical". Where theoretical ones have a proven lower bound on errors
 and practical ones don't. Leading both the packs are t-digest and ReqSketch. We will only 
 be considering these two sketches.
 
 [Summarily](https://arxiv.org/pdf/2102.09299.pdf), ReqSketch is accurate at all ranges compared to t-digest. 
 ReqSketch takes slightly more space(2.75 kb vs 2.65 kb) - but is much faster(>2x) to update, serialize and deserialize.
-Since we are going to ever hold one sketch per feature name per executor, space is less of a factor
-than accuracy during aggregation than the speed of update.
+Since we are only going to hold one sketch per feature name per executor, space is less of a factor
+than the speed of update during aggregation.
 
 
 ## Choosing the right aggregation strategy
 
 Merge-combine shuffles deltas across all machines in the combine stage to all machines in the merge stage.
-Tree aggregates rolls up deltas (imagine a binary tree). Tree aggregate, mandates that all data eventually
+Tree aggregate rolls up deltas (imagine a binary tree). Tree aggregate mandates that all data eventually
 fit in a single machine. Merge-combine is more suited to situations where output data is still large.
 
 Consistency metric outputs are decidedly - "small data". 
@@ -167,3 +167,22 @@ make any join that uses features from the group-by more consistent.
   - This is not related to consistency but more related to logging.  
   
 
+### Enabling and Consuming Consistency Checks
+
+Computation of OOC metrics can be turned on by setting the `sample_percent` and `check_consistency` in the join config like so:
+
+```python
+my_join = Join(
+    ...
+    sample_percent=0.1, # Samples 10%
+    check_consistency=True
+)
+```
+
+The `sample_percent` param will enable logging during fetching phase, and the `check_consistency` param will enable the online offline consistency check to compare the logged events with offline join job after data landing in the warehouse. 
+
+**If using Zipline:** Orchestration is automatically handled by the Zipline Hub and results can be visualized in the metrics tab of the Zipline Hub UI.
+
+**If self-hosting:** Orchestration must be configured. See [sample Airflow implementation here](https://github.com/airbnb/chronon/blob/main/airflow/online_offline_consistency_dag_constructor.py).
+
+The Spark job will write the result to a flat Hive table in the pattern of `<output_namespace>.<team_name>_<join_name>_consistency`.

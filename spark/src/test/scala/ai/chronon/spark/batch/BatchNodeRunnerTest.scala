@@ -248,28 +248,24 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
     val runner = new BatchNodeRunner(node, tableUtils)
 
-    val result = runner.runFromArgs(mockApi, twoDaysAgo, yesterday, NodeRunner.DefaultTablePartitionsDataset, None)
+    val exitCode = runner.runFromArgs(mockApi, twoDaysAgo, yesterday, NodeRunner.DefaultTablePartitionsDataset, None)
 
-    result match {
-      case Success(_) =>
-        // Verify that partitions were written to kvStore
-        assertTrue("KVStore should have received put requests", mockKVStore.putRequests.nonEmpty)
+    assertEquals("runFromArgs should return 0 on success", 0, exitCode)
 
-        // Should have requests for input table partitions and output table partitions
-        val inputTableRequests = mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("input_table"))
-        val outputTableRequests =
-          mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("output_table"))
+    // Verify that partitions were written to kvStore
+    assertTrue("KVStore should have received put requests", mockKVStore.putRequests.nonEmpty)
 
-        assertTrue("Should have input table partition requests", inputTableRequests.nonEmpty)
-        assertTrue("Should have output table partition requests", outputTableRequests.nonEmpty)
+    // Should have requests for input table partitions and output table partitions
+    val inputTableRequests = mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("input_table"))
+    val outputTableRequests =
+      mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("output_table"))
 
-        // Verify dataset name
-        assertTrue("Should use TABLE_PARTITIONS dataset",
-                   mockKVStore.putRequests.forall(_.dataset == NodeRunner.DefaultTablePartitionsDataset))
+    assertTrue("Should have input table partition requests", inputTableRequests.nonEmpty)
+    assertTrue("Should have output table partition requests", outputTableRequests.nonEmpty)
 
-      case Failure(exception) =>
-        fail(s"runFromArgs should have succeeded but failed with: ${exception.getMessage}")
-    }
+    // Verify dataset name
+    assertTrue("Should use TABLE_PARTITIONS dataset",
+                mockKVStore.putRequests.forall(_.dataset == NodeRunner.DefaultTablePartitionsDataset))
   }
 
   it should "short circuit and throw exception when missing partitions are present" in {
@@ -278,24 +274,18 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
     val runner = new BatchNodeRunner(node, tableUtils)
 
-    val result = runner.runFromArgs(mockApi, twoDaysAgo, today, NodeRunner.DefaultTablePartitionsDataset, None)
+    val exitCode = runner.runFromArgs(mockApi, twoDaysAgo, today, NodeRunner.DefaultTablePartitionsDataset, None)
 
-    result match {
-      case Success(_) =>
-        fail("runFromArgs should have failed due to missing partitions")
+    assertEquals("runFromArgs should return 1 on failure", 1, exitCode)
 
-      case Failure(exception) =>
-        assertTrue("Exception should mention missing partitions", exception.getMessage.contains("missing partitions"))
+    // Should still have written input table partitions to kvStore before failing
+    val inputTableRequests = mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("input_table"))
+    assertTrue("Should have written input table partitions before failing", inputTableRequests.nonEmpty)
 
-        // Should still have written input table partitions to kvStore before failing
-        val inputTableRequests = mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("input_table"))
-        assertTrue("Should have written input table partitions before failing", inputTableRequests.nonEmpty)
-
-        // Should NOT have written output table partitions since execution was short-circuited
-        val outputTableRequests =
-          mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("output_table"))
-        assertTrue("Should NOT have written output table partitions after short circuit", outputTableRequests.isEmpty)
-    }
+    // Should NOT have written output table partitions since execution was short-circuited
+    val outputTableRequests =
+      mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("output_table"))
+    assertTrue("Should NOT have written output table partitions after short circuit", outputTableRequests.isEmpty)
   }
 
   it should "calculate and write output table partitions after successful execution" ignore {
@@ -313,24 +303,20 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
     val runner = new BatchNodeRunner(node, tableUtils)
 
-    val result = runner.runFromArgs(mockApi, twoDaysAgo, yesterday, NodeRunner.DefaultTablePartitionsDataset, None)
+    val exitCode = runner.runFromArgs(mockApi, twoDaysAgo, yesterday, NodeRunner.DefaultTablePartitionsDataset, None)
 
-    result match {
-      case Success(_) =>
-        // Verify both input and output table partitions were written
-        val inputTableRequests = mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("input_table"))
-        val outputTableRequests =
-          mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("output_table"))
+    assertEquals("runFromArgs should return 0 on success", 0, exitCode)
 
-        assertTrue("Should have input table partition requests", inputTableRequests.nonEmpty)
-        assertTrue("Should have output table partition requests", outputTableRequests.nonEmpty)
+    // Verify both input and output table partitions were written
+    val inputTableRequests = mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("input_table"))
+    val outputTableRequests =
+      mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("output_table"))
 
-        // Verify the sequence: input partitions written first (in multiPut), then output partitions (in put)
-        assertTrue("Should have made multiple put requests", mockKVStore.putRequests.size >= 2)
+    assertTrue("Should have input table partition requests", inputTableRequests.nonEmpty)
+    assertTrue("Should have output table partition requests", outputTableRequests.nonEmpty)
 
-      case Failure(exception) =>
-        fail(s"runFromArgs should have succeeded but failed with: ${exception.getMessage}")
-    }
+    // Verify the sequence: input partitions written first (in multiPut), then output partitions (in put)
+    assertTrue("Should have made multiple put requests", mockKVStore.putRequests.size >= 2)
   }
 
   it should "handle empty partition ranges correctly" in {
@@ -343,15 +329,9 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
     val runner = new BatchNodeRunner(node, tableUtils)
 
-    val result = runner.runFromArgs(mockApi, futureDate1, futureDate2, NodeRunner.DefaultTablePartitionsDataset, None)
+    val exitCode = runner.runFromArgs(mockApi, futureDate1, futureDate2, NodeRunner.DefaultTablePartitionsDataset, None)
 
-    result match {
-      case Success(_) =>
-        fail("runFromArgs should have failed due to missing all partitions")
-
-      case Failure(exception) =>
-        assertTrue("Exception should mention missing partitions", exception.getMessage.contains("missing partitions"))
-    }
+    assertEquals("runFromArgs should return 1 on failure due to missing all partitions", 1, exitCode)
   }
 
   it should "correctly identify missing vs available partitions" in {
@@ -379,19 +359,9 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
     val runner = new BatchNodeRunner(node, tableUtils)
 
-    val result = runner.runFromArgs(mockApi, threeDaysAgo, today, NodeRunner.DefaultTablePartitionsDataset, None)
+    val exitCode = runner.runFromArgs(mockApi, threeDaysAgo, today, NodeRunner.DefaultTablePartitionsDataset, None)
 
-    result match {
-      case Success(_) =>
-        fail("runFromArgs should have failed due to some missing partitions")
-
-      case Failure(exception) =>
-        assertTrue("Exception should mention missing partitions", exception.getMessage.contains("missing partitions"))
-
-        // The exception message should specifically mention which partitions are missing
-        assertTrue("Exception should mention the specific missing partition",
-                   exception.getMessage.contains(threeDaysAgo))
-    }
+    assertEquals("runFromArgs should return 1 on failure due to missing partitions", 1, exitCode)
   }
 
   it should "correctly translate partition ranges before diffing against existing partitions" ignore {
@@ -427,32 +397,28 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
     val runner = new BatchNodeRunner(node, tableUtils)
 
-    val result = runner.runFromArgs(mockApi, twoDaysAgo, yesterday, NodeRunner.DefaultTablePartitionsDataset, None)
+    val exitCode = runner.runFromArgs(mockApi, twoDaysAgo, yesterday, NodeRunner.DefaultTablePartitionsDataset, None)
 
-    result match {
-      case Success(_) =>
-        // Verify that partitions were written to kvStore - this validates the translation worked
-        assertTrue("KVStore should have received put requests", mockKVStore.putRequests.nonEmpty)
+    assertEquals("runFromArgs should return 0 on success", 0, exitCode)
 
-        // Check that the partition data is properly formatted (indicates successful translation)
-        val inputTableRequests =
-          mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("input_table_alt"))
-        assertTrue("Should have input table partition requests", inputTableRequests.nonEmpty)
+    // Verify that partitions were written to kvStore - this validates the translation worked
+    assertTrue("KVStore should have received put requests", mockKVStore.putRequests.nonEmpty)
 
-        // Verify the partition values are correctly translated to the default partition spec format (yyyy-MM-dd)
-        inputTableRequests.foreach { req =>
-          val partitionData = new String(req.valueBytes)
-          // The key assertion: partitions should be translated from yyyyMMdd to yyyy-MM-dd format
-          assertTrue("Partition data should contain yesterday in translated format", partitionData.contains(yesterday))
-          assertTrue("Partition data should contain twoDaysAgo in translated format",
-                     partitionData.contains(twoDaysAgo))
-          // Verify it does NOT contain the original format
-          assertFalse("Partition data should NOT contain original date format (yyyyMMdd)",
-                      partitionData.contains(yesterdayAlt) || partitionData.contains(twoDaysAgoAlt))
-        }
+    // Check that the partition data is properly formatted (indicates successful translation)
+    val inputTableRequests =
+      mockKVStore.putRequests.filter(req => new String(req.keyBytes).contains("input_table_alt"))
+    assertTrue("Should have input table partition requests", inputTableRequests.nonEmpty)
 
-      case Failure(exception) =>
-        fail(s"runFromArgs should have succeeded but failed with: ${exception.traceString}")
+    // Verify the partition values are correctly translated to the default partition spec format (yyyy-MM-dd)
+    inputTableRequests.foreach { req =>
+      val partitionData = new String(req.valueBytes)
+      // The key assertion: partitions should be translated from yyyyMMdd to yyyy-MM-dd format
+      assertTrue("Partition data should contain yesterday in translated format", partitionData.contains(yesterday))
+      assertTrue("Partition data should contain twoDaysAgo in translated format",
+                  partitionData.contains(twoDaysAgo))
+      // Verify it does NOT contain the original format
+      assertFalse("Partition data should NOT contain original date format (yyyyMMdd)",
+                  partitionData.contains(yesterdayAlt) || partitionData.contains(twoDaysAgoAlt))
     }
   }
 

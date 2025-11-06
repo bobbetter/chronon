@@ -68,7 +68,72 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
     val retryCount = if (conf.isSetRetryCount) conf.retryCount else 3L
     val retryIntervalMin = if (conf.isSetRetryIntervalMin) conf.retryIntervalMin else 3L
 
-    val spec = conf.sourceTableDependency.tableInfo.partitionSpec(tableUtils.partitionSpec)
+    val tableInfo = conf.sourceTableDependency.tableInfo
+    val hasPartitionColumn = Option(tableInfo.partitionColumn).isDefined
+    val hasTriggerExpr = Option(tableInfo.triggerExpr).isDefined
+
+    // Case 1: No partitions or trigger expression defined -> return success
+    if (!hasPartitionColumn && !hasTriggerExpr) {
+      logger.info(
+        s"Input table ${tableName} has no partitions or trigger expression defined. Checking table existence.")
+      if (tableUtils.tableReachable(tableName)) return Success(())
+      else return Failure(new RuntimeException(s"Table ${tableName} was not found."))
+    }
+
+    // Case 2: No partitions but trigger expression is defined
+    if (!hasPartitionColumn && hasTriggerExpr) {
+      val triggerExpr = tableInfo.triggerExpr
+      @tailrec
+      def retryTriggerExpr(attempt: Long): Try[Unit] = {
+        Try {
+          val sql = s"SELECT ${triggerExpr} FROM ${tableName}"
+          logger.info(s"Executing trigger expression query: ${sql} on engine: ${conf.engineType.name()}")
+          val result = conf.engineType match {
+            case EngineType.SPARK => tableUtils.sql(sql)
+            // TODO: Implement EngineType.BIG_QUERY (Possibly through tableUtils)
+            case _ => throw new RuntimeException("Not implemented.")
+          }
+          val triggerValue = result
+            .collect()
+            .headOption
+            .getOrElse(throw new RuntimeException(s"Trigger expression query returned no results"))
+            .get(0)
+
+          // Compare trigger value against partitionRange.max (end partition)
+          val maxPartition = range.end
+
+          // Convert both to comparable format - assuming the trigger expression returns a comparable value
+          val triggerValueStr = triggerValue.toString
+          logger.info(s"Trigger value: ${triggerValueStr}, Max partition: ${maxPartition}")
+
+          if (triggerValueStr > maxPartition) {
+            logger.info(
+              s"Trigger expression ${triggerExpr} value ${triggerValueStr} > ${maxPartition}. Sensor succeeded.")
+            ()
+          } else {
+            throw new RuntimeException(
+              s"Trigger expression ${triggerExpr} value ${triggerValueStr} is not greater than ${maxPartition}")
+          }
+        } match {
+          case Success(_) => Success(())
+          case Failure(e) if attempt < retryCount =>
+            logger.warn(
+              s"Attempt ${attempt + 1} failed: Trigger expression check failed with error: ${e.getMessage}. " +
+                s"Retrying in ${retryIntervalMin} minutes")
+            Thread.sleep(retryIntervalMin * 60 * 1000)
+            retryTriggerExpr(attempt + 1)
+          case Failure(e) =>
+            Failure(
+              new RuntimeException(s"Sensor timed out after ${retryIntervalMin * attempt} minutes. " +
+                                     s"Trigger expression check failed: ${e.getMessage}",
+                                   e))
+        }
+      }
+      return retryTriggerExpr(0)
+    }
+
+    // Case 3: Use existing partition check logic
+    val spec = tableInfo.partitionSpec(tableUtils.partitionSpec)
 
     @tailrec
     def retry(attempt: Long): Try[Unit] = {
@@ -128,16 +193,21 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
 
     val joinConf = monolithJoin.join
     val joinName = metadata.name
-    val skewFreeMode = tableUtils.sparkSession.conf
-      .get("spark.chronon.join.backfill.mode.skewFree", "false")
-      .toBoolean
 
-    logger.info(s"Running join backfill for '$joinName' with skewFree mode: $skewFreeMode")
+    val standaloneUnionJoinEligible = UnionJoin.isEligibleForStandaloneRun(joinConf)
+
+    logger.info(
+      s"Running join backfill for '$joinName' with skewFreeMode: ${tableUtils.skewFreeMode}, standalone union-join eligible: $standaloneUnionJoinEligible")
     logger.info(s"Processing range: [${range.start}, ${range.end}]")
 
-    if (skewFreeMode) {
+    if (standaloneUnionJoinEligible && tableUtils.skewFreeMode) {
+
+      logger.info(s"Using standalone-union-join. Will skip writing join-part table & source table.")
+
       UnionJoin.computeJoinAndSave(joinConf, range)(tableUtils)
+
       logger.info(s"Successfully wrote range: $range")
+
     } else {
       val join = new Join(joinConf, range.end, tableUtils)
       val result = join.forceComputeRangeAndSave(range)
@@ -160,36 +230,51 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
     try {
       logger.info(s"Extracting partition statistics for table: $outputTable")
       val statsExtractor = new IcebergPartitionStatsExtractor(tableUtils.sparkSession)
-      val tileSummaries = statsExtractor.extractPartitionedStats(outputTable, confName)
 
-      if (tileSummaries.nonEmpty) {
-        val groupedTileSummaries = tileSummaries.groupBy { case (observabilityTileKey, _) =>
-          val dayPartitionMillis =
-            IcebergPartitionStatsExtractor.extractPartitionMillisFromSlice(observabilityTileKey.getSlice, partitionSpec)
-          (dayPartitionMillis)
-        }
+      statsExtractor.extractPartitionedStats(outputTable, confName) match {
+        case Some(tileSummaries) if tileSummaries.nonEmpty =>
+          val groupedTileSummaries = tileSummaries.groupBy { case (observabilityTileKey, _) =>
+            val dayPartitionMillis =
+              IcebergPartitionStatsExtractor.extractPartitionMillisFromSlice(observabilityTileKey.getSlice,
+                                                                             partitionSpec)
+            (dayPartitionMillis)
+          }
 
-        val statsPutRequests = groupedTileSummaries.map { case ((dayPartitionMillis), columnTileSummaries) =>
-          val nullCountsStats = IcebergPartitionStatsExtractor.createNullCountsStats(columnTileSummaries)
-          val partitionStats = TileStats.nullCounts(nullCountsStats)
-          IcebergPartitionStatsExtractor.createPartitionStatsPutRequest(outputTable,
-                                                                        partitionStats,
-                                                                        dayPartitionMillis,
-                                                                        TileStatsType.NULL_COUNTS)
-        }.toSeq
+          val statsPutRequests = groupedTileSummaries.map { case ((dayPartitionMillis), columnTileSummaries) =>
+            val nullCountsStats = IcebergPartitionStatsExtractor.createNullCountsStats(columnTileSummaries)
+            val partitionStats = TileStats.nullCounts(nullCountsStats)
+            IcebergPartitionStatsExtractor.createPartitionStatsPutRequest(outputTable,
+                                                                          partitionStats,
+                                                                          dayPartitionMillis,
+                                                                          TileStatsType.NULL_COUNTS)
+          }.toSeq
 
-        val schemaMapping = statsExtractor.extractSchemaMapping(outputTable)
-        val schemaPutRequest = IcebergPartitionStatsExtractor.createSchemaMappingPutRequest(outputTable, schemaMapping)
+          statsExtractor.extractSchemaMapping(outputTable) match {
+            case Some(schemaMapping) =>
+              val schemaPutRequest =
+                IcebergPartitionStatsExtractor.createSchemaMappingPutRequest(outputTable, schemaMapping)
+              val allPutRequests = statsPutRequests :+ schemaPutRequest
 
-        val allPutRequests = statsPutRequests :+ schemaPutRequest
+              try {
+                val kvStoreUpdates = metricsKvStore.multiPut(allPutRequests)
+                Await.result(kvStoreUpdates, 30.seconds)
 
-        val kvStoreUpdates = metricsKvStore.multiPut(allPutRequests)
-        Await.result(kvStoreUpdates, 30.seconds)
-
-        logger.info(
-          s"Successfully persisted data quality metrics and schema mapping for table: $outputTable (${tileSummaries.size} tile summaries)")
-      } else {
-        logger.info(s"No tile summaries found for table: $outputTable")
+                logger.info(
+                  s"Successfully persisted data quality metrics and schema mapping for table: $outputTable (${tileSummaries.size} tile summaries)")
+              } catch {
+                case e: Exception =>
+                  logger.info(
+                    s"Failed to persist data quality metrics to KV store for table: $outputTable. This may be expected if the KV store table does not exist. Error: ${e.traceString}")
+              }
+            case None =>
+              logger.info(
+                s"Could not extract schema mapping for table: $outputTable, skipping column stats persistence")
+          }
+        case Some(tileSummaries) if tileSummaries.isEmpty =>
+          logger.info(s"No tile summaries found for table: $outputTable")
+        case None =>
+          logger.info(
+            s"Table $outputTable is not an Iceberg table or is not partitioned, skipping column stats extraction")
       }
     } catch {
       case e: Exception =>
@@ -201,11 +286,44 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
   override def run(metadata: MetaData, conf: NodeContent, maybeRange: Option[PartitionRange]): Unit = {
     require(maybeRange.isDefined, "Partition range must be defined for batch node runner")
     val range = maybeRange.get
+    val dateRange = new DateRange().setStartDate(range.start).setEndDate(range.end)
+
     conf.getSetField match {
       case NodeContent._Fields.MONOLITH_JOIN =>
         runMonolithJoin(metadata, conf.getMonolithJoin, range)
+
+      case NodeContent._Fields.SOURCE_WITH_FILTER =>
+        logger.info(s"Running source with filter job for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        new SourceJob(conf.getSourceWithFilter, metadata, dateRange)(tableUtils).run()
+        logger.info(s"Successfully completed source with filter job for '${metadata.name}'")
+
+      case NodeContent._Fields.JOIN_BOOTSTRAP =>
+        logger.info(s"Running join bootstrap job for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        new JoinBootstrapJob(conf.getJoinBootstrap, metadata, dateRange)(tableUtils).run()
+        logger.info(s"Successfully completed join bootstrap job for '${metadata.name}'")
+
+      case NodeContent._Fields.JOIN_PART =>
+        logger.info(s"Running join part job for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        new JoinPartJob(conf.getJoinPart, metadata, dateRange)(tableUtils).run()
+        logger.info(s"Successfully completed join part job for '${metadata.name}'")
+
+      case NodeContent._Fields.JOIN_MERGE =>
+        logger.info(s"Running join merge job for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        val joinParts = Option(conf.getJoinMerge.join.joinParts).map(_.asScala.toSeq).getOrElse(Seq.empty)
+        new MergeJob(conf.getJoinMerge, metadata, dateRange, joinParts)(tableUtils).run()
+        logger.info(s"Successfully completed join merge job for '${metadata.name}'")
+
+      case NodeContent._Fields.JOIN_DERIVATION =>
+        logger.info(s"Running join derivation job for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        new JoinDerivationJob(conf.getJoinDerivation, metadata, dateRange)(tableUtils).run()
+        logger.info(s"Successfully completed join derivation job for '${metadata.name}'")
+
+      case NodeContent._Fields.LABEL_JOIN =>
+        throw new UnsupportedOperationException("LABEL_JOIN nodes are not yet supported in BatchNodeRunner")
+
       case NodeContent._Fields.GROUP_BY_UPLOAD =>
         runGroupByUpload(metadata, conf.getGroupByUpload, range)
+
       case NodeContent._Fields.GROUP_BY_BACKFILL =>
         logger.info(s"Running groupBy backfill for '${metadata.name}' for range: [${range.start}, ${range.end}]")
         GroupBy.computeBackfill(
@@ -215,19 +333,71 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
           overrideStartPartition = Option(range.start)
         )
         logger.info(s"Successfully completed groupBy backfill for '${metadata.name}'")
+
       case NodeContent._Fields.STAGING_QUERY =>
         runStagingQuery(metadata, conf.getStagingQuery, range)
-      case NodeContent._Fields.EXTERNAL_SOURCE_SENSOR => {
 
+      case NodeContent._Fields.EXTERNAL_SOURCE_SENSOR =>
         checkPartitions(conf.getExternalSourceSensor, range) match {
-          case Success(_) => System.exit(0)
+          case Success(_) =>
           case Failure(exception) =>
             logger.error(s"ExternalSourceSensor check failed.", exception)
-            System.exit(1)
+            throw exception
         }
-      }
+
       case _ =>
         throw new UnsupportedOperationException(s"Unsupported NodeContent type: ${conf.getSetField}")
+    }
+  }
+
+  private def postJobActions(metadata: MetaData,
+                             range: PartitionRange,
+                             tablePartitionsDataset: String,
+                             kvStore: KVStore,
+                             tableStatsDataset: Option[String],
+                             api: Api): Unit = {
+    val outputTablePartitionSpec = (for {
+      meta <- Option(metadata)
+      executionInfo <- Option(meta.executionInfo)
+      outputTableInfo <- Option(executionInfo.outputTableInfo)
+      definedSpec = outputTableInfo.partitionSpec(tableUtils.partitionSpec)
+    } yield definedSpec).getOrElse(tableUtils.partitionSpec)
+    val allOutputTablePartitions = tableUtils.partitions(metadata.executionInfo.outputTableInfo.table,
+                                                         tablePartitionSpec = Option(outputTablePartitionSpec))
+
+    val outputTablePartitionsJson = PartitionRange.collapsedPrint(allOutputTablePartitions)(range.partitionSpec)
+    logger.info(s"Output table partitions for '${metadata.name}': $outputTablePartitionsJson")
+
+    // Check if range is inside allOutputTablePartitions
+    if (!range.partitions.forall(p => allOutputTablePartitions.contains(p))) {
+      val missingPartitions = range.partitions.filterNot(p => allOutputTablePartitions.contains(p))
+      logger.error(
+        s"After job completion, output table ${metadata.executionInfo.outputTableInfo.table} is missing partitions: ${missingPartitions
+            .mkString(", ")} from the requested range: $range"
+      )
+    }
+
+    val putRequest = PutRequest(metadata.executionInfo.outputTableInfo.table.getBytes,
+                                outputTablePartitionsJson.getBytes,
+                                tablePartitionsDataset)
+    val kvStoreUpdates = kvStore.put(putRequest)
+    Await.result(kvStoreUpdates, Duration.Inf)
+    logger.info(s"Successfully completed batch node runner for '${metadata.name}'")
+
+    // Extract and persist partition statistics to KV store - done at the very end
+    // Skip data quality metrics persistence for EXTERNAL_SOURCE_SENSOR nodes
+    if (node.content.getSetField != NodeContent._Fields.EXTERNAL_SOURCE_SENSOR) {
+      tableStatsDataset.foreach { tableStats =>
+        val metricsKvStore = api.genMetricsKvStore(tableStats)
+        Option(metadata.outputTable) match {
+          case Some(outputTable) =>
+            extractAndPersistPartitionStats(metricsKvStore, outputTable, metadata.name)(outputTablePartitionSpec)
+          case None =>
+            logger.warn(s"Skipping partition stats extraction for '${metadata.name}' - outputTable is null")
+        }
+      }
+    } else {
+      logger.info(s"Skipping data quality metrics persistence for EXTERNAL_SOURCE_SENSOR node '${metadata.name}'")
     }
   }
 
@@ -237,7 +407,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
       endDs: String,
       tablePartitionsDataset: String,
       tableStatsDataset: Option[String]
-  ): Try[Unit] = {
+  ): Int = {
     Try {
       val metadata = node.metaData
       val range = PartitionRange(startDs, endDs)(PartitionSpec.daily)
@@ -296,39 +466,27 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
         )
       } else {
         run(metadata, node.content, Option(range))
-
-        val outputTablePartitionSpec = (for {
-          meta <- Option(metadata)
-          executionInfo <- Option(meta.executionInfo)
-          outputTableInfo <- Option(executionInfo.outputTableInfo)
-          definedSpec = outputTableInfo.partitionSpec(tableUtils.partitionSpec)
-        } yield definedSpec).getOrElse(tableUtils.partitionSpec)
-        val allOutputTablePartitions = tableUtils.partitions(metadata.executionInfo.outputTableInfo.table,
-                                                             tablePartitionSpec = Option(outputTablePartitionSpec))
-
-        val outputTablePartitionsJson = PartitionRange.collapsedPrint(allOutputTablePartitions)(range.partitionSpec)
-        val putRequest = PutRequest(metadata.executionInfo.outputTableInfo.table.getBytes,
-                                    outputTablePartitionsJson.getBytes,
-                                    tablePartitionsDataset)
-        val kvStoreUpdates = kvStore.put(putRequest)
-        Await.result(kvStoreUpdates, Duration.Inf)
-        logger.info(s"Successfully completed batch node runner for '${metadata.name}'")
-
-        // Extract and persist partition statistics to KV store - done at the very end
-        // Skip data quality metrics persistence for EXTERNAL_SOURCE_SENSOR nodes
-        if (node.content.getSetField != NodeContent._Fields.EXTERNAL_SOURCE_SENSOR) {
-          tableStatsDataset.foreach { tableStats =>
-            val metricsKvStore = api.genMetricsKvStore(tableStats)
-            Option(metadata.outputTable) match {
-              case Some(outputTable) =>
-                extractAndPersistPartitionStats(metricsKvStore, outputTable, metadata.name)(outputTablePartitionSpec)
-              case None =>
-                logger.warn(s"Skipping partition stats extraction for '${metadata.name}' - outputTable is null")
-            }
-          }
-        } else {
-          logger.info(s"Skipping data quality metrics persistence for EXTERNAL_SOURCE_SENSOR node '${metadata.name}'")
+        try {
+          postJobActions(metadata = metadata,
+                         range = range,
+                         tablePartitionsDataset = tablePartitionsDataset,
+                         kvStore = kvStore,
+                         tableStatsDataset = tableStatsDataset,
+                         api = api)
+        } catch {
+          case e: Exception =>
+            // Don't fail the job if post-job actions fail
+            logger.error(s"Post-job actions failed for '${metadata.name}'", e)
         }
+      }
+    } match {
+      case Success(_) => {
+        logger.info("Batch node runner completed successfully")
+        0
+      }
+      case Failure(e) => {
+        logger.error(s"Batch node runner failed for '${node.metaData.name}'", e)
+        1
       }
     }
   }
@@ -342,20 +500,12 @@ object BatchNodeRunner {
     val tableUtils = TableUtils(SparkSessionBuilder.build(s"batch-node-runner-${node.metaData.name}"))
     val runner = new BatchNodeRunner(node, tableUtils)
     val api = instantiateApi(batchArgs.onlineClass(), batchArgs.apiProps)
-    val exitCode = {
+    val exitCode =
       runner.runFromArgs(api,
                          batchArgs.startDs(),
                          batchArgs.endDs(),
                          batchArgs.tablePartitionsDataset(),
-                         batchArgs.tableStatsDataset.toOption) match {
-        case Success(_) =>
-          println("Batch node runner succeeded")
-          0
-        case Failure(exception) =>
-          println(s"Batch node runner failed: ${exception.traceString}")
-          1
-      }
-    }
+                         batchArgs.tableStatsDataset.toOption)
     tableUtils.sparkSession.stop()
     System.exit(exitCode)
   }

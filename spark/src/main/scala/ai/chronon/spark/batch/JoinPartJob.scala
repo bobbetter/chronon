@@ -25,8 +25,13 @@ case class JoinPartJobContext(leftDf: Option[DfWithStats],
                               tableProps: Map[String, String],
                               runSmallMode: Boolean)
 
-class JoinPartJob(node: JoinPartNode, metaData: MetaData, range: DateRange, showDf: Boolean = false)(implicit
-    tableUtils: TableUtils) {
+// alignOutput forces the job to produce the partitions specified by range.
+// legacy behavior was to not align, but that prevents from partition aware orchestration
+class JoinPartJob(node: JoinPartNode,
+                  metaData: MetaData,
+                  range: DateRange,
+                  showDf: Boolean = false,
+                  alignOutput: Boolean = false)(implicit tableUtils: TableUtils) {
   @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
   implicit val partitionSpec: PartitionSpec = tableUtils.partitionSpec
 
@@ -51,6 +56,12 @@ class JoinPartJob(node: JoinPartNode, metaData: MetaData, range: DateRange, show
 
       val query = Builders.Query(selects = relevantLeftCols.map(t => t -> t).toMap)
       val cachedLeftDf = tableUtils.scanDf(query = query, leftTable, range = Some(dateRange))
+
+      // If the left dataframe is empty, skip this range entirely
+      if (cachedLeftDf.isEmpty) {
+        logger.info(s"Left dataframe is empty for range $dateRange, skipping join part computation")
+        return None
+      }
 
       val runSmallMode = JoinUtils.runSmallMode(tableUtils, cachedLeftDf)
 
@@ -195,7 +206,7 @@ class JoinPartJob(node: JoinPartNode, metaData: MetaData, range: DateRange, show
       skewFilteredLeft.select(columns: _*)
     }
 
-    lazy val shiftedPartitionRange = unfilledPartitionRange.shift(-1)
+    lazy val shiftedPartitionRange = if (alignOutput) unfilledPartitionRange else unfilledPartitionRange.shift(-1)
 
     val renamedLeftDf = renamedLeftRawDf.select(renamedLeftRawDf.columns.map {
       case c if c == tableUtils.partitionColumn =>
@@ -209,14 +220,20 @@ class JoinPartJob(node: JoinPartNode, metaData: MetaData, range: DateRange, show
       case (EVENTS, EVENTS, Accuracy.SNAPSHOT) =>
         genGroupBy(shiftedPartitionRange).snapshotEvents(shiftedPartitionRange)
       case (EVENTS, EVENTS, Accuracy.TEMPORAL) =>
-        val skewFreeMode = tableUtils.sparkSession.conf
-          .get("spark.chronon.join.backfill.mode.skewFree", "false")
-          .toBoolean
+        if (tableUtils.skewFreeMode) {
 
-        if (skewFreeMode) {
           // Use UnionJoin for skewFree mode - it will handle column selection internally
           logger.info(s"Using UnionJoin for TEMPORAL events join part: ${joinPart.groupBy.metaData.name}")
-          UnionJoin.computeJoinPart(renamedLeftDf, joinPart, unfilledPartitionRange, produceFinalJoinOutput = false)
+
+          // key renaming is already done, so we should remove the keyMapping from joinPart
+          val joinPartWithoutMapping = joinPart.deepCopy()
+          joinPartWithoutMapping.unsetKeyMapping()
+
+          UnionJoin.computeJoinPart(renamedLeftDf,
+                                    joinPartWithoutMapping,
+                                    unfilledPartitionRange,
+                                    produceFinalJoinOutput = false)
+
         } else {
           // Use traditional temporalEvents approach
           genGroupBy(unfilledPartitionRange).temporalEvents(renamedLeftDf, Some(toTimeRange(unfilledPartitionRange)))
@@ -226,7 +243,7 @@ class JoinPartJob(node: JoinPartNode, metaData: MetaData, range: DateRange, show
 
       case (EVENTS, ENTITIES, Accuracy.TEMPORAL) =>
         // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:59>.
-        genGroupBy(shiftedPartitionRange).temporalEntities(renamedLeftDf)
+        genGroupBy(unfilledPartitionRange.shift(-1)).temporalEntities(renamedLeftDf)
     }
 
     val rightDfWithDerivations = if (joinPart.groupBy.hasDerivations) {

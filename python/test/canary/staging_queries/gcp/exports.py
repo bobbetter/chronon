@@ -22,8 +22,29 @@ def get_select_star_export(table: str, partition_column: str = "_PARTITIONTIME")
     )
 
 
-user_activities = get_select_star_export("user-activities")
-checkouts = get_select_star_export("checkouts")
+def get_native_partition_export(table: str, partition_column: str):
+    native_partition_sql = f"""
+    SELECT 
+        *,
+        TIMESTAMP_TRUNC({partition_column}, DAY) as ds
+    FROM demo.`{table}`
+    WHERE 
+    {partition_column} BETWEEN {{{{ start_date }}}} AND {{{{ end_date }}}}
+    """
+    return StagingQuery(
+        query=native_partition_sql,
+        output_namespace="data",
+        engine_type=EngineType.BIGQUERY,
+        dependencies=[
+            TableDependency(table=f"demo.`{table}`", partition_column=partition_column, offset=0)
+        ],
+        version=0,
+    )
+
+
+
+user_activities = get_native_partition_export("user-activities", "_PARTITIONTIME")
+checkouts = get_native_partition_export("checkouts", "_PARTITIONTIME")
 dim_listings = get_select_star_export("dim_listings", "ds")
 dim_merchants = get_select_star_export("dim_merchants", "ds")
 dim_users = get_select_star_export("dim_users", "ds")

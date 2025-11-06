@@ -57,6 +57,10 @@ object KVStore {
 trait KVStore {
   @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
   implicit val executionContext: ExecutionContext = metrics.FlexibleExecutionContext.buildExecutionContext
+
+  // can be overridden in specific KV store implementations to cover any init actions / connection warm up etc
+  def init(props: Map[String, Any] = Map.empty): Unit = {}
+
   def create(dataset: String): Unit
 
   def create(dataset: String, props: Map[String, Any]): Unit = create(dataset)
@@ -255,9 +259,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
   // not sure if thread safe - TODO: double check
 
   // helper functions
-  final def buildFetcher(debug: Boolean = false,
-                         callerName: String = null,
-                         disableErrorThrows: Boolean = false): Fetcher =
+  def buildFetcher(debug: Boolean = false, callerName: String = null, disableErrorThrows: Boolean = false): Fetcher =
     new Fetcher(
       genKvStore,
       Constants.MetadataDataset,

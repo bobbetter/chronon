@@ -216,6 +216,138 @@ class GroupByPlannerTest extends AnyFlatSpec with Matchers {
     streamingOutputTableInfo.partitionFormat should equal(testPartitionSpec.format)
     streamingOutputTableInfo.partitionInterval should not be null
   }
+
+  // GroupBy Chaining Tests
+
+  it should "streaming node should depend on upstream join when GroupBy has JoinSource" in {
+    import ai.chronon.api.Builders._
+
+    // Create upstream GroupBy
+    val upstreamGroupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(Builders.Query(), table = "test_namespace.upstream_events")),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(Builders.Aggregation(ai.chronon.api.Operation.COUNT, "upstream_count")),
+      metaData = Builders.MetaData(namespace = "test_namespace", name = "upstream_gb")
+    )
+
+    // Create upstream Join
+    val upstreamJoinPart = new ai.chronon.api.JoinPart()
+      .setGroupBy(upstreamGroupBy)
+
+    val upstreamJoin = Builders.Join(
+      metaData = Builders.MetaData(namespace = "test_namespace", name = "upstream_join"),
+      left = Builders.Source.events(Builders.Query(), table = "test_namespace.upstream_left"),
+      joinParts = Seq(upstreamJoinPart),
+      bootstrapParts = Seq.empty
+    )
+
+    // Create downstream GroupBy with JoinSource and streaming source
+    // The GroupBy needs both a JoinSource and a regular source with topic for streaming
+    val downstreamGroupBy = Builders.GroupBy(
+      sources = Seq(
+        Builders.Source.joinSource(upstreamJoin, Builders.Query()),
+        Builders.Source.events(Builders.Query(), table = "test_namespace.downstream_events", topic = "downstream_topic")
+      ),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(Builders.Aggregation(ai.chronon.api.Operation.SUM, "downstream_sum")),
+      metaData = Builders.MetaData(namespace = "test_namespace", name = "downstream_gb")
+    )
+
+    val planner = GroupByPlanner(downstreamGroupBy)
+    val plan = planner.buildPlan
+
+    // Should have streaming node since streamingSource is defined
+    val streamingNode = plan.nodes.asScala.find(_.content.isSetGroupByStreaming)
+    streamingNode should be(defined)
+
+    // Verify streaming node dependencies
+    val streamingTableDeps = streamingNode.get.metaData.executionInfo.tableDependencies.asScala
+
+    // Should depend on both uploadToKV and upstream join's metadata upload
+    streamingTableDeps.size should be >= 2
+
+    // Should have dependency on own uploadToKV
+    val uploadToKVDep = streamingTableDeps.find(_.tableInfo.table.contains("downstream_gb__uploadToKV"))
+    uploadToKVDep should be(defined)
+
+    // Should have dependency on upstream join's metadata upload
+    val upstreamJoinDep = streamingTableDeps.find(_.tableInfo.table.contains("upstream_join__metadata_upload"))
+    upstreamJoinDep should be(defined)
+  }
+
+  it should "streaming node should not add upstream join dependencies for regular sources" in {
+    // Use existing buildGroupBy method which creates a regular GroupBy with streaming source
+    val regularGroupBy = GroupByPlannerTest.buildGroupBy(includeTopic = true)
+
+    val planner = GroupByPlanner(regularGroupBy)
+    val plan = planner.buildPlan
+
+    // Should have streaming node since topic is included
+    val streamingNode = plan.nodes.asScala.find(_.content.isSetGroupByStreaming)
+    streamingNode should be(defined)
+
+    // Verify streaming node dependencies
+    val streamingTableDeps = streamingNode.get.metaData.executionInfo.tableDependencies.asScala
+
+    // Should only depend on own uploadToKV (no upstream join dependencies)
+    streamingTableDeps.size should be(1)
+
+    val uploadToKVDep = streamingTableDeps.find(_.tableInfo.table.contains("user_charges__uploadToKV"))
+    uploadToKVDep should be(defined)
+
+    // Should not have any upstream join dependencies
+    val upstreamJoinDeps = streamingTableDeps.filter(_.tableInfo.table.contains("__metadata_upload"))
+    upstreamJoinDeps should be(empty)
+  }
+
+  it should "GroupBy without streaming source should not be affected by JoinSource" in {
+    import ai.chronon.api.Builders._
+
+    // Create upstream Join
+    val upstreamGroupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(Builders.Query(), table = "test_namespace.upstream_events")),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(Builders.Aggregation(ai.chronon.api.Operation.COUNT, "upstream_count")),
+      metaData = Builders.MetaData(namespace = "test_namespace", name = "upstream_gb")
+    )
+
+    val upstreamJoin = Builders.Join(
+      metaData = Builders.MetaData(namespace = "test_namespace", name = "upstream_join"),
+      left = Builders.Source.events(Builders.Query(), table = "test_namespace.upstream_left"),
+      joinParts = Seq(new ai.chronon.api.JoinPart().setGroupBy(upstreamGroupBy)),
+      bootstrapParts = Seq.empty
+    )
+
+    // Create downstream GroupBy with JoinSource but NO streaming source
+    val downstreamGroupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.joinSource(upstreamJoin, Builders.Query())),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(Builders.Aggregation(ai.chronon.api.Operation.SUM, "downstream_sum")),
+      metaData = Builders.MetaData(namespace = "test_namespace", name = "downstream_gb")
+      // No streamingSource defined
+    )
+
+    val planner = GroupByPlanner(downstreamGroupBy)
+    val plan = planner.buildPlan
+
+    // Should NOT have streaming node since streamingSource is not defined
+    val streamingNode = plan.nodes.asScala.find(_.content.isSetGroupByStreaming)
+    streamingNode should be(empty)
+
+    // Verify the plan has the expected nodes (backfill, upload, uploadToKV)
+    val allNodes = plan.nodes.asScala.toList
+    val backfillNodes = allNodes.count(_.content.isSetGroupByBackfill)
+    val uploadNodes = allNodes.count(_.content.isSetGroupByUpload)
+    val uploadToKVNodes = allNodes.count(_.content.isSetGroupByUploadToKV)
+
+    backfillNodes should be(1)
+    uploadNodes should be(1)
+    uploadToKVNodes should be(1)
+
+    // Terminal node should be uploadToKV (not streaming)
+    val deployTerminalNodeName = plan.terminalNodeNames.asScala(ai.chronon.planner.Mode.DEPLOY)
+    deployTerminalNodeName should include("uploadToKV")
+  }
 }
 
 object GroupByPlannerTest {

@@ -21,10 +21,14 @@ abstract class SparkTestBase extends AnyFlatSpec with BeforeAndAfterAll {
 
   protected lazy val icebergWarehouse = Files.createTempDirectory("iceberg-test").toString
 
-  protected lazy val spark: SparkSession = SparkSessionBuilder.build(
-    getClass.getSimpleName,
-    local = true,
-    additionalConfig = Option(Map(
+  /**
+   * Override this method to provide additional Spark configurations.
+   * These configs will be merged with the default configs, with the custom configs taking precedence.
+   */
+  protected def sparkConfs: Map[String, String] = Map.empty
+
+  protected lazy val spark: SparkSession = {
+    val defaultConfig = Map(
       "spark.sql.extensions" -> "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
       "spark.sql.catalog.spark_catalog" -> "org.apache.iceberg.spark.SparkSessionCatalog",
       "spark.sql.warehouse.dir" -> s"${System.getProperty("java.io.tmpdir")}/warehouse",
@@ -32,8 +36,14 @@ abstract class SparkTestBase extends AnyFlatSpec with BeforeAndAfterAll {
       "spark.sql.catalog.spark_catalog.warehouse" -> icebergWarehouse,
       "spark.driver.bindAddress" -> "127.0.0.1",
       "spark.ui.enabled" -> "false"
-    ))
-  )
+    )
+    val mergedConfig = defaultConfig ++ sparkConfs
+    SparkSessionBuilder.build(
+      getClass.getSimpleName,
+      local = true,
+      additionalConfig = Option(mergedConfig)
+    )
+  }
 
   /**
    * Creates a database in the test environment.

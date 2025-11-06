@@ -72,14 +72,24 @@ def build_local_repo_hashmap(root_dir: str):
 
 
 def compute_and_upload_diffs(
-    branch: str, zipline_hub: ZiplineHub, local_repo_confs: dict[str, Conf], orch_v2=False
+    branch: str, zipline_hub: ZiplineHub, local_repo_confs: dict[str, Conf]
 ):
     # Determine which confs are different from the ZiplineHub
     # Call Zipline hub with `names_and_hashes` as the argument to get back
-    names_to_hashes = {name: local_conf.hash for name, local_conf in local_repo_confs.items()}
-    print(f"\n 🧮 Computed hashes for {len(names_to_hashes)} local files.")
 
-    changed_conf_names = zipline_hub.call_diff_api(names_to_hashes, orch_v2)
+    # Note: we temporarily filter out MODEL configurations as we've not updated the Hub backend to handle them yet
+    from gen_thrift.api.ttypes import ConfType
+    filtered_local_repo_confs = {name: conf for name, conf in local_repo_confs.items() if conf.confType != ConfType.MODEL}
+    
+    names_to_hashes = {name: local_conf.hash for name, local_conf in filtered_local_repo_confs.items()}
+    
+    model_count = len(local_repo_confs) - len(filtered_local_repo_confs)
+    if model_count > 0:
+        print(f"\n 🧮 Computed hashes for {len(names_to_hashes)} local files ({model_count} MODEL configs excluded).")
+    else:
+        print(f"\n 🧮 Computed hashes for {len(names_to_hashes)} local files.")
+
+    changed_conf_names = zipline_hub.call_diff_api(names_to_hashes)
 
     if not changed_conf_names:
         print(f" ✅ Remote contains all local files. No need to upload '{branch}'.")
@@ -91,19 +101,21 @@ def compute_and_upload_diffs(
         )
 
         # a list of names for diffed hashes on branch
-        diffed_confs = {k: local_repo_confs[k] for k in changed_conf_names}
+        diffed_confs = {k: filtered_local_repo_confs[k] for k in changed_conf_names}
+        
         conf_names_str = "\n    - ".join(diffed_confs.keys())
-        print(f"    - {conf_names_str}")
+        if diffed_confs:
+            print(f"    - {conf_names_str}")
 
         diff_confs = []
         for _, conf in diffed_confs.items():
             diff_confs.append(conf.__dict__)
 
         # Make PUT request to ZiplineHub
-        zipline_hub.call_upload_api(branch=branch, diff_confs=diff_confs, orch_v2=orch_v2)
+        zipline_hub.call_upload_api(branch=branch, diff_confs=diff_confs)
         print(f" ⬆️ Uploaded {len(diffed_confs)} changed confs to branch '{branch}'.")
 
-    zipline_hub.call_sync_api(branch=branch, names_to_hashes=names_to_hashes, orch_v2=orch_v2)
+    zipline_hub.call_sync_api(branch=branch, names_to_hashes=names_to_hashes)
 
     print(f" ✅ {len(names_to_hashes)} hashes updated on branch '{branch}'.\n")
     return diffed_confs

@@ -30,7 +30,38 @@ from ai.chronon.repo import FOLDER_NAME_TO_CLASS
 
 ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
 
+# Common type definition for any source type used across the codebase
+ANY_SOURCE_TYPE = Union[api.Source, api.EventSource, api.EntitySource, api.JoinSource, api.ModelTransforms]
+
 chronon_root_path = ""  # passed from compile.py
+
+
+def normalize_source(source: ANY_SOURCE_TYPE, output_namespace: str = None) -> api.Source:
+    """Convert any source type to a properly wrapped api.Source"""
+    if isinstance(source, api.EventSource):
+        return api.Source(events=source)
+    elif isinstance(source, api.EntitySource):
+        return api.Source(entities=source)
+    elif isinstance(source, api.JoinSource):
+        __set_name(source.join, api.Join, "joins")
+        if output_namespace and not source.join.metaData.outputNamespace:
+            source.join.metaData.outputNamespace = output_namespace
+        return api.Source(joinSource=source)
+    elif isinstance(source, api.ModelTransforms):
+        return api.Source(modelTransforms=source)
+    elif isinstance(source, api.Source):
+        if source.entities:
+            return normalize_source(source.entities, output_namespace)
+        elif source.events:
+            return normalize_source(source.events, output_namespace)
+        elif source.joinSource:
+            return normalize_source(source.joinSource, output_namespace)
+        elif source.modelTransforms:
+            return normalize_source(source.modelTransforms, output_namespace)
+        else:
+            return source
+    else:
+        print("unrecognized " + str(source))
 
 
 def edit_distance(str1, str2):
@@ -149,6 +180,7 @@ def get_table(source: api.Source) -> str:
         table = source.events.table
     else:
         from ai.chronon.join import _get_output_table_name
+
         table = _get_output_table_name(source.joinSource.join, True)
     return table.split("/")[0]
 
@@ -288,19 +320,13 @@ def join_part_output_table_name(join, jp, full_name: bool = False):
     )
 
 
-
-
 def log_table_name(obj, full_name: bool = False):
     return output_table_name(obj, full_name=full_name) + "_logged"
-
-
 
 
 def get_team_conf_from_py(team, key):
     team_module = importlib.import_module(f"teams.{team}")
     return getattr(team_module, key)
-
-
 
 
 def wait_for_simple_schema(table, lag, start, end):

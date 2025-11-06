@@ -89,14 +89,18 @@ case class GroupByPlanner(groupBy: GroupBy)(implicit outputPartitionSpec: Partit
   def streamingNode: Option[Node] = {
     groupBy.streamingSource.map { _ =>
       // Streaming node has table dependency on the upload to KV
-      val tableDep = new TableDependency()
+      val uploadToKVDep = new TableDependency()
         .setTableInfo(
           new TableInfo()
             .setTable(uploadToKVNode.metaData.outputTable)
         )
         .setStartOffset(WindowUtils.zero())
         .setEndOffset(WindowUtils.zero())
-      val streamingTableDeps = Seq(tableDep)
+
+      // If this GroupBy has a JoinSource, add dependency on upstream join's metadata upload
+      val joinSourceDeps = TableDependencies.fromJoinSources(groupBy.sources)
+
+      val streamingTableDeps = Seq(uploadToKVDep) ++ joinSourceDeps
 
       val metaData =
         MetaDataUtils.layer(

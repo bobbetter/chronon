@@ -3,20 +3,13 @@ package ai.chronon.integrations.cloud_gcp
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api.PartitionRange
+import ai.chronon.api.ScalaJavaConversions.{IterableOps, MapOps}
 import ai.chronon.spark.batch.StagingQuery
 import ai.chronon.spark.catalog.{Format, TableUtils}
-import scala.util.{Try, Failure, Success}
-import com.google.cloud.bigquery.{
-  BigQuery,
-  BigQueryOptions,
-  ExternalTableDefinition,
-  FormatOptions,
-  HivePartitioningOptions,
-  JobInfo,
-  QueryJobConfiguration,
-  TableInfo,
-  BigQueryException
-}
+import com.google.cloud.bigquery.{BigQuery, BigQueryOptions, JobInfo, QueryJobConfiguration}
+
+import java.util.UUID
+import scala.util.{Failure, Success, Try}
 
 class BigQueryImport(stagingQueryConf: api.StagingQuery, endPartition: String, tableUtils: TableUtils)
     extends StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tableUtils: TableUtils) {
@@ -24,20 +17,21 @@ class BigQueryImport(stagingQueryConf: api.StagingQuery, endPartition: String, t
   private lazy val bqOptions = BigQueryOptions.getDefaultInstance
   private[cloud_gcp] lazy val bigQueryClient: BigQuery = bqOptions.getService
 
-  private val formatStr = "parquet"
+  private[cloud_gcp] val formatStr = "parquet"
 
-  private[cloud_gcp] lazy val basePrefix = {
+  private[cloud_gcp] lazy val warehouseLocation = {
     val catalogName = Format.getCatalog(outputTable)(tableUtils.sparkSession)
-    val warehouseLocation = tableUtils.sparkSession.sessionState.conf
+    tableUtils.sparkSession.sessionState.conf
       .getConfString(s"spark.sql.catalog.${catalogName}.warehouse")
       .stripSuffix("/")
-    s"${warehouseLocation}/export/${outputTable.sanitize}"
   }
 
-  private[cloud_gcp] lazy val sourcePrefix = s"${basePrefix}/*.${formatStr}"
+  private[cloud_gcp] lazy val tempExportPrefix = {
+    s"${warehouseLocation}/export/${outputTable.sanitize}_${UUID.randomUUID().toString}"
+  }
 
-  private[cloud_gcp] def destPrefix(datePartitionColumn: String, datePartitionValue: String) =
-    s"${basePrefix}/${datePartitionColumn}=${datePartitionValue}/*.${formatStr}"
+  private[cloud_gcp] def exportUri(startPartition: String, endPartition: String) =
+    s"${tempExportPrefix}/${startPartition}_to_${endPartition}/*.${formatStr}"
 
   private[cloud_gcp] def exportDataTemplate(uri: String, sql: String, setups: Seq[String]): String = {
 
@@ -76,84 +70,105 @@ class BigQueryImport(stagingQueryConf: api.StagingQuery, endPartition: String, t
   }
 
   override def compute(range: PartitionRange, setups: Seq[String], enableAutoExpand: Option[Boolean]): Unit = {
-    // Export data for all partitions sequentially
-    range.partitions.foreach { currPart =>
-      val renderedQuery =
-        StagingQuery.substitute(
-          tableUtils,
-          stagingQueryConf.query,
-          currPart,
-          currPart,
-          endPartition
-        )
-      val destPath =
-        destPrefix(range.partitionSpec.column, currPart)
-      val renderedSetups = setups.map(s =>
-        StagingQuery.substitute(
-          tableUtils,
-          s,
-          currPart,
-          currPart,
-          endPartition
-        ))
-      val exportTemplate =
-        exportDataTemplate(destPath, renderedQuery, renderedSetups)
-      logger.info(s"Rendered Staging Query to run is:\n$exportTemplate")
-      val exportConf = QueryJobConfiguration.of(exportTemplate)
-      val exportJobTry = Try {
-        val job = bigQueryClient.create(JobInfo.of(exportConf))
-        job.waitFor()
-      }.flatMap { job =>
-        scala.Option(job.getStatus.getError) match {
+    // Step 1: Export data for the full range to a temp location
+    val renderedQuery =
+      StagingQuery.substitute(
+        tableUtils,
+        stagingQueryConf.query,
+        range.start,
+        range.end,
+        endPartition
+      )
+    val tempUri = exportUri(range.start, range.end)
+    val renderedSetups = setups.map(s =>
+      StagingQuery.substitute(
+        tableUtils,
+        s,
+        range.start,
+        range.end,
+        endPartition
+      ))
+    val exportTemplate =
+      exportDataTemplate(tempUri, renderedQuery, renderedSetups)
+    logger.info(s"Rendered Staging Query to run is:\n$exportTemplate")
+    val exportConf = QueryJobConfiguration.of(exportTemplate)
+    val exportJobTry = Try {
+      val job = bigQueryClient.create(JobInfo.of(exportConf))
+      val jobAfterWait = job.waitFor()
+      if (jobAfterWait == null) {
+        Failure(new RuntimeException("BigQuery job disappeared after submission"))
+      } else {
+        scala.Option(jobAfterWait.getStatus.getError) match {
           case Some(err) => Failure(new RuntimeException(s"Error exporting data to BigQuery ${err.getMessage}"))
-          case None      => Success(job)
+          case None      => Success(jobAfterWait)
         }
       }
+    }.flatten
 
-      exportJobTry match {
-        case Success(_) =>
-          logger.info(s"Successfully exported partition: ${range.partitionSpec.column}=${currPart}")
-        case Failure(exception) =>
-          throw exception
-      }
-    }
-
-    // Create the table in bigquery catalog once at the end after all partitions are exported
-    val createTableTry = Try {
-      val formatOptions = FormatOptions.of(formatStr.toUpperCase)
-      val hivePartitioningOptions =
-        HivePartitioningOptions
-          .newBuilder()
-          .setSourceUriPrefix(basePrefix)
-          .setMode("AUTO")
-          .setRequirePartitionFilter(true)
-          .build()
-      val tableDefinition = ExternalTableDefinition
-        .of(sourcePrefix, formatOptions)
-        .toBuilder
-        .setAutodetect(true)
-        .setHivePartitioningOptions(hivePartitioningOptions)
-        .build
-      val tableInfo = TableInfo.of(SparkBQUtils.toTableId(outputTable)(tableUtils.sparkSession), tableDefinition)
-      bigQueryClient.create(tableInfo)
-    }
-
-    val existingTable = createTableTry match {
-      case Success(table) =>
-        logger.info(s"Created table ${table.getTableId} with all partitions: $range")
-        table
+    exportJobTry match {
+      case Success(_) =>
+        logger.info(
+          s"Successfully exported data for range: ${range.start} to ${range.end} to temp location: ${tempExportPrefix}")
       case Failure(exception) =>
-        exception match {
-          case b: BigQueryException if (b.getMessage.contains("Already Exists")) =>
-            logger.info(s"Table already exists: $outputTable")
-            bigQueryClient.getTable(SparkBQUtils.toTableId(outputTable)(tableUtils.sparkSession))
-          case _ => throw exception
-        }
+        throw exception
     }
 
-    logger.info(
-      s"Wrote to table $outputTable as bigquery table ${existingTable.getTableId.toString}, into partitions: $range")
+    // Step 2: Read the parquet data from temp location and write to final Iceberg table via TableUtils
+    try {
+      val readPath = exportUri(range.start, range.end).stripSuffix(s"/*.${formatStr}")
+      logger.info(s"Reading data from temp location: ${readPath}")
+      val df = tableUtils.sparkSession.read.parquet(readPath)
+
+      // Get partition columns from the staging query metadata
+      val partitionCols: Seq[String] =
+        Seq(range.partitionSpec.column) ++
+          (Option(stagingQueryConf.metaData.additionalOutputPartitionColumns)
+            .map(_.toScala)
+            .getOrElse(Seq.empty))
+
+      val tableProps = Option(stagingQueryConf.metaData.tableProperties)
+        .map(_.toScala.toMap)
+        .getOrElse(Map.empty[String, String])
+
+      logger.info(s"Writing data to Iceberg table: $outputTable with partitions: ${partitionCols.mkString(", ")}")
+      tableUtils.insertPartitions(
+        df = df,
+        tableName = outputTable,
+        tableProperties = tableProps,
+        partitionColumns = partitionCols.toList,
+        autoExpand = enableAutoExpand.getOrElse(false)
+      )
+
+      logger.info(s"Successfully wrote data to Iceberg table $outputTable for range: $range")
+    } catch {
+      case ex: Throwable =>
+        logger.error(s"Error writing to Iceberg table $outputTable", ex)
+        throw ex
+    } finally {
+      // Step 3: Clean up temp directory
+      cleanupTempDirectory()
+    }
+
     logger.info(s"Finished writing Staging Query data to $outputTable")
+  }
+
+  private[cloud_gcp] def cleanupTempDirectory(): Unit = {
+    try {
+      logger.info(s"Cleaning up temp directory: ${tempExportPrefix}")
+      val hadoopConf = tableUtils.sparkSession.sparkContext.hadoopConfiguration
+      val fs = new org.apache.hadoop.fs.Path(tempExportPrefix).getFileSystem(hadoopConf)
+      val path = new org.apache.hadoop.fs.Path(tempExportPrefix)
+      if (fs.exists(path)) {
+        fs.delete(path, true)
+        logger.info(s"Successfully deleted temp directory: ${tempExportPrefix}")
+      } else {
+        logger.info(s"Temp directory does not exist: ${tempExportPrefix}")
+      }
+    } catch {
+      case ex: Throwable =>
+        logger.warn(s"Failed to cleanup temp directory ${tempExportPrefix}: ${ex.getMessage}")
+      // Don't throw, just log the warning as cleanup failure shouldn't fail the entire job
+    }
   }
 
 }

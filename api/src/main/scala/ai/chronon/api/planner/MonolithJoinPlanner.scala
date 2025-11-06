@@ -44,33 +44,43 @@ case class MonolithJoinPlanner(join: Join)(implicit outputPartitionSpec: Partiti
   def metadataUploadNode: Node = {
     val stepDays = 1 // Default step days for metadata upload
 
-    // Create table dependencies to GroupBy nodes (either uploadToKV or streaming)
-    val joinPartDeps = Option(join.joinParts).map(_.asScala).getOrElse(Seq.empty).flatMap { joinPart =>
+    // Create table dependencies for all GroupBy parts (both direct GroupBy deps and upstream join deps)
+    val allDeps = Option(join.joinParts).map(_.asScala).getOrElse(Seq.empty).flatMap { joinPart =>
       val groupBy = joinPart.groupBy
       val hasStreamingSource = groupBy.streamingSource.isDefined
 
-      val tableName = if (hasStreamingSource) {
+      // Add dependency on the GroupBy node (either uploadToKV or streaming)
+      val groupByTableName = if (hasStreamingSource) {
         groupBy.metaData.outputTable + s"__${GroupByPlanner.Streaming}"
       } else {
         groupBy.metaData.outputTable + s"__${GroupByPlanner.UploadToKV}"
       }
 
-      val tableDep = new TableDependency()
+      val groupByDep = new TableDependency()
         .setTableInfo(
           new TableInfo()
-            .setTable(tableName)
+            .setTable(groupByTableName)
         )
         .setStartOffset(WindowUtils.zero())
         .setEndOffset(WindowUtils.zero())
 
-      Some(tableDep)
+      // Add dependencies on upstream join metadata uploads if GroupBy has JoinSource
+      val upstreamJoinDeps = if (hasStreamingSource) {
+        // Skip this for streaming GroupBys since the streaming node will handle this dependency
+        Seq.empty
+      } else {
+        TableDependencies.fromJoinSources(groupBy.sources)
+      }
+
+      // Return both the GroupBy dependency and any upstream join dependencies
+      Seq(groupByDep) ++ upstreamJoinDeps
     }
 
     val metaData =
       MetaDataUtils.layer(join.metaData,
                           "metadata_upload",
                           join.metaData.name + "__metadata_upload",
-                          joinPartDeps,
+                          allDeps,
                           Some(stepDays))
     val node = new planner.JoinMetadataUpload().setJoin(join)
     toNode(metaData, _.setJoinMetadataUpload(node), semanticMonolithJoin(join))

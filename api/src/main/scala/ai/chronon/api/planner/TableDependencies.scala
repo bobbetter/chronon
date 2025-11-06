@@ -126,4 +126,22 @@ object TableDependencies {
 
   }
 
+  def fromJoinSources(sources: java.util.List[api.Source]): Seq[TableDependency] = {
+    Option(sources)
+      .map(_.asScala)
+      .getOrElse(Seq.empty)
+      .filter(_.isSetJoinSource)
+      .map { source =>
+        val upstreamJoin = source.getJoinSource.getJoin
+        val upstreamMetadataUploadTable = upstreamJoin.metaData.outputTable + "__metadata_upload"
+        new TableDependency()
+          .setTableInfo(
+            new TableInfo()
+              .setTable(upstreamMetadataUploadTable)
+          )
+          .setStartOffset(WindowUtils.zero())
+          .setEndOffset(WindowUtils.zero())
+      }
+  }
+
 }

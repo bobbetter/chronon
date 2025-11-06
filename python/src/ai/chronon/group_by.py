@@ -36,6 +36,7 @@ def _get_output_table_name(obj, full_name: bool = False):
         utils.__set_name(obj, ttypes.GroupBy, "group_bys")
     return utils.output_table_name(obj, full_name)
 
+
 #  The GroupBy's default online/production status is None and it will inherit
 # online/production status from the Joins it is included.
 # If it is included in multiple joins, it is considered online/production
@@ -385,9 +386,6 @@ Keys {unselected_keys}, are unselected in source
                 )
 
 
-_ANY_SOURCE_TYPE = Union[ttypes.Source, ttypes.EventSource, ttypes.EntitySource, ttypes.JoinSource]
-
-
 def _get_op_suffix(operation, argmap):
     op_str = op_to_str(operation)
     if operation in [
@@ -428,7 +426,7 @@ def get_output_col_names(aggregation):
 
 def GroupBy(
     version: int,
-    sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
+    sources: Union[List[utils.ANY_SOURCE_TYPE], utils.ANY_SOURCE_TYPE],
     keys: List[str],
     aggregations: Optional[List[ttypes.Aggregation]],
     derivations: List[ttypes.Derivation] = None,
@@ -616,32 +614,10 @@ def GroupBy(
             )
         return source
 
-    def _normalize_source(source):
-        if isinstance(source, ttypes.EventSource):
-            return ttypes.Source(events=source)
-        elif isinstance(source, ttypes.EntitySource):
-            return ttypes.Source(entities=source)
-        elif isinstance(source, ttypes.JoinSource):
-            utils.__set_name(source.join, ttypes.Join, "joins")
-            if not source.join.metaData.outputNamespace:
-                source.join.metaData.outputNamespace = output_namespace
-            return ttypes.Source(joinSource=source)
-        elif isinstance(source, ttypes.Source):
-            if source.entities:
-                return _normalize_source(source.entities)
-            elif source.events:
-                return _normalize_source(source.events)
-            elif source.joinSource:
-                return _normalize_source(source.joinSource)
-            else:
-                return source
-        else:
-            print("unrecognized " + str(source))
-
     if not isinstance(sources, list):
         sources = [sources]
 
-    sources = [_sanitize_columns(_normalize_source(source)) for source in sources]
+    sources = [_sanitize_columns(utils.normalize_source(source, output_namespace)) for source in sources]
 
     # get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]

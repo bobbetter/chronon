@@ -8,7 +8,11 @@ case object Iceberg extends Format {
 
   override def tableProperties: Map[String, String] = {
     Map(
-      "commit.retry.min-wait-ms" -> "5000"
+      "commit.retry.min-wait-ms" -> "10000",
+      "commit.retry.num-retries" -> "10", // default = 4
+      "commit.status-check.num-retries" -> "5", // default = 3
+      "commit.status-check.min-wait-ms" -> (10 * 1000).toString, // default = 1000
+      "write.merge.isolation-level" -> "snapshot"
     )
   }
 
@@ -71,7 +75,7 @@ case object Iceberg extends Format {
     } else {
 
       partitionsDf
-        .select(col(s"partition.$partitionColumn"))
+        .select(col(s"partition.$partitionColumn").cast("string"))
         .collect()
         .map(_.getString(0))
         .toList

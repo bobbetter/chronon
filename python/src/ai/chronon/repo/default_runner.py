@@ -239,7 +239,7 @@ class Runner:
 
         if self.conf_type:
             submitter_args.append(f"--conf-type={self.conf_type}")
-            
+
         if self.uploader:
             submitter_args.append(f"--uploader={self.uploader}")
 

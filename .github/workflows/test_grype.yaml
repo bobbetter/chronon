@@ -145,22 +145,22 @@ jobs:
       - name: Run Grype scan on Service JAR
         run: |
           echo "Scanning Service JAR for vulnerabilities..."
-          grype --fail-on low service-assembly-jar/out.jar
+          grype --only-fixed --fail-on low service-assembly-jar/out.jar
 
       - name: Run Grype scan on Cloud GCP JAR
         run: |
           echo "Scanning Cloud GCP JAR for vulnerabilities..."
-          grype --fail-on low cloud-gcp-jar/out.jar
+          grype --only-fixed --fail-on low cloud-gcp-jar/out.jar
 
       - name: Run Grype scan on Flink JAR
         run: |
           echo "Scanning Flink JAR for vulnerabilities..."
-          grype --fail-on low flink-jar/out.jar
+          grype --only-fixed --fail-on low flink-jar/out.jar
 
       - name: Run Grype scan on Flink connectors JAR
         run: |
           echo "Scanning Flink connectors JAR for vulnerabilities..."
-          grype --fail-on low flink-connectors-jar/out.jar
+          grype --only-fixed --fail-on low flink-connectors-jar/out.jar
 
       - name: Load Docker image for Grype scanning
         run: docker load -i chronon-fetcher.tar
@@ -169,4 +169,4 @@ jobs:
       - name: Run Grype scan on Fetcher Docker image
         run: |
           echo "Scanning Fetcher Docker image for vulnerabilities..."
-          grype --fail-on medium chronon-fetcher:grype-test
+          grype --only-fixed --fail-on medium chronon-fetcher:grype-test

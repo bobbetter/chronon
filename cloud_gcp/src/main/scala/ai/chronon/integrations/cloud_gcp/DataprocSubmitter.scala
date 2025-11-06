@@ -39,7 +39,7 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
     val filters =
       s"status.state = ACTIVE AND labels.job-type = flink AND labels.metadata-name = $groupByNameDataprocLabel"
 
-    println(s"Searching for running flink jobs with filter: [$filters]")
+    logger.info(s"Searching for running flink jobs with filter: [$filters]")
 
     val listResult = jobControllerClient.listJobs(
       ListJobsRequest
@@ -65,10 +65,10 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
 
     val groupByCheckpointPath = s"$manifestBucketPath/$groupByName"
     val manifestObjectPath = s"$groupByCheckpointPath/$manifestFileName"
-    println(s"Checking for manifest file at $manifestObjectPath")
+    logger.info(s"Checking for manifest file at $manifestObjectPath")
 
     if (!gcsClient.fileExists(manifestObjectPath)) {
-      println(s"No manifest file found for $groupByName. Returning no checkpoints.")
+      logger.info(s"No manifest file found for $groupByName. Returning no checkpoints.")
       return None // No manifest file found
     }
 
@@ -86,7 +86,7 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
       .map(_.split("/").find(_.startsWith("chk-")).get)
       .distinct
       .sortBy(chk => chk.substring(4).toInt)(Ordering.Int.reverse)
-    println(s"Flink checkpoints for $groupByName: $allCheckpoints")
+    logger.info(s"Flink checkpoints for $groupByName: $allCheckpoints")
 
     val latestCheckpoint = allCheckpoints.headOption
     val latestCheckpointUri = latestCheckpoint
@@ -95,9 +95,9 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
       })
 
     if (latestCheckpointUri.isEmpty) {
-      println(s"No checkpoints found for $groupByName.")
+      logger.info(s"No checkpoints found for $groupByName.")
     } else {
-      println(s"Latest checkpoint for $groupByName: ${latestCheckpointUri.get}")
+      logger.info(s"Latest checkpoint for $groupByName: ${latestCheckpointUri.get}")
     }
 
     latestCheckpointUri
@@ -112,7 +112,7 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
     } catch {
 
       case e: ApiException =>
-        println(s"Error monitoring job: ${e.getMessage}")
+        logger.error(s"Error monitoring job: ${e.getMessage}")
         "UNKNOWN" // If there's an error, we return UNKNOWN status
     }
   }
@@ -331,21 +331,21 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
 
       if (CheckIfJobIsRunning.equals(streamingMode)) {
         if (maybeJobId.isEmpty) {
-          println(s"No running Flink job found for GroupBy name $groupByName.")
+          logger.info(s"No running Flink job found for GroupBy name $groupByName.")
           throw NoRunningFlinkJob(
             s"No running Flink job found for GroupBy name $groupByName"
           )
         } else {
-          println(s"One running Flink job found for GroupBy name $groupByName. Job id = ${maybeJobId.get}")
+          logger.info(s"One running Flink job found for GroupBy name $groupByName. Job id = ${maybeJobId.get}")
           return maybeJobId.get
         }
       } else if (StreamingDeploy.equals(streamingMode)) {
         if (args.contains(StreamingVersionCheckDeploy) && maybeJobId.isDefined) {
           if (compareZiplineVersionOfRunningFlinkJob(args, maybeJobId.get)) {
-            println(s"Local Zipline version matches running Flink app's Zipline version. Exiting")
+            logger.info(s"Local Zipline version matches running Flink app's Zipline version. Exiting")
             return maybeJobId.get
           } else {
-            println(s"Local Zipline version does not match remote Zipline version. Proceeding with deployment.")
+            logger.info(s"Local Zipline version does not match remote Zipline version. Proceeding with deployment.")
           }
         }
 
@@ -355,7 +355,7 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
         if (maybeJobId.isDefined) {
           val matchedId = maybeJobId.get
           kill(matchedId)
-          println(s"Cancelled running Flink job with id $matchedId for GroupBy name $groupByName.")
+          logger.info(s"Cancelled running Flink job with id $matchedId for GroupBy name $groupByName.")
         }
       }
     }
@@ -367,8 +367,6 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
       args = args,
       envMap = envMap
     )
-    println(finalArgs.mkString("Array(", ", ", ")"))
-
     val jobId = submit(
       jobType = jobType,
       submissionProperties =
@@ -378,8 +376,8 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
       labels = labels,
       finalArgs: _*
     )
-    println("Dataproc submitter job id: " + jobId)
-    println(
+    logger.info("Dataproc submitter job id: " + jobId)
+    logger.info(
       s"Safe to exit. Follow the job status at: https://console.cloud.google.com/dataproc/jobs/${jobId}/configuration?region=${region}&project=${projectId}")
     jobId
   }
@@ -455,7 +453,7 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
           baseJobProps
         } else {
           val savepointUri = maybeSavepointUri.get
-          println(s"Deploying Flink app with savepoint uri $savepointUri")
+          logger.info(s"Deploying Flink app with savepoint uri $savepointUri")
           baseJobProps + (SavepointUri -> savepointUri)
         }
       case _ => throw new Exception("Invalid job type")
@@ -479,7 +477,7 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
         .getArgValue(args, LocalZiplineVersionArgKeyword)
         .getOrElse(throw new Exception("Missing required argument: " + LocalZiplineVersionArgKeyword)))
     val remoteZiplineVersion = getZiplineVersionOfDataprocJob(jobId)
-    println(
+    logger.info(
       s"Local Zipline version: $localZiplineVersion. " +
         s"Remote Zipline version for Dataproc job $jobId: $remoteZiplineVersion")
     localZiplineVersion == remoteZiplineVersion
@@ -494,7 +492,7 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
           s"Only one should be active. Job ids = ${matchedIds.mkString(", ")}"
       )
     } else if (matchedIds.isEmpty) {
-      println(s"No running Flink jobs found for GroupBy name $groupByName.")
+      logger.info(s"No running Flink jobs found for GroupBy name $groupByName.")
       None
     } else {
       Some(matchedIds.head)
@@ -586,7 +584,7 @@ object DataprocSubmitter {
         ) {
           val currentStatus = waitForClusterReadiness(clusterName, projectId, region, dataprocClient)
 
-          println(s"Dataproc cluster $clusterName already exists and is in state ${currentStatus.getState}.")
+          System.err.println(s"Dataproc cluster $clusterName already exists and is in state ${currentStatus.getState}.")
           clusterName
         } else if (cluster != null) {
           if (maybeClusterConfig.isDefined && maybeClusterConfig.get.contains("dataproc.config")) {
@@ -694,7 +692,7 @@ object DataprocSubmitter {
       if (operation == null) {
         throw new RuntimeException("Failed to create Dataproc cluster.")
       }
-      println(s"Created Dataproc cluster: $clusterName")
+      System.err.println(s"Created Dataproc cluster: $clusterName")
     } catch {
       case e: java.util.concurrent.TimeoutException =>
         throw new RuntimeException(s"Timeout waiting for cluster creation: ${e.getMessage}", e)
@@ -705,7 +703,7 @@ object DataprocSubmitter {
     val currentState = currentStatus.getState
     currentState match {
       case ClusterStatus.State.RUNNING =>
-        println(s"Dataproc cluster $clusterName is running.")
+        System.err.println(s"Dataproc cluster $clusterName is running.")
         clusterName
       case ClusterStatus.State.ERROR =>
         throw new RuntimeException(
@@ -737,7 +735,7 @@ object DataprocSubmitter {
       .build()
     dataprocClient.deleteClusterAsync(deleteClusterRequest).get()
 
-    println(s"Dataproc cluster $clusterName deleted successfully. Creating a new cluster.")
+    System.err.println(s"Dataproc cluster $clusterName deleted successfully. Creating a new cluster.")
 
     createDataprocCluster(clusterName, projectId, region, dataprocClient, clusterConfigStr)
 
@@ -764,7 +762,8 @@ object DataprocSubmitter {
           s"Timeout waiting for cluster $clusterName to reach healthy state"
         )
       }
-      println(s"Waiting for Dataproc cluster $clusterName to be in healthy state. Current state: $currentState")
+      System.err.println(
+        s"Waiting for Dataproc cluster $clusterName to be in healthy state. Current state: $currentState")
       Thread.sleep(30000) // Wait for 30 seconds before checking again
       currentStatus = dataprocClient.getCluster(projectId, region, clusterName).getStatus
       currentState = currentStatus.getState

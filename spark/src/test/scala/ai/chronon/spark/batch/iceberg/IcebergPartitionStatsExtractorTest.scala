@@ -61,7 +61,7 @@ class IcebergPartitionStatsExtractorTest
     spark.sql("DROP TABLE IF EXISTS test_partitioned_table")
   }
 
-  "IcebergPartitionStatsExtractor" should "throw exception for unpartitioned table" in {
+  "IcebergPartitionStatsExtractor" should "return None for unpartitioned table" in {
     spark.sql("""
       CREATE TABLE test_partitioned_table (
         id BIGINT,
@@ -72,15 +72,12 @@ class IcebergPartitionStatsExtractorTest
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
 
-    val exception = intercept[IllegalArgumentException] {
-      extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
-    }
+    val result = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
 
-    exception.getMessage should include(
-      "Illegal request to compute partition-stats of an un-partitioned table: spark_catalog.default.test_partitioned_table")
+    result should be(None)
   }
 
-  it should "return empty sequence for empty partitioned table" in {
+  it should "return empty map for empty partitioned table" in {
     spark.sql("""
       CREATE TABLE test_partitioned_table (
         id BIGINT,
@@ -94,7 +91,7 @@ class IcebergPartitionStatsExtractorTest
     val extractor = new IcebergPartitionStatsExtractor(spark)
     val tileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
 
-    tileSummaries should be(empty)
+    tileSummaries should be(Some(Map.empty))
   }
 
   it should "extract partition stats from table with data" in {
@@ -125,10 +122,12 @@ class IcebergPartitionStatsExtractorTest
     rowCount should be(5)
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val tileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
+    val maybeTileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
 
+    maybeTileSummaries should be(defined)
+    val tileSummaries = maybeTileSummaries.get
     tileSummaries should not be empty
-    
+
     // Helper function to get TileSummary for a specific partition and column
     def getTileSummary(partition: String, column: String): Option[TileSummary] = {
       getFieldId("test_partitioned_table", column).flatMap { fieldId =>
@@ -193,8 +192,10 @@ class IcebergPartitionStatsExtractorTest
     spark.sql("REFRESH TABLE test_partitioned_table")
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val tileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
+    val maybeTileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
 
+    maybeTileSummaries should be(defined)
+    val tileSummaries = maybeTileSummaries.get
     tileSummaries should not be empty
     
     // Helper function to get TileSummary for a specific partition and column
@@ -249,7 +250,10 @@ class IcebergPartitionStatsExtractorTest
     spark.sql("REFRESH TABLE test_partitioned_table")
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val tileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
+    val maybeTileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
+
+    maybeTileSummaries should be(defined)
+    val tileSummaries = maybeTileSummaries.get
 
     // Helper functions
     def getTileSummary(partition: String, column: String): Option[TileSummary] = {
@@ -296,7 +300,10 @@ class IcebergPartitionStatsExtractorTest
     spark.sql("REFRESH TABLE test_partitioned_table")
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val tileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
+    val maybeTileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
+
+    maybeTileSummaries should be(defined)
+    val tileSummaries = maybeTileSummaries.get
 
     // Helper function to get TileSummary for a specific partition and column
     def getTileSummary(partition: String, column: String): Option[TileSummary] = {
@@ -338,7 +345,10 @@ class IcebergPartitionStatsExtractorTest
     spark.sql("REFRESH TABLE test_partitioned_table")
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val tileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
+    val maybeTileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
+
+    maybeTileSummaries should be(defined)
+    val tileSummaries = maybeTileSummaries.get
 
     // Helper function to get TileSummary for a specific partition and column
     def getTileSummary(partition: String, column: String): Option[TileSummary] = {
@@ -387,7 +397,10 @@ class IcebergPartitionStatsExtractorTest
     spark.sql("REFRESH TABLE test_partitioned_table")
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val tileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
+    val maybeTileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
+
+    maybeTileSummaries should be(defined)
+    val tileSummaries = maybeTileSummaries.get
 
     // Helper function to get TileSummary for a specific partition and column
     def getTileSummary(partition: String, column: String): Option[TileSummary] = {
@@ -488,7 +501,10 @@ class IcebergPartitionStatsExtractorTest
     spark.sql("REFRESH TABLE test_partitioned_table")
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val tileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
+    val maybeTileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_partitioned_table", "test_conf")
+
+    maybeTileSummaries should be(defined)
+    val tileSummaries = maybeTileSummaries.get
 
     // Helper function to get TileSummary for a specific partition and column
     def getTileSummary(year: String, region: String, column: String): Option[TileSummary] = {
@@ -726,11 +742,9 @@ class IcebergPartitionStatsExtractorTest
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
 
-    val exception = intercept[IllegalArgumentException] {
-      extractor.extractPartitionedStats("spark_catalog.default.test_unpartitioned", "test")
-    }
+    val result = extractor.extractPartitionedStats("spark_catalog.default.test_unpartitioned", "test")
 
-    exception.getMessage should include("un-partitioned table")
+    result should be(None)
 
     spark.sql("DROP TABLE IF EXISTS test_unpartitioned")
   }
@@ -745,7 +759,7 @@ class IcebergPartitionStatsExtractorTest
     val extractor = new IcebergPartitionStatsExtractor(spark)
     val result = extractor.extractPartitionedStats("spark_catalog.default.test_empty_partitioned", "test")
 
-    result should be(empty)
+    result should be(Some(Map.empty))
 
     spark.sql("DROP TABLE IF EXISTS test_empty_partitioned")
   }
@@ -758,7 +772,10 @@ class IcebergPartitionStatsExtractorTest
                 |) USING iceberg""".stripMargin)
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val schemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_simple_schema")
+    val maybeSchemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_simple_schema")
+
+    maybeSchemaMapping should be(defined)
+    val schemaMapping = maybeSchemaMapping.get
 
     schemaMapping should have size 3
     schemaMapping.values should contain allOf ("id", "name", "value")
@@ -786,7 +803,10 @@ class IcebergPartitionStatsExtractorTest
                 |) USING iceberg""".stripMargin)
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val schemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_nested_schema")
+    val maybeSchemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_nested_schema")
+
+    maybeSchemaMapping should be(defined)
+    val schemaMapping = maybeSchemaMapping.get
 
     // Should include top-level fields: id, address, name
     schemaMapping should have size 3
@@ -814,7 +834,10 @@ class IcebergPartitionStatsExtractorTest
                 |) USING iceberg""".stripMargin)
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val schemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_array_schema")
+    val maybeSchemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_array_schema")
+
+    maybeSchemaMapping should be(defined)
+    val schemaMapping = maybeSchemaMapping.get
 
     // Should include top-level fields: id, tags, scores, complex_array
     schemaMapping should have size 4
@@ -842,7 +865,10 @@ class IcebergPartitionStatsExtractorTest
                 |) USING iceberg""".stripMargin)
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val schemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_map_schema")
+    val maybeSchemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_map_schema")
+
+    maybeSchemaMapping should be(defined)
+    val schemaMapping = maybeSchemaMapping.get
 
     // Should include top-level fields: id, simple_map, complex_map, nested_map
     schemaMapping should have size 4
@@ -878,7 +904,10 @@ class IcebergPartitionStatsExtractorTest
                 |) USING iceberg""".stripMargin)
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val schemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_complex_mixed_schema")
+    val maybeSchemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_complex_mixed_schema")
+
+    maybeSchemaMapping should be(defined)
+    val schemaMapping = maybeSchemaMapping.get
 
     // Should include top-level fields: id, user_info, metadata, tags
     schemaMapping should have size 4
@@ -905,7 +934,10 @@ class IcebergPartitionStatsExtractorTest
                 |) USING iceberg""".stripMargin)
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val schemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_array_of_maps")
+    val maybeSchemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_array_of_maps")
+
+    maybeSchemaMapping should be(defined)
+    val schemaMapping = maybeSchemaMapping.get
 
     // Should include top-level fields: id, data, complex_data
     schemaMapping should have size 3
@@ -932,7 +964,10 @@ class IcebergPartitionStatsExtractorTest
                 |) USING iceberg""".stripMargin)
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val schemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_map_of_arrays")
+    val maybeSchemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_map_of_arrays")
+
+    maybeSchemaMapping should be(defined)
+    val schemaMapping = maybeSchemaMapping.get
 
     // Should include top-level fields: id, simple_map_array, complex_map_array
     schemaMapping should have size 3
@@ -964,7 +999,10 @@ class IcebergPartitionStatsExtractorTest
                 |) USING iceberg""".stripMargin)
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val schemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_deeply_nested")
+    val maybeSchemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_deeply_nested")
+
+    maybeSchemaMapping should be(defined)
+    val schemaMapping = maybeSchemaMapping.get
 
     // Should include top-level fields: id, level1
     schemaMapping should have size 2
@@ -998,7 +1036,10 @@ class IcebergPartitionStatsExtractorTest
                 |) USING iceberg""".stripMargin)
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
-    val schemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_all_types")
+    val maybeSchemaMapping = extractor.extractSchemaMapping("spark_catalog.default.test_all_types")
+
+    maybeSchemaMapping should be(defined)
+    val schemaMapping = maybeSchemaMapping.get
 
     // Should include all 13 fields
     schemaMapping should have size 13
@@ -1020,22 +1061,17 @@ class IcebergPartitionStatsExtractorTest
   it should "handle non-existent table gracefully" in {
     val extractor = new IcebergPartitionStatsExtractor(spark)
 
-    val exception = intercept[RuntimeException] {
-      extractor.extractSchemaMapping("spark_catalog.default.non_existent_table")
-    }
+    val result = extractor.extractSchemaMapping("spark_catalog.default.non_existent_table")
 
-    exception.getMessage should include("Failed to extract schema mapping")
-    exception.getCause should not be null
+    result should be(None)
   }
 
   it should "handle invalid table name format gracefully" in {
     val extractor = new IcebergPartitionStatsExtractor(spark)
 
-    val exception = intercept[RuntimeException] {
-      extractor.extractSchemaMapping("invalid.table.name.format.too.many.parts")
-    }
+    val result = extractor.extractSchemaMapping("invalid.table.name.format.too.many.parts")
 
-    exception.getMessage should include("Failed to extract schema mapping")
+    result should be(None)
   }
 
   it should "extract schema mapping maintaining field ID consistency" in {
@@ -1048,8 +1084,13 @@ class IcebergPartitionStatsExtractorTest
 
     val extractor = new IcebergPartitionStatsExtractor(spark)
 
-    val mapping1 = extractor.extractSchemaMapping("spark_catalog.default.test_consistency")
-    val mapping2 = extractor.extractSchemaMapping("spark_catalog.default.test_consistency")
+    val maybeMapping1 = extractor.extractSchemaMapping("spark_catalog.default.test_consistency")
+    val maybeMapping2 = extractor.extractSchemaMapping("spark_catalog.default.test_consistency")
+
+    maybeMapping1 should be(defined)
+    maybeMapping2 should be(defined)
+    val mapping1 = maybeMapping1.get
+    val mapping2 = maybeMapping2.get
 
     // Mappings should be identical
     mapping1 should equal(mapping2)
@@ -1057,7 +1098,10 @@ class IcebergPartitionStatsExtractorTest
     // Add a column and verify schema evolution
     spark.sql("ALTER TABLE test_consistency ADD COLUMN new_field STRING")
 
-    val mapping3 = extractor.extractSchemaMapping("spark_catalog.default.test_consistency")
+    val maybeMapping3 = extractor.extractSchemaMapping("spark_catalog.default.test_consistency")
+
+    maybeMapping3 should be(defined)
+    val mapping3 = maybeMapping3.get
 
     // New mapping should contain all original fields plus the new one
     mapping3 should have size (mapping1.size + 1)
@@ -1069,5 +1113,57 @@ class IcebergPartitionStatsExtractorTest
     }
 
     spark.sql("DROP TABLE IF EXISTS test_consistency")
+  }
+
+  it should "handle DATE partition type with proper string formatting" in {
+    spark.sql("""
+      CREATE TABLE test_date_partition (
+        id BIGINT,
+        name STRING,
+        ds DATE,
+        value DOUBLE
+      ) USING iceberg
+      PARTITIONED BY (ds)
+      """)
+
+    spark.sql("""
+      INSERT INTO test_date_partition VALUES
+      (1, 'Alice', DATE '2024-01-15', 100.0),
+      (2, 'Bob', DATE '2024-01-15', 200.0),
+      (3, 'Charlie', DATE '2024-01-16', 150.0)
+      """)
+
+    spark.sql("REFRESH TABLE test_date_partition")
+
+    val extractor = new IcebergPartitionStatsExtractor(spark)
+    val maybeTileSummaries = extractor.extractPartitionedStats("spark_catalog.default.test_date_partition", "test_conf")
+
+    maybeTileSummaries should be(defined)
+    val tileSummaries = maybeTileSummaries.get
+    tileSummaries should not be empty
+
+    // Helper function to get TileSummary for a specific partition and column
+    def getTileSummary(datePartition: String, column: String): Option[TileSummary] = {
+      getFieldId("test_date_partition", column).flatMap { fieldId =>
+        tileSummaries.find { case (tileKey, _) =>
+          tileKey.getColumn == fieldId && tileKey.getSlice == s"ds=$datePartition"
+        }.map(_._2)
+      }
+    }
+
+    // Verify partition keys are properly formatted as date strings
+    val jan15Summary = getTileSummary("2024-01-15", "id")
+    jan15Summary should be(defined)
+    jan15Summary.get.getCount should be(2)
+
+    val jan16Summary = getTileSummary("2024-01-16", "id")
+    jan16Summary should be(defined)
+    jan16Summary.get.getCount should be(1)
+
+    // Verify null counts
+    getTileSummary("2024-01-15", "name").get.getNullCount should be(0)
+    getTileSummary("2024-01-16", "name").get.getNullCount should be(0)
+
+    spark.sql("DROP TABLE IF EXISTS test_date_partition")
   }
 }

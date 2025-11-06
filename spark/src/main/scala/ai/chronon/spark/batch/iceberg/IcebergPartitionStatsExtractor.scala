@@ -4,12 +4,12 @@ import ai.chronon.api.ScalaJavaConversions.JMapOps
 import ai.chronon.api.{PartitionSpec, ThriftJsonCodec}
 import ai.chronon.observability._
 import ai.chronon.online.KVStore.PutRequest
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.iceberg.spark.source.SparkTable
 import org.apache.iceberg.{DataFile, ManifestFiles}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.{Identifier, TableCatalog}
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.scala.DefaultScalaModule
 
 import java.nio.charset.StandardCharsets
 import scala.collection.JavaConverters._
@@ -180,116 +180,112 @@ class PartitionAccumulator(
 class IcebergPartitionStatsExtractor(spark: SparkSession) {
   import IcebergPartitionStatsExtractor.PartitionKey
 
-  private def loadIcebergTable(fullTableName: String): org.apache.iceberg.Table = {
-    val parsed = spark.sessionState.sqlParser.parseMultipartIdentifier(fullTableName)
-    val (catalogName, namespace, tableName) = parsed.toList match {
-      case catalog :: namespace :: table :: Nil => (catalog, namespace, table)
-      case namespace :: table :: Nil            => (spark.catalog.currentCatalog(), namespace, table)
-      case table :: Nil                         => (spark.catalog.currentCatalog(), "default", table)
-      case _ => throw new IllegalStateException(s"Invalid table naming convention specified: $fullTableName")
-    }
+  private def loadIcebergTable(fullTableName: String): Option[org.apache.iceberg.Table] = {
+    try {
+      val parsed = spark.sessionState.sqlParser.parseMultipartIdentifier(fullTableName)
+      val (catalogName, namespace, tableName) = parsed.toList match {
+        case catalog :: namespace :: table :: Nil => (catalog, namespace, table)
+        case namespace :: table :: Nil            => (spark.catalog.currentCatalog(), namespace, table)
+        case table :: Nil                         => (spark.catalog.currentCatalog(), "default", table)
+        case _                                    => return None
+      }
 
-    val catalog = spark.sessionState.catalogManager
-      .catalog(catalogName)
-      .asInstanceOf[TableCatalog]
+      val catalog = spark.sessionState.catalogManager
+        .catalog(catalogName)
+        .asInstanceOf[TableCatalog]
 
-    val tableId = Identifier.of(Array(namespace), tableName)
-    Option(catalog.loadTable(tableId)) match {
-      case Some(sparkTable: SparkTable) => sparkTable.table()
-      case _ => throw new IllegalStateException(s"Unsupported table type for Iceberg extraction: $fullTableName")
+      val tableId = Identifier.of(Array(namespace), tableName)
+      Option(catalog.loadTable(tableId)) match {
+        case Some(sparkTable: SparkTable) => Some(sparkTable.table())
+        case _                            => None
+      }
+    } catch {
+      case _: Exception => None
     }
   }
 
-  def extractSchemaMapping(fullTableName: String): Map[Int, String] = {
-    try {
-      val table = loadIcebergTable(fullTableName)
-      val schema = Option(table.schema())
-        .getOrElse(throw new IllegalStateException("Table schema is null"))
-
-      // Create field ID to name mapping
-      schema.columns().asScala.map(field => field.fieldId() -> field.name()).toMap
-    } catch {
-      case e: Exception =>
-        throw new RuntimeException(s"Failed to extract schema mapping for table: $fullTableName", e)
+  def extractSchemaMapping(fullTableName: String): Option[Map[Int, String]] = {
+    loadIcebergTable(fullTableName).flatMap { table =>
+      Option(table.schema()).map { schema =>
+        schema.columns().asScala.map(field => field.fieldId() -> field.name()).toMap
+      }
     }
   }
 
   def extractPartitionedStats(fullTableName: String, confName: String)(implicit
-      partitionSpec: PartitionSpec): Map[TileSummaryKey, TileSummary] = {
-    val table = loadIcebergTable(fullTableName)
+      partitionSpec: PartitionSpec): Option[Map[TileSummaryKey, TileSummary]] = {
+    loadIcebergTable(fullTableName).flatMap { table =>
+      val tableSpec = Option(table.spec())
 
-    val tableSpec = Option(table.spec())
-      .getOrElse(throw new IllegalStateException(s"Table spec is null for table: ${table.name()}"))
+      if (tableSpec.isEmpty || !tableSpec.get.isPartitioned) {
+        return None
+      }
 
-    require(
-      tableSpec.isPartitioned,
-      s"Illegal request to compute partition-stats of an un-partitioned table: ${table.name()}."
-    )
+      val currentSnapshot = Option(table.currentSnapshot())
 
-    val currentSnapshot = Option(table.currentSnapshot())
+      val partitionAccumulators = mutable.Map[PartitionKey, PartitionAccumulator]()
 
-    val partitionAccumulators = mutable.Map[PartitionKey, PartitionAccumulator]()
+      currentSnapshot.foreach { snapshot =>
+        val manifestFiles = snapshot.allManifests(table.io()).asScala
+        manifestFiles.foreach { manifestFile =>
+          val manifestReader = ManifestFiles.read(manifestFile, table.io())
 
-    currentSnapshot.foreach { snapshot =>
-      val manifestFiles = snapshot.allManifests(table.io()).asScala
-      manifestFiles.foreach { manifestFile =>
-        val manifestReader = ManifestFiles.read(manifestFile, table.io())
+          try {
+            manifestReader.forEach((file: DataFile) => {
 
-        try {
-          manifestReader.forEach((file: DataFile) => {
+              val rowCount: Long = file.recordCount()
+              val schema = Option(table.schema())
+                .getOrElse(throw new IllegalStateException("Table schema is null"))
+              val specs = Option(table.specs())
+                .getOrElse(throw new IllegalStateException("Table specs is null"))
+              val icebergPartitionSpec: org.apache.iceberg.PartitionSpec = Option(specs.get(file.specId()))
+                .getOrElse(throw new IllegalStateException(s"Partition spec not found for specId: ${file.specId()}"))
+              val partitionFieldIds = Option(icebergPartitionSpec.fields())
+                .map(_.asScala.map(_.sourceId()).toSet)
+                .getOrElse(Set.empty[Int])
 
-            val rowCount: Long = file.recordCount()
-            val schema = Option(table.schema())
-              .getOrElse(throw new IllegalStateException("Table schema is null"))
-            val specs = Option(table.specs())
-              .getOrElse(throw new IllegalStateException("Table specs is null"))
-            val icebergPartitionSpec: org.apache.iceberg.PartitionSpec = Option(specs.get(file.specId()))
-              .getOrElse(throw new IllegalStateException(s"Partition spec not found for specId: ${file.specId()}"))
-            val partitionFieldIds = Option(icebergPartitionSpec.fields())
-              .map(_.asScala.map(_.sourceId()).toSet)
-              .getOrElse(Set.empty[Int])
+              // Extract partition key using Iceberg's partitionToPath which properly formats all types
+              val partition = Option(file.partition())
+                .getOrElse(throw new IllegalStateException("File partition data is null"))
+              val partitionPath = icebergPartitionSpec.partitionToPath(partition)
 
-            // Extract partition key
-            val partitionColToValue: PartitionKey = icebergPartitionSpec
-              .fields()
-              .asScala
-              .zipWithIndex
-              .flatMap { case (field, index) =>
-                Option(schema.findField(field.sourceId())).map { sourceField =>
-                  val partition = Option(file.partition())
-                    .getOrElse(throw new IllegalStateException("File partition data is null"))
-                  val partitionValue = Option(partition.get(index, classOf[Object]))
-                    .map(String.valueOf)
-                    .getOrElse("null")
-                  sourceField.name() -> partitionValue
+              val partitionColToValue: PartitionKey = partitionPath
+                .split("/")
+                .map { pair =>
+                  val parts = pair.split("=", 2)
+                  if (parts.length == 2) {
+                    parts(0) -> parts(1)
+                  } else {
+                    throw new IllegalStateException(s"Invalid partition format: $pair in path $partitionPath")
+                  }
                 }
-              }
-              .toList
+                .toList
 
-            // Extract column statistics for this file
-            val columnStats = extractColumnStats(file, schema, partitionFieldIds)
+              // Extract column statistics for this file
+              val columnStats = extractColumnStats(file, schema, partitionFieldIds)
 
-            // Get or create partition accumulator and add file stats
-            val accumulator = partitionAccumulators.getOrElseUpdate(
-              partitionColToValue,
-              new PartitionAccumulator(partitionColToValue, confName, schema)
-            )
-            accumulator.addFileStats(rowCount, columnStats)
-          })
-        } finally {
-          manifestReader.close()
+              // Get or create partition accumulator and add file stats
+              val accumulator = partitionAccumulators.getOrElseUpdate(
+                partitionColToValue,
+                new PartitionAccumulator(partitionColToValue, confName, schema)
+              )
+              accumulator.addFileStats(rowCount, columnStats)
+            })
+          } finally {
+            manifestReader.close()
+          }
         }
       }
+
+      // Convert accumulators to TileKey -> TileSummary mapping
+      val result = mutable.Map[TileSummaryKey, TileSummary]()
+
+      partitionAccumulators.values.foreach { accumulator =>
+        result ++= accumulator.toTileSummaries
+      }
+
+      Some(result.toMap)
     }
-
-    // Convert accumulators to TileKey -> TileSummary mapping
-    val result = mutable.Map[TileSummaryKey, TileSummary]()
-
-    partitionAccumulators.values.foreach { accumulator =>
-      result ++= accumulator.toTileSummaries
-    }
-
-    result.toMap
   }
 
   private def extractColumnStats(

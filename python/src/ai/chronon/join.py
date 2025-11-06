@@ -39,7 +39,9 @@ def _get_output_table_name(join: api.Join, full_name: bool = False):
     if not join.metaData.outputNamespace:
         team_name = join.metaData.name.split(".")[0]
         namespace = (
-            parse_teams.load_teams(utils.chronon_root_path, print=False).get(team_name).outputNamespace
+            parse_teams.load_teams(utils.chronon_root_path, print=False)
+            .get(team_name)
+            .outputNamespace
         )
         join.metaData.outputNamespace = namespace
     return utils.output_table_name(join, full_name=full_name)

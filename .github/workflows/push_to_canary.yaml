@@ -285,7 +285,7 @@ jobs:
           set -xo pipefail
           ./scripts/distribution/run_aws_quickstart.sh --canary --version ${{ needs.build_artifacts.outputs.version }}
 
-      - name:  On Fail Notify Slack
+      - name: On Fail Notify Slack
         id: notify_slack
         if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         uses: slackapi/slack-github-action@v1
@@ -379,19 +379,31 @@ jobs:
         shell: bash
         id: run_json_string_tests
         run: |
-          set -euxo pipefail
-          python3 scripts/fetcher_tests/json_string_test.py
+          docker ps -a
+          TEST_FAILED=false
+          python3 scripts/fetcher_tests/json_string_test.py || TEST_FAILED=true
+          if [ "$TEST_FAILED" = "true" ]; then
+            echo "JSON string tests failed"
+            docker logs chronon-service-chronon-fetcher-1             
+            exit 1
+          fi
 
       - name: Run fetcher integration tests
         shell: bash
         id: run_fetcher_integration_tests
         run: |
-          set -euxo pipefail
-          python3 scripts/fetcher_tests/avro_encoded_string_test.py
+          docker ps -a
+          TEST_FAILED=false
+          python3 scripts/fetcher_tests/avro_encoded_string_test.py|| TEST_FAILED=true
+          if [ "$TEST_FAILED" = "true" ]; then
+            echo "Avro encoded string tests failed"
+            docker logs chronon-service-chronon-fetcher-1               
+            exit 1
+          fi
 
   run_gcp_integration_tests:
     runs-on: ubuntu-latest
-    needs: [build_artifacts, push_to_gcp]
+    needs: [ build_artifacts, push_to_gcp ]
 
     permissions:
       id-token: write
@@ -419,7 +431,7 @@ jobs:
           set -xo pipefail
           ./scripts/distribution/run_gcp_template_quickstart.sh --canary --version ${{ needs.build_artifacts.outputs.version }}
 
-      - name:  On Fail Notify Slack
+      - name: On Fail Notify Slack
         id: notify_slack
         if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         uses: slackapi/slack-github-action@v1
@@ -494,7 +506,7 @@ jobs:
 
 
   push_to_gcp_passing:
-    needs: [build_artifacts, run_gcp_integration_tests, run_aws_integration_tests, run_fetcher_integration_tests]
+    needs: [ build_artifacts, run_gcp_integration_tests, run_aws_integration_tests, run_fetcher_integration_tests ]
     runs-on: ubuntu-latest
 
     permissions:
@@ -595,7 +607,7 @@ jobs:
             pubsub-jar
 
   merge_to_main-passing-tests:
-    needs: [run_fetcher_integration_tests, run_aws_integration_tests, run_gcp_integration_tests]
+    needs: [ run_fetcher_integration_tests, run_aws_integration_tests, run_gcp_integration_tests ]
     if: ${{ needs.run_aws_integration_tests.result == 'success' && needs.run_gcp_integration_tests.result == 'success'  && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
 
@@ -636,7 +648,7 @@ jobs:
 
 
   on_fail_notify_slack:
-    needs: [run_fetcher_integration_tests, run_aws_integration_tests, run_gcp_integration_tests, merge_to_main-passing-tests]
+    needs: [ run_fetcher_integration_tests, run_aws_integration_tests, run_gcp_integration_tests, merge_to_main-passing-tests ]
     if: failure()
     runs-on: ubuntu-latest
 
