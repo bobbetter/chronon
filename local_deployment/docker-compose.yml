@@ -163,23 +163,6 @@ services:
     networks:
       - chronon-net
 
-  duckui:
-    build:
-      context: ./duckui
-    environment:
-      SPARK_WAREHOUSE_PATH: /srv/chronon/metastore/warehouse
-    volumes:
-      - ./duckui:/srv/chronon/duckui
-      - ./chronon-spark/metastore:/srv/chronon/metastore:ro
-    working_dir: /srv/chronon/duckui
-    ports:
-      - "8501:8501"
-    command: ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
-    depends_on:
-      - chronon-spark
-    networks:
-      - chronon-net
-
   ui-client:
     build:
       context: ./chronon-ui
