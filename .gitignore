@@ -127,3 +127,6 @@ MODULE.bazel*
 
 # mill build output
 out/**
+
+# Local deployment data files
+local_deployment/app/data/*.csv
