@@ -129,4 +129,5 @@ MODULE.bazel*
 out/**
 
 # Local deployment data files
-local_deployment/app/data/*.csv
+local_deployment/app/data/
+local_deployment/app/compiled/
