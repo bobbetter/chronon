@@ -6,7 +6,11 @@ compile:
 	make upload-meta
 
 upload-meta:
-	cd metauploader && ./run.sh
+	curl -X 'POST' \
+	  'http://localhost:8083/api/v1/metadata/upload' \
+	  -H 'accept: application/json' \
+	  -H 'Content-Type: application/json' \
+	  -d '{"teamName": "quickstart"}'
 
 run-join:
 	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && python3 run.py --conf=compiled/joins/quickstart/training_set.v1__1 --ds=2023-12-01"

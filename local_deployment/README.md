@@ -1,8 +1,10 @@
 The stack relies on certain .jars and the zipline Python package to be available:
 - Build the spark jar: `./mill spark.assembly`
+- Build the aws jar: `./mill cloud_aws.assembly`
 - Build the online jar: `./mill online.assembly`
 - Build the flink jar: `./mill flink.assembly`
 - Build the flink connectors jar: `./mill flink_connectors.assembly`
+
 - Install the Python package locally: `./mill python.installEditable`
 
 
@@ -26,12 +28,12 @@ Additional GroupBy commands to backfill (outside of Join operations):
 
 
 To-do:
-- clean up "metastore" folder, name it something like datastore and move into chronon-spark folder.
-  - Also, there seems to be duplicated metastore_db folder in the chronon-spark folder. Also derby.log is duplicated.
 - Spark scripts will currently fail if new team names are used because a schema is not present. `CREATE SCHEMA IF NOT EXISTS <team_name>;`
 - Build a separate Scala service that handles:
 -- the Fetcher and (DONE)
--- MetaData upload 
+-- MetaData upload (DONE)
+---- but Caches are not refreshing at all. Remove or check settings.
+---- Add to UI button to upload metadata for a teamName (will upload all joins in that teamName's directory)
 -- Also should handle table creation for _STREAMING tables (and _BATCH)
 
 

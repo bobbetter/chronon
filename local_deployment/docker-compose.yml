@@ -127,7 +127,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./dynamodb-data:/home/dynamodblocal/data
+      - ./dynamodb-local/data:/home/dynamodblocal/data
     command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
     restart: unless-stopped
     networks:
@@ -229,10 +229,12 @@ services:
       FETCHER_SERVICE_HOST: 0.0.0.0
       FETCHER_SERVICE_PORT: "8083"
       DYNAMO_ENDPOINT: http://host.docker.internal:8000
+      CHRONON_CONFIGS_PATH: /opt/chronon/configs
       <<: *aws-config
     volumes:
       - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/opt/app/lib/chronon-aws-assembly.jar:ro
       - ./fetcher-service/fetcher-service.log:/opt/app/fetcher-service.log
+      - ./app/compiled:/opt/chronon/configs:ro
     networks:
       - chronon-net
 networks:
