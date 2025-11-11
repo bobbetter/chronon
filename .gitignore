@@ -136,3 +136,4 @@ local_deployment/app/joins/
 local_deployment/app/teams.py
 .cursorrules
 pyproject.toml
+.python-version
