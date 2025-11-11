@@ -79,43 +79,6 @@ services:
     networks:
       - chronon-net
 
-  kafka:
-    image: confluentinc/cp-kafka:7.6.1
-    container_name: kafka
-    ports:
-      - "9092:9092"
-      - "19092:19092"
-    environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
-      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:19092"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:19092"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"  # static for single-node KRaft
-    networks:
-      - chronon-net
-
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: kafka-ui
-    ports:
-      - "8080:8080"
-    environment:
-      KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
-      DYNAMIC_CONFIG_ENABLED: 'true'
-    depends_on:
-      - kafka
-    restart: unless-stopped
-    networks:
-      - chronon-net
-
   dynamodb-local:
     build:
       context: .
@@ -218,7 +181,6 @@ services:
     depends_on:
       - chronon-spark
 
-
   fetcher-service:
     build:
       context: ..
@@ -237,5 +199,43 @@ services:
       - ./app/compiled:/opt/chronon/configs:ro
     networks:
       - chronon-net
+
+  # Instead of using Kinesis (LocalStack), you can use Kafka from streaming data
+  # kafka:
+  #   image: confluentinc/cp-kafka:7.6.1
+  #   container_name: kafka
+  #   ports:
+  #     - "9092:9092"
+  #     - "19092:19092"
+  #   environment:
+  #     KAFKA_NODE_ID: 1
+  #     KAFKA_PROCESS_ROLES: broker,controller
+  #     KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+  #     KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:19092"
+  #     KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:19092"
+  #     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+  #     KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+  #     KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+  #     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+  #     KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+  #     KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+  #     CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"  # static for single-node KRaft
+  #   networks:
+  #     - chronon-net
+
+  # kafka-ui:
+  #   image: provectuslabs/kafka-ui:latest
+  #   container_name: kafka-ui
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     KAFKA_CLUSTERS_0_NAME: local
+  #     KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+  #     DYNAMIC_CONFIG_ENABLED: 'true'
+  #   depends_on:
+  #     - kafka
+  #   restart: unless-stopped
+  #   networks:
+  #     - chronon-net
 networks:
   chronon-net:

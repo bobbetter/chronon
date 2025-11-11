@@ -134,3 +134,5 @@ local_deployment/app/compiled/
 local_deployment/app/group_bys/
 local_deployment/app/joins/
 local_deployment/app/teams.py
+.cursorrules
+pyproject.toml

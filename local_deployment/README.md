@@ -32,22 +32,12 @@ To-do:
 - Build a separate Scala service that handles:
 -- the Fetcher and (DONE)
 -- MetaData upload (DONE)
----- but Caches are not refreshing at all. Remove or check settings.
+---- but Caches are not refreshing at all (e.g. GroupBy Serving Info) . Remove or check settings.
 ---- Add to UI button to upload metadata for a teamName (will upload all joins in that teamName's directory)
 -- Also should handle table creation for _STREAMING tables (and _BATCH)
 
-
-- Metadata cache (e.g. GroupBy Serving Info) is not refreshing at all it seems like.
 
 Strange behaviors:
 - Streaming jobs will look up metadata in KV that has been previously uploaded through the batch upload.
 -- And this uploaded metadata must be up-to-date with the latest version of the GroupBy config, meaning, if the GroupBy config has changed, the batch-upload must run again.
 
-
-Useful commands:
-docker exec dynamodb-local aws dynamodb scan --table-name QUICKSTART_RETURNS_V1__1_STREAMING --endpoint-url http://dynamodb-local:8000 --region us-west-2 --max-items 1 2>&1 | head -50
-docker exec dynamodb-local aws dynamodb scan --table-name QUICKSTART_RETURNS_V1__1_BATCH --endpoint-url http://dynamodb-local:8000 --region us-west-2 --max-items 1 2>&1 | head -50
-
-
-Force re-recrate chronon-ui-server container:
-docker-compose up -d --force-recreate ui-server
