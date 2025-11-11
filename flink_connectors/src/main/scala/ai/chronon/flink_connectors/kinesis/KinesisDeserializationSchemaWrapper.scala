@@ -7,20 +7,6 @@ import org.apache.flink.util.Collector
 
 import java.util
 
-/** Adapter that bridges the API mismatch between FlinkKinesisConsumer and Chronon's DeserializationSchema.
-  * 
-  * FlinkKinesisConsumer expects a method that returns a single value (T), but Chronon's schemas
-  * use the Collector-based API that can emit 0+ records per input. This wrapper creates a local
-  * collector to capture results and returns only the first one.
-  * 
-  * **Limitation**: If the underlying schema emits multiple records, only the first is returned.
-  * This is acceptable for typical use cases (CDC events with null 'before', single events per record)
-  * but would cause data loss for multi-record scenarios. For full multi-record support, implement
-  * a custom source similar to PubSubSource.
-  *
-  * @param deserializationSchema The Chronon DeserializationSchema to wrap
-  * @tparam T The type of elements produced
-  */
 class KinesisDeserializationSchemaWrapper[T](deserializationSchema: DeserializationSchema[T])
     extends KinesisDeserializationSchema[T] {
 

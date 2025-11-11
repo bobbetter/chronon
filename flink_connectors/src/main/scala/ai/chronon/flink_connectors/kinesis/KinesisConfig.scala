@@ -27,20 +27,6 @@ object KinesisConfig {
     val InitialPosition: String = ConsumerConfigConstants.InitialPosition.LATEST.toString
   }
 
-  /** Builds Kinesis consumer configuration including both the Flink Properties and parallelism.
-    *
-    * Required properties:
-    * - AWS_REGION (or AWS_DEFAULT_REGION): The AWS region where the Kinesis stream exists
-    * - AWS_ACCESS_KEY_ID: AWS access key for authentication
-    * - AWS_SECRET_ACCESS_KEY: AWS secret access key for authentication
-    *
-    * Optional properties:
-    * - tasks: Override the default parallelism
-    * - KINESIS_ENDPOINT: Custom Kinesis endpoint (useful for local testing)
-    * - initial_position: Starting position (LATEST, TRIM_HORIZON, or AT_TIMESTAMP)
-    * - enable_efo: Enable Enhanced Fan-Out (EFO) for the consumer
-    * - efo_consumer_name: Consumer name for EFO
-    */
   def buildConsumerConfig(props: Map[String, String], topicInfo: TopicInfo): ConsumerConfig = {
     val lookup = new PropertyLookup(props, topicInfo)
     val properties = new Properties()
