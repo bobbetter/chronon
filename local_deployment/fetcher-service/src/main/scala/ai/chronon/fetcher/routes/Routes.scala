@@ -4,7 +4,7 @@ import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity}
 import sttp.tapir.server.akkahttp.AkkaHttpServerInterpreter
-import ai.chronon.fetcher.endpoints.{GroupByEndpoint, JoinEndpoint, MetadataEndpoint, MetadataUploadEndpoint}
+import ai.chronon.fetcher.endpoints.{GroupByEndpoint, JoinEndpoint, MetadataEndpoint, MetadataUploadEndpoint, DynamoDBAdminEndpoint}
 import sttp.tapir.swagger.bundle.SwaggerInterpreter
 import sttp.tapir.docs.openapi.OpenAPIDocsInterpreter
 import sttp.apispec.openapi.circe.yaml._
@@ -23,7 +23,8 @@ class Routes(implicit ec: ExecutionContext) {
     JoinEndpoint.joinEndpoint,
     MetadataEndpoint.groupBy,
     MetadataEndpoint.join,
-    MetadataUploadEndpoint.join
+    MetadataUploadEndpoint.join,
+    DynamoDBAdminEndpoint.createTableEndpoint
   )
   
 
@@ -50,6 +51,11 @@ class Routes(implicit ec: ExecutionContext) {
   private val metadataUploadRoute: Route =
     AkkaHttpServerInterpreter().toRoute(
       MetadataUploadEndpoint.join.serverLogic(request => MetadataUploadEndpoint.uploadJoinConfLogic(request))
+    )
+
+  private val dynamoDBCreateTableRoute: Route =
+    AkkaHttpServerInterpreter().toRoute(
+      DynamoDBAdminEndpoint.createTableEndpoint.serverLogic(request => DynamoDBAdminEndpoint.createTableLogic(request))
     )
   
   // Generate OpenAPI documentation
@@ -99,6 +105,7 @@ class Routes(implicit ec: ExecutionContext) {
         groupByMetaDataRoute,
         joinMetadataRoute,
         metadataUploadRoute,
+        dynamoDBCreateTableRoute,
         openApiRoute,
         swaggerRoute
       )

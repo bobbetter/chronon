@@ -59,6 +59,10 @@ object DynamoDBKVStoreConstants {
   val defaultWriteCapacityUnits = 10L
 }
 
+/** Exception thrown when attempting to create a DynamoDB table that already exists */
+case class TableAlreadyExistsException(tableName: String) 
+  extends RuntimeException(s"DynamoDB table '$tableName' already exists")
+
 class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
   import DynamoDBKVStoreConstants._
 
@@ -106,7 +110,9 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
       logger.info(s"Table created successfully! Details: \n${tableDescription.toString}")
       metricsContext.increment("create.successes")
     } catch {
-      case _: ResourceInUseException => logger.info(s"Table: $dataset already exists")
+      case _: ResourceInUseException => 
+        logger.info(s"Table: $dataset already exists")
+        throw TableAlreadyExistsException(dataset)
       case e: Exception =>
         logger.error(s"Error creating Dynamodb table: $dataset", e)
         metricsContext.increment("create.failures")
@@ -254,7 +260,11 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
     val targetDataset = mapDatasetName(destinationOnlineDataSet)
 
     // Ensure table exists
-    create(targetDataset)
+    try {
+      create(targetDataset)
+    } catch {
+      case _: TableAlreadyExistsException => ()
+    }
 
     // Write in batches to avoid huge request fanout; reuse multiPut
     val defaultBatchSize = sys.env.getOrElse("DDB_BULKPUT_BATCH_SIZE", "100").toInt

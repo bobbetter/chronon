@@ -2,20 +2,25 @@ package ai.chronon.fetcher.services
 
 import ai.chronon.integrations.aws.AwsApiImpl
 import ai.chronon.online.fetcher.Fetcher
+import ai.chronon.online.KVStore
 import ai.chronon.api.ThriftJsonCodec
+import ai.chronon.integrations.aws.{DynamoDBKVStoreConstants, TableAlreadyExistsException}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
-final case class FetcherClient(fetcher: Fetcher, close: () => Unit)
+final case class FetcherClient(fetcher: Fetcher, awsApi: AwsApiImpl, close: () => Unit)
 
 // Custom exception types for better error handling
 sealed trait MetadataException extends Exception
 case class MetadataNotFoundException(message: String) extends Exception(message) with MetadataException
 case class MetadataFetchException(message: String, cause: Throwable) extends Exception(message, cause) with MetadataException
 
-object ChrononFetcherClient {
 
+object ChrononFetcherClient {
+  sealed trait CreateTableResult
+  case object TableCreated extends CreateTableResult
+  case object TableAlreadyExists extends CreateTableResult
   private lazy val client: FetcherClient = build()
 
   def fetchGroupBys(requests: Seq[Fetcher.Request])(implicit ec: ExecutionContext): Future[Seq[Fetcher.Response]] =
@@ -57,6 +62,27 @@ object ChrononFetcherClient {
   def createDataset(datasetName: String): Unit =
     client.fetcher.metadataStore.create(datasetName)
 
+  def createTable(tableName: String, isTimeSorted: Boolean = true): Try[CreateTableResult] = {
+    Try {
+      val kvStore = client.awsApi.genKvStore
+      val props = Map(DynamoDBKVStoreConstants.isTimedSorted -> isTimeSorted.toString)
+      
+      try {
+        kvStore.create(tableName, props)
+        TableCreated
+      } catch {
+        case _: TableAlreadyExistsException =>
+          TableAlreadyExists
+      }
+    }
+  }
+
+  def getKvStore: KVStore =
+    client.awsApi.genKvStore
+
+  def getAwsApi: AwsApiImpl =
+    client.awsApi
+
   private def build(): FetcherClient = {
     val awsApi = new AwsApiImpl(Map.empty[String, String])
     val fetcher = awsApi.buildFetcher(debug = true)
@@ -71,7 +97,7 @@ object ChrononFetcherClient {
 
     sys.addShutdownHook { closeFn() }
 
-    FetcherClient(fetcher, closeFn)
+    FetcherClient(fetcher, awsApi, closeFn)
   }
 
   def close(): Unit = client.close()

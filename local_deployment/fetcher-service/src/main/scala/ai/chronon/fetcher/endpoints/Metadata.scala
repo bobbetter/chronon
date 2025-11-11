@@ -70,13 +70,20 @@ object MetadataEndpoint {
         case Success(jsonString) =>
           parse(jsonString) match {
             case Right(json) =>
-              Right(JoinConfResponse(
-                joinName = joinName,
-                joinConf = json,
-                message = s"Successfully retrieved configuration for Join: $joinName"
-              ))
+              Right(
+                JoinConfResponse(
+                  joinName = joinName,
+                  joinConf = json,
+                  message = s"Successfully retrieved configuration for Join: $joinName"
+                )
+              )
             case Left(parseError) =>
-              Left((StatusCode.InternalServerError, ErrorResponse(s"Failed to parse join conf JSON: ${parseError.getMessage}")))
+              Left(
+                (
+                  StatusCode.InternalServerError, 
+                  ErrorResponse(s"Failed to parse join conf JSON: ${parseError.getMessage}")
+                )
+              )
           }
         case Failure(exception: MetadataNotFoundException) =>
           // Handle "not found" errors with 
