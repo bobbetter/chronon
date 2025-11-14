@@ -18,7 +18,7 @@ The stack relies on certain .jars and the zipline Python package to be available
 
 Requirements:
 - Scala (`brew install coursier`)
-- Java (`brew install openjdk@17`) 
+- Java 11 (`cs java --jvm 11`) 
 - Thrift (`brew install thrift`)
 
 These jars are mounted into the containers via docker-compose.yml.

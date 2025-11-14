@@ -25,6 +25,9 @@ WORKDIR /opt/app
 # Copy the staged application (includes all dependencies in lib/)
 COPY --from=build /workspace/target/universal/stage ./
 
+# Create the configs directory that will be mounted
+RUN mkdir -p /opt/chronon/configs
+
 EXPOSE 8083
 
 # Use the generated start script from stage

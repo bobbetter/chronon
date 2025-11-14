@@ -253,7 +253,7 @@
       "user_id_user_id_count_3d": "ac2e1107c95153472bfd8c569d03c995",
       "user_id_user_id_count_3d_by_device_type": "46846903aafa4729220837ae5ddd0251"
     },
-    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_fraud_labels_with_offset_0\", \"spec\": \"data.fraud_labels/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_profiles_with_offset_0\", \"spec\": \"data.profiles/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_page_views_with_offset_0\", \"spec\": \"data.page_views/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_logins_with_offset_0\", \"spec\": \"data.logins/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}], \"label_join\": false}",
+    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_fraud_labels_with_offset_0\", \"spec\": \"data.fraud_labels/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_profiles_with_offset_0\", \"spec\": \"data.profiles/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_page_views_with_offset_0\", \"spec\": \"data.page_views/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_logins_with_offset_0\", \"spec\": \"data.logins/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}]}",
     "executionInfo": {
       "conf": {
         "common": {
