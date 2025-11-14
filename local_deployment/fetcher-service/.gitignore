@@ -1,0 +1,22 @@
+# SBT specific
+target/
+project/target/
+project/project/
+.bsp/
+
+# Metals specific
+.metals/
+.bloop/
+metals.sbt
+project/metals.sbt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+

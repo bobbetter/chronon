@@ -26,43 +26,18 @@ sanitize_to_streaming() {
 
 STREAMING_TABLE_NAME=$(sanitize_to_streaming "$GROUPBY_NAME")
 
-# Ensure DynamoDB table exists by compiling and running the Scala helper locally (uses DynamoDBKVStoreImpl)
+# Ensure DynamoDB table exists via REST API
 ensure_ddb_table() {
   local table_name="$1"
-  echo "Ensuring DynamoDB table exists: $table_name"
+  local fetcher_service_url="${FETCHER_SERVICE_URL:-http://localhost:8080}"
   
-  local AWS_JAR="$REPO_ROOT/out/cloud_aws/assembly.dest/chronon-aws-assembly.jar"
+  echo "Creating DynamoDB table: $table_name"
   
-  # Check for required jars
-  if [ ! -f "$AWS_JAR" ]; then
-      echo "Error: AWS assembly jar not found at: $AWS_JAR"
-      echo "Build it with: ./mill cloud_aws.assembly"
-      exit 1
-  fi
-  
-  local SOURCE="$REPO_ROOT/local_deployment/app/scripts/create_ddb_table.scala"
-  local OUTPUT_DIR="$REPO_ROOT/local_deployment/app/scripts/target"
-  mkdir -p "$OUTPUT_DIR"
-  
-  # Use Scala 2.12.18 from coursier (compatible with project)
-  local SCALAC="$HOME/Library/Application Support/Coursier/bin/scalac"
-  
-  if [ ! -f "$SCALAC" ]; then
-      echo "Error: Scala 2.12.18 not found at expected location"
-      echo "Install it with: cs install scala:2.12.18 scalac:2.12.18"
-      exit 1
-  fi
-  
-  # Compile the helper script
-  "$SCALAC" -classpath "$AWS_JAR" -d "$OUTPUT_DIR" "$SOURCE" 2>/dev/null
-  
-  # Run it with environment pointing to local DynamoDB
-  TABLE_NAME="$table_name" \
-  DYNAMO_ENDPOINT="http://localhost:8000" \
-  AWS_DEFAULT_REGION="us-west-2" \
-  AWS_ACCESS_KEY_ID="local" \
-  AWS_SECRET_ACCESS_KEY="local" \
-  java -cp "$OUTPUT_DIR:$AWS_JAR" CreateDdbTable
+  curl -s -X POST \
+    "${fetcher_service_url}/api/v1/admin/dynamodb/create-table" \
+    -H 'accept: application/json' \
+    -H 'Content-Type: application/json' \
+    -d "{\"tableName\": \"${table_name}\", \"isTimeSorted\": true}"
 }
 
 # ensure_ddb_table "$STREAMING_TABLE_NAME"

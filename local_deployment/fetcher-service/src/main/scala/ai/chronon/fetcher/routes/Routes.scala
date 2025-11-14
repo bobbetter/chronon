@@ -4,7 +4,7 @@ import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity}
 import sttp.tapir.server.akkahttp.AkkaHttpServerInterpreter
-import ai.chronon.fetcher.endpoints.{GroupByEndpoint, JoinEndpoint, MetadataEndpoint}
+import ai.chronon.fetcher.endpoints.{GroupByEndpoint, JoinEndpoint, MetadataEndpoint, MetadataUploadEndpoint, DynamoDBAdminEndpoint}
 import sttp.tapir.swagger.bundle.SwaggerInterpreter
 import sttp.tapir.docs.openapi.OpenAPIDocsInterpreter
 import sttp.apispec.openapi.circe.yaml._
@@ -21,7 +21,10 @@ class Routes(implicit ec: ExecutionContext) {
   private val endpoints = List(
     GroupByEndpoint.groupByEndpoint, 
     JoinEndpoint.joinEndpoint,
-    MetadataEndpoint.metadataEndpoint
+    MetadataEndpoint.groupBy,
+    MetadataEndpoint.join,
+    MetadataUploadEndpoint.join,
+    DynamoDBAdminEndpoint.createTableEndpoint
   )
   
 
@@ -35,9 +38,24 @@ class Routes(implicit ec: ExecutionContext) {
       JoinEndpoint.joinEndpoint.serverLogic(request => JoinEndpoint.joinLogic(request))
     )
 
-  private val metadataRoute: Route =
+  private val groupByMetaDataRoute: Route =
     AkkaHttpServerInterpreter().toRoute(
-      MetadataEndpoint.metadataEndpoint.serverLogic(groupByName => MetadataEndpoint.metadataLogic(groupByName))
+      MetadataEndpoint.groupBy.serverLogic(groupByName => MetadataEndpoint.getGroupByServingInfoLogic(groupByName))
+    )
+
+  private val joinMetadataRoute: Route =
+    AkkaHttpServerInterpreter().toRoute(
+      MetadataEndpoint.join.serverLogic(joinName => MetadataEndpoint.getJoinConfLogic(joinName))
+    )
+
+  private val metadataUploadRoute: Route =
+    AkkaHttpServerInterpreter().toRoute(
+      MetadataUploadEndpoint.join.serverLogic(request => MetadataUploadEndpoint.uploadJoinConfLogic(request))
+    )
+
+  private val dynamoDBCreateTableRoute: Route =
+    AkkaHttpServerInterpreter().toRoute(
+      DynamoDBAdminEndpoint.createTableEndpoint.serverLogic(request => DynamoDBAdminEndpoint.createTableLogic(request))
     )
   
   // Generate OpenAPI documentation
@@ -84,7 +102,10 @@ class Routes(implicit ec: ExecutionContext) {
       concat(
         groupByRoute,
         joinRoute,
-        metadataRoute,
+        groupByMetaDataRoute,
+        joinMetadataRoute,
+        metadataUploadRoute,
+        dynamoDBCreateTableRoute,
         openApiRoute,
         swaggerRoute
       )
