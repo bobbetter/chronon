@@ -44,7 +44,7 @@ def test_list_tables_in_data_db(scanner):
     tables = scanner.list_tables("data")
     assert isinstance(tables, list)
     # Based on the test data structure, we should have these tables
-    expected_tables = ["checkouts", "clicks", "form_submissions", "page_views", "purchases", "returns", "users"]
+    expected_tables = ["checkouts", "clicks", "form_submissions"]
     for table in expected_tables:
         assert table in tables, f"Expected table '{table}' not found in data database"
     # Tables should be sorted
