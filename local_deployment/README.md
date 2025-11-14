@@ -16,6 +16,11 @@ The stack relies on certain .jars and the zipline Python package to be available
 - Build the flink connectors jar: `./mill flink_connectors.assembly`
 - Install the Python package locally: `./mill python.installEditable`
 
+Requirements:
+- Scala (`brew install coursier`)
+- Java (`brew install openjdk@17`) 
+- Thrift (`brew install thrift`)
+
 These jars are mounted into the containers via docker-compose.yml.
 You can start the stack with `docker-compose up`
 

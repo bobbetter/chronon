@@ -32,7 +32,7 @@ export default defineConfig({
   },
   server: {
     host: true, // Listen on all addresses (needed for Docker)
-    port: 5000,
+    port: 5001,
     strictPort: true,
     watch: {
       usePolling: true, // Needed for Docker on some systems

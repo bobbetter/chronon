@@ -8,10 +8,10 @@ WORKDIR /app
 RUN pip install uv
 
 # Copy dependency files from chronon-ui directory
-COPY chronon-ui/pyproject.toml chronon-ui/uv.lock /app/
+COPY chronon-ui/server/pyproject.toml /app/
 
 # Install dependencies using uv
-RUN uv sync --frozen
+RUN uv sync
 
 # Copy only the server application code
 COPY chronon-ui/server /app/server

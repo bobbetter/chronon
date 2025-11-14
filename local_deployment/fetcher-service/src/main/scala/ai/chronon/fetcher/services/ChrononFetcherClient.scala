@@ -97,11 +97,7 @@ object ChrononFetcherClient {
 
     sys.addShutdownHook { closeFn() }
 
-<<<<<<< HEAD
-    FetcherClient(fetcher, closeFn)
-=======
     FetcherClient(fetcher, awsApi, closeFn)
->>>>>>> chrono_force_snapshot
   }
 
   def close(): Unit = client.close()

@@ -14,11 +14,11 @@ RUN npm ci
 COPY . .
 
 # Expose the port the app runs on
-EXPOSE 5000
+EXPOSE 5001
 
 # Set environment to development
 ENV NODE_ENV=development
-ENV PORT=5000
+ENV PORT=5001
 
 # Start the development server
 CMD ["npm", "run", "dev"]
