@@ -9,7 +9,7 @@ expected_graph = {
       "type": "conf-group_by",
       "type_visual": "conf",
       "exists": True,
-      "actions": ["backfill", "pre-compute-upload"],
+      "actions": ["backfill", "pre-compute-upload", "show-online-data"],
       'config_file_path': 'compiled/one_groupby/page_views.v1__1',
 
     },
@@ -38,11 +38,11 @@ expected_graph = {
       'config_file_path': 'compiled/one_groupby/page_views.v1__1',
     },
     {
-      "name": "quickstart.quickstart_page_views_v1__1_batch",
+      "name": "quickstart_page_views_v1__1_batch",
       "type": "online-data-batch",
       "type_visual": "online-data",
       "exists": False,
-      "actions": ["show"],
+      "actions": None,
       'config_file_path': None,
     },
   ],
@@ -67,7 +67,7 @@ expected_graph = {
     },
     {
       "source": "quickstart.quickstart_page_views_v1__1__upload",
-      "target": "quickstart.quickstart_page_views_v1__1_batch",
+      "target": "quickstart_page_views_v1__1_batch",
       "type": "upload-group_by-to-online-data-batch",
       "exists": True
     },
@@ -89,7 +89,7 @@ second_gb = {
       "type": "conf-group_by",
       "type_visual": "conf",
       "exists": True,
-      "actions": ["backfill", "pre-compute-upload"],
+      "actions": ["backfill", "pre-compute-upload", "show-online-data"],
       'config_file_path': 'compiled/two_groupby/page_views.v1__1',
 
     },
@@ -118,11 +118,11 @@ second_gb = {
       'config_file_path': 'compiled/two_groupby/page_views.v1__1',
     },
     {
-      "name": "quickstart.quickstart_page_views_v1__1_batch",
+      "name": "quickstart_page_views_v1__1_batch",
       "type": "online-data-batch",
       "type_visual": "online-data",
       "exists": False,
-      "actions": ["show"],
+      "actions": None,
       'config_file_path': None,
     },
     {
@@ -130,7 +130,7 @@ second_gb = {
       "type": "conf-group_by",
       "type_visual": "conf",
       "exists": True,
-      "actions": ["backfill", "pre-compute-upload"],
+      "actions": ["backfill", "pre-compute-upload", "show-online-data"],
       'config_file_path': 'compiled/two_groupby/purchases.v1__1',
     },
     {
@@ -158,11 +158,11 @@ second_gb = {
       'config_file_path': 'compiled/two_groupby/purchases.v1__1',
     },
     {
-      "name": "quickstart.quickstart_purchases_v1__1_batch",
+      "name": "quickstart_purchases_v1__1_batch",
       "type": "online-data-batch",
       "type_visual": "online-data",
       "exists": False,
-      "actions": ["show"],
+      "actions": None,
       'config_file_path': None,
     },
   ],
@@ -187,7 +187,7 @@ second_gb = {
     },
     {
       "source": "quickstart.quickstart_page_views_v1__1__upload",
-      "target": "quickstart.quickstart_page_views_v1__1_batch",
+      "target": "quickstart_page_views_v1__1_batch",
       "type": "upload-group_by-to-online-data-batch",
       "exists": True
     },
@@ -211,7 +211,7 @@ second_gb = {
     },
     {
       "source": "quickstart.quickstart_purchases_v1__1__upload",
-      "target": "quickstart.quickstart_purchases_v1__1_batch",
+      "target": "quickstart_purchases_v1__1_batch",
       "type": "upload-group_by-to-online-data-batch",
       "exists": True
     },
@@ -234,7 +234,7 @@ expected_graph_with_joins = {
       "type": "conf-group_by",
       "type_visual": "conf",
       "exists": True,
-      "actions": ["backfill", "pre-compute-upload"],
+      "actions": ["backfill", "pre-compute-upload", "show-online-data"],
       'config_file_path': 'compiled/one_groupby/page_views.v1__1',
 
     },
@@ -263,11 +263,11 @@ expected_graph_with_joins = {
       'config_file_path': 'compiled/one_groupby/page_views.v1__1',
     },
     {
-      "name": "quickstart.quickstart_page_views_v1__1_batch",
+      "name": "quickstart_page_views_v1__1_batch",
       "type": "online-data-batch",
       "type_visual": "online-data",
       "exists": False,
-      "actions": ["show"],
+      "actions": None,
       'config_file_path': None,
     },
     {
@@ -281,6 +281,7 @@ expected_graph_with_joins = {
     {
       'actions': [
           "backfill",
+          "show-online-data",
       ],
       'config_file_path': 'compiled/one_join/training_set.v1__1',
       'exists': True,
@@ -320,7 +321,7 @@ expected_graph_with_joins = {
     },
     {
       "source": "quickstart.quickstart_page_views_v1__1__upload",
-      "target": "quickstart.quickstart_page_views_v1__1_batch",
+      "target": "quickstart_page_views_v1__1_batch",
       "type": "upload-group_by-to-online-data-batch",
       "exists": True
     },
