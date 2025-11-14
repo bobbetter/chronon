@@ -8,19 +8,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from server.routes import router
 from server.services.datascanner import DataScanner
+from server.services.teamparser import TeamParser
 import logging
 logger = logging.getLogger("uvicorn.error")
 
+server_root = Path(__file__).parent
+teams_metadata_dir = str(server_root / "compiled" / "teams_metadata")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize shared app resources once (e.g., DataScanner)."""
+    """Initialize shared app resources once (e.g., DataScanner, TeamParser)."""
     warehouse_path = os.environ.get("SPARK_WAREHOUSE_PATH")
     if not warehouse_path:
-        # current_dir = Path(__file__).parent
-        server_root = Path(__file__).parent
         warehouse_path = str(server_root / "spark-data/warehouse")
     logger.info(f"Using warehouse path: {warehouse_path}")
     app.state.datascanner = DataScanner(warehouse_path)
+    
+    logger.info(f"Using teams metadata directory: {teams_metadata_dir}")
+    app.state.teamparser = TeamParser(teams_metadata_dir)
     yield
 
 
