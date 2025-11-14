@@ -6,12 +6,13 @@ import ai.chronon.online.serde.{Mutation, SerDe}
 
 import scala.util.Try
 
-/** SerDe for the returns events when messages are simple JSON objects with fields:
+/** SerDe for the logins events when messages are simple JSON objects with fields:
   *   - ts: Long (event time in millis)
-  *   - return_id: String
+  *   - event_id: String
   *   - user_id: String (or numeric convertible to String)
-  *   - product_id: String (or numeric convertible to String)
-  *   - refund_amt: Double
+  *   - login_method: String
+  *   - device_type: String
+  *   - ip_address: String
   *
   * If you use Avro on the wire, consider wrapping an AvroSerDe with your Avro schema instead.
   */
@@ -50,15 +51,6 @@ class LoginsSerDe(topicInfo: TopicInfo) extends SerDe {
     case Some(n: java.lang.Number) => String.valueOf(n)
     case Some(other) => String.valueOf(other)
     case None => null
-  }
-
-  private def toDoubleOrNull(v: Option[Any]): java.lang.Double = v match {
-    case Some(d: java.lang.Double) => d
-    case Some(f: java.lang.Float) => f.doubleValue()
-    case Some(l: java.lang.Long) => l.doubleValue()
-    case Some(i: java.lang.Integer) => i.doubleValue()
-    case Some(s: String) => Try(java.lang.Double.valueOf(s)).getOrElse(null)
-    case _ => null
   }
 
   /** Minimal, dependency-free flat JSON parser for simple key-value objects.
