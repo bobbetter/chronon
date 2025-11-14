@@ -28,7 +28,7 @@ v1 = GroupBy(
     backfill_start_date="2025-09-20",
     aggregations=[
         Aggregation(
-            input_column="user_id",
+            input_column="device_type",
             operation=Operation.COUNT,
             windows=window_sizes,
             buckets=["device_type"]

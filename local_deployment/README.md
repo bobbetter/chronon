@@ -32,13 +32,23 @@ Not all commands are available (yet) in through the UI, so you have to run these
 
 
 
-To-do:
+To-dos:
 - Spark scripts will currently fail if new team names are used because a schema is not present. `CREATE SCHEMA IF NOT EXISTS <team_name>;`
 - Fetcher Service metadata caching:
 ---- but Caches are not refreshing at all (e.g. GroupBy Serving Info) . Remove or check settings.
 ---- Add to UI button to upload metadata for a teamName (will upload all joins in that teamName's directory)
--- Also should handle table creation for _STREAMING tables (and _BATCH)
 
+Compile should catch invalid Aggregation definition in groupby. This will fail in spark job:
+  Aggregation(
+      input_column="user_id",  # this will fail if user_id is PK , must be a different column
+      operation=Operation.COUNT,
+      windows=window_sizes,
+      buckets=["device_type"]
+  ),
+
+-- UI-server calls run.py in the chronon-spark container, 
+which calls the spark-submit command to run the spark job. 
+Better: Make the UI server call the spark-submit command directly.
 
 Strange behaviors:
 - Streaming jobs will look up metadata in KV that has been previously uploaded through the batch upload.

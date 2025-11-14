@@ -134,7 +134,7 @@
             "buckets": [
               "device_type"
             ],
-            "inputColumn": "user_id",
+            "inputColumn": "device_type",
             "operation": 6,
             "windows": [
               {
@@ -179,13 +179,13 @@
         ],
         "metaData": {
           "columnHashes": {
+            "device_type_count_14d_by_device_type": "85ff676e4b196911037ea842188a8800",
+            "device_type_count_30d_by_device_type": "85ff676e4b196911037ea842188a8800",
+            "device_type_count_3d_by_device_type": "85ff676e4b196911037ea842188a8800",
             "login_method_last5_14d": "bb0d72003bdca17a252c7ab7aaca2a46",
             "login_method_last5_30d": "bb0d72003bdca17a252c7ab7aaca2a46",
             "login_method_last5_3d": "bb0d72003bdca17a252c7ab7aaca2a46",
-            "user_id": "80d257a587d634792fdfd4427ccfc8ad",
-            "user_id_count_14d_by_device_type": "23e49f5f0a3515f34861d52c1d576a06",
-            "user_id_count_30d_by_device_type": "23e49f5f0a3515f34861d52c1d576a06",
-            "user_id_count_3d_by_device_type": "23e49f5f0a3515f34861d52c1d576a06"
+            "user_id": "80d257a587d634792fdfd4427ccfc8ad"
           },
           "executionInfo": {
             "historicalBackfill": 0,
@@ -238,6 +238,9 @@
       "user_id": "6081c330a2ea6ad87890cffdf38be0a8",
       "user_id_company_size": "7f96ad327a3a0b3201fda73e2f091af6",
       "user_id_country": "ea89a52b4df3fe20a3635f9b208e96fe",
+      "user_id_device_type_count_14d_by_device_type": "b380c526f39e16948b2bfbaa9f2af07d",
+      "user_id_device_type_count_30d_by_device_type": "b380c526f39e16948b2bfbaa9f2af07d",
+      "user_id_device_type_count_3d_by_device_type": "b380c526f39e16948b2bfbaa9f2af07d",
       "user_id_is_public_profile": "42187cf3a24d72d2c69ce024d0f1e349",
       "user_id_login_method_last5_14d": "3241565b1b51c08c834fd1bfbe0cee6c",
       "user_id_login_method_last5_30d": "3241565b1b51c08c834fd1bfbe0cee6c",
@@ -247,11 +250,8 @@
       "user_id_page_name_unique_count_3d": "d1f7ac120a677a50faea0e3ca7cc737d",
       "user_id_user_id": "bf48fe69b855db5805e82bf4f717045a",
       "user_id_user_id_count_14d": "ac2e1107c95153472bfd8c569d03c995",
-      "user_id_user_id_count_14d_by_device_type": "46846903aafa4729220837ae5ddd0251",
       "user_id_user_id_count_30d": "ac2e1107c95153472bfd8c569d03c995",
-      "user_id_user_id_count_30d_by_device_type": "46846903aafa4729220837ae5ddd0251",
-      "user_id_user_id_count_3d": "ac2e1107c95153472bfd8c569d03c995",
-      "user_id_user_id_count_3d_by_device_type": "46846903aafa4729220837ae5ddd0251"
+      "user_id_user_id_count_3d": "ac2e1107c95153472bfd8c569d03c995"
     },
     "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_fraud_labels_with_offset_0\", \"spec\": \"data.fraud_labels/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_profiles_with_offset_0\", \"spec\": \"data.profiles/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_page_views_with_offset_0\", \"spec\": \"data.page_views/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}, {\"name\": \"wf_data_logins_with_offset_0\", \"spec\": \"data.logins/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}]}",
     "executionInfo": {

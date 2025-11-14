@@ -5,7 +5,7 @@
       "buckets": [
         "device_type"
       ],
-      "inputColumn": "user_id",
+      "inputColumn": "device_type",
       "operation": 6,
       "windows": [
         {
@@ -50,13 +50,13 @@
   ],
   "metaData": {
     "columnHashes": {
+      "device_type_count_14d_by_device_type": "85ff676e4b196911037ea842188a8800",
+      "device_type_count_30d_by_device_type": "85ff676e4b196911037ea842188a8800",
+      "device_type_count_3d_by_device_type": "85ff676e4b196911037ea842188a8800",
       "login_method_last5_14d": "bb0d72003bdca17a252c7ab7aaca2a46",
       "login_method_last5_30d": "bb0d72003bdca17a252c7ab7aaca2a46",
       "login_method_last5_3d": "bb0d72003bdca17a252c7ab7aaca2a46",
-      "user_id": "80d257a587d634792fdfd4427ccfc8ad",
-      "user_id_count_14d_by_device_type": "23e49f5f0a3515f34861d52c1d576a06",
-      "user_id_count_30d_by_device_type": "23e49f5f0a3515f34861d52c1d576a06",
-      "user_id_count_3d_by_device_type": "23e49f5f0a3515f34861d52c1d576a06"
+      "user_id": "80d257a587d634792fdfd4427ccfc8ad"
     },
     "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_logins_with_offset_0\", \"spec\": \"data.logins/<partition-column-name>={{ macros.ds_add(ds, 0) }}\"}]}",
     "executionInfo": {
