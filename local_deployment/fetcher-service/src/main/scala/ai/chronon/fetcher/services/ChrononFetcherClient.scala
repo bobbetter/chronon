@@ -16,11 +16,11 @@ sealed trait MetadataException extends Exception
 case class MetadataNotFoundException(message: String) extends Exception(message) with MetadataException
 case class MetadataFetchException(message: String, cause: Throwable) extends Exception(message, cause) with MetadataException
 
+sealed trait CreateTableResult
+case object TableCreated extends CreateTableResult
+case object TableAlreadyExists extends CreateTableResult
 
 object ChrononFetcherClient {
-  sealed trait CreateTableResult
-  case object TableCreated extends CreateTableResult
-  case object TableAlreadyExists extends CreateTableResult
   private lazy val client: FetcherClient = build()
 
   def fetchGroupBys(requests: Seq[Fetcher.Request])(implicit ec: ExecutionContext): Future[Seq[Fetcher.Response]] =

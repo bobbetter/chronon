@@ -191,12 +191,12 @@ services:
       FETCHER_SERVICE_HOST: 0.0.0.0
       FETCHER_SERVICE_PORT: "8083"
       DYNAMO_ENDPOINT: http://host.docker.internal:8000
-      CHRONON_CONFIGS_PATH: /opt/chronon/configs
+      CHRONON_CONFIGS_PATH: /opt/chronon/app/compiled
       <<: *aws-config
     volumes:
       - ../out/cloud_aws/assembly.dest/chronon-aws-assembly.jar:/opt/app/lib/chronon-aws-assembly.jar:ro
       - ./fetcher-service/fetcher-service.log:/opt/app/fetcher-service.log
-      - ./app/compiled:/opt/chronon/configs:ro
+      - ./app:/opt/chronon/app:ro
     networks:
       - chronon-net
 

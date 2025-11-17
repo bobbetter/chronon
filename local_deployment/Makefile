@@ -17,3 +17,6 @@ connect:
 
 connect-flink:
 	docker exec -it local_deployment-flink-jobmanager-1 bash
+
+ls:
+	docker exec -it local_deployment-chronon-spark-1 bash -c "ls /opt/chronon/configs/joins/quickstart"

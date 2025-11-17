@@ -67,6 +67,98 @@ class SparkJobRunner:
                 f"Looking for container with name containing 'chronon-spark'"
             )
     
+    def create_database(self, database_name: str) -> Dict[str, Any]:
+        """
+        Create a database in the chronon-spark container.
+        
+        Args:
+            database_name: Name of the database to create
+            
+        Returns:
+            Dictionary with creation results including:
+            - status: "success" or "error"
+            - exit_code: Command exit code
+            - stdout: Standard output from the command
+            - stderr: Standard error from the command
+            - start_time: Job start timestamp
+            - end_time: Job end timestamp
+            - command: The actual command that was executed
+            
+        Raises:
+            RuntimeError: If Docker operations fail
+        """
+        start_time = datetime.now()
+        
+        # Build the spark-shell command
+        command = (
+            f"cd app && spark-shell --master local[*] "
+            f"--conf spark.chronon.database={database_name} "
+            f"-i ./scripts/create-database.scala"
+        )
+        
+        logger.info(f"Executing database creation: {command}")
+        
+        try:
+            container = self._find_spark_container()
+            
+            # Execute the command in the container
+            exec_result = container.exec_run(
+                cmd=["bash", "-c", command],
+                stdout=True,
+                stderr=True,
+                stream=False,
+                demux=True  # Separate stdout and stderr
+            )
+            
+            exit_code = exec_result.exit_code
+            stdout_bytes, stderr_bytes = exec_result.output
+            
+            # Decode output
+            stdout = stdout_bytes.decode('utf-8') if stdout_bytes else ""
+            stderr = stderr_bytes.decode('utf-8') if stderr_bytes else ""
+            
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            result = {
+                "status": "success" if exit_code == 0 else "error",
+                "exit_code": exit_code,
+                "stdout": stdout,
+                "stderr": stderr,
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "duration_seconds": duration,
+                "command": command,
+                "container": container.name,
+                "database_name": database_name
+            }
+            
+            if exit_code == 0:
+                logger.info(f"Database creation completed successfully in {duration:.2f}s")
+            else:
+                logger.error(f"Database creation failed with exit code {exit_code}")
+                logger.error(f"stderr: {stderr}")
+            
+            return result
+            
+        except Exception as e:
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            logger.error(f"Failed to execute database creation: {e}")
+            return {
+                "status": "error",
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": str(e),
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "duration_seconds": duration,
+                "command": command,
+                "error": str(e),
+                "database_name": database_name
+            }
+    
     def delete_table(self, table_name: str) -> Dict[str, Any]:
         """
         Delete a table in the chronon-spark container.

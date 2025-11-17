@@ -102,6 +102,32 @@ async def run_spark_job(request: SparkJobRequest):
         )
 
 
+@router.post("/create-database", response_model=SparkJobResponse)
+async def create_database(database_name: str):
+    """
+    Create a database in the chronon-spark container.
+    
+    Args:
+        database_name: Name of the database to create
+        
+    Returns:
+        SparkJobResponse with creation results including stdout, stderr, and exit code
+        
+    Raises:
+        HTTPException: If the database creation fails
+    """
+    try:
+        logger.info(f"Received database creation request: database={database_name}")
+        result = spark_runner.create_database(database_name)
+        return SparkJobResponse(**result)
+    except Exception as e:
+        logger.error(f"Unexpected error creating database: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create database: {str(e)}"
+        )
+
+
 @router.post("/delete-table", response_model=SparkJobResponse)
 async def delete_table(table_name: str):
     """

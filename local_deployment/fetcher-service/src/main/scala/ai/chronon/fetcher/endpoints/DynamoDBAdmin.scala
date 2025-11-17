@@ -1,7 +1,6 @@
 package ai.chronon.fetcher.endpoints
 
-import ai.chronon.fetcher.services.ChrononFetcherClient
-import ai.chronon.fetcher.services.ChrononFetcherClient.{TableCreated, TableAlreadyExists}
+import ai.chronon.fetcher.services.{ChrononFetcherClient, TableAlreadyExists, TableCreated}
 import io.circe.generic.auto._
 import sttp.tapir._
 import sttp.tapir.generic.auto._

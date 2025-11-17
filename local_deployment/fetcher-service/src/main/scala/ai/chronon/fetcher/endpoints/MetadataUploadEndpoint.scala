@@ -45,12 +45,13 @@ object MetadataUploadEndpoint {
       Try {        
         val confPath = s"$defaultPath/${confType}/${request.teamName}"
         // Ensure the metadata table exists
-        ChrononFetcherClient.createDataset(metadataTableName)
+        ChrononFetcherClient.createTable(metadataTableName, isTimeSorted = false)
 
         // Walk the directory to collect metadata
+        println(s"Walking directory: $confPath")
         val walker = new MetadataDirWalker(confPath, List(metadataTableName), maybeConfType = Some(confType))
         val kvMap: Map[String, Map[String, List[String]]] = walker.run
-
+        println(s"KV Map: $kvMap")
         // Upload metadata to KV store
         val results = kvMap.toSeq.flatMap { case (endPoint, keyValues) =>
           val future = ChrononFetcherClient.putMetadata(keyValues, endPoint)
