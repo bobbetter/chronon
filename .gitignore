@@ -10,9 +10,7 @@
 *.logs
 *.iml
 *.db
-# Exception: allow test data db directories
-!local_deployment/chronon-ui/server/tests/test_data/warehouse/data.db/
-!local_deployment/chronon-ui/server/tests/test_data/warehouse/quickstart.db/
+
 .idea/
 .ijwb/
 **/local_warehouse/
@@ -139,3 +137,8 @@ local_deployment/app/joins/
 local_deployment/app/teams.py
 .cursorrules
 .python-version
+
+# Exception: allow chronon-ui pyproject.toml
+!local_deployment/chronon-ui/pyproject.toml
+!local_deployment/chronon-ui/server/tests/test_data/warehouse/data.db/
+!local_deployment/chronon-ui/server/tests/test_data/warehouse/quickstart.db/
