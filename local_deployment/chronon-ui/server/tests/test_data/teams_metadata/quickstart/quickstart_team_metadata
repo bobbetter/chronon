@@ -1,0 +1,14 @@
+{
+  "executionInfo": {
+    "conf": {
+      "common": {
+        "spark.chronon.coalesce.factor": "10"
+      }
+    },
+    "env": {
+      "common": {
+        "ARTIFACT_PREFIX": "<customer-artifact-bucket>"
+      }
+    }
+  }
+}

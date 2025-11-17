@@ -93,6 +93,16 @@ class ChainedGroupByJob(eventSrc: FlinkSource[ProjectedEvent],
     }
   }
 
+  /** Untiled mode is not yet implemented for ChainedGroupByJob (JoinSource GroupBys).
+    *  Use runTiledGroupByJob instead.
+    */
+  override def runGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse] = {
+    throw new NotImplementedError(
+      s"Untiled mode is not implemented for ChainedGroupByJob (JoinSource GroupBys). " +
+      s"GroupBy: $groupByName uses JoinSource and only supports tiled mode."
+    )
+  }
+
   /** Build the tiled version of the Flink GroupBy job that chains features using a JoinSource.
     *  The operators are structured as follows:
     *  - Source: Read from Kafka topic into ProjectedEvent stream

@@ -1,6 +1,7 @@
 package build.cloud_aws
 import mill._
 import mill.scalalib._
+import mill.api.PathRef
 
 // Cloud AWS module
 object `package` extends build.BaseModule {
@@ -35,4 +36,11 @@ object `package` extends build.BaseModule {
   }
 
   def prependShellScript = ""
+
+  override def assembly: T[PathRef] = Task {
+    val original = super.assembly()
+    val renamed = Task.dest / "chronon-aws-assembly.jar"
+    os.copy.over(original.path, renamed, createFolders = true)
+    PathRef(renamed)
+  }
 }
