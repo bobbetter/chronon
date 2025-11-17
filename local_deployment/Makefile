@@ -1,3 +1,12 @@
+build-all:
+	cd .. && ./mill clean
+	cd .. && ./mill spark.assembly
+	cd .. && ./mill cloud_aws.assembly
+	cd .. && ./mill online.assembly
+	cd .. && ./mill flink.assembly
+	cd .. && ./mill flink_connectors.assembly
+	cd .. && ./mill python.installEditable
+
 load-data:
 	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && spark-shell -i ./scripts/data-loader.scala --master local[*]"
 
