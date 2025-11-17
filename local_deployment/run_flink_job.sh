@@ -25,11 +25,14 @@ sanitize_to_streaming() {
 }
 
 STREAMING_TABLE_NAME=$(sanitize_to_streaming "$GROUPBY_NAME")
+STREAM_NAME="login-events"
+echo "----------------------------------------"
+KINESIS_SERVICE_URL="${KINESIS_SERVICE_URL:-http://localhost:8005}"
 
 # Ensure DynamoDB table exists via REST API
 ensure_ddb_table() {
   local table_name="$1"
-  local fetcher_service_url="${FETCHER_SERVICE_URL:-http://localhost:8080}"
+  local fetcher_service_url="${FETCHER_SERVICE_URL:-http://localhost:8083}"
   
   echo "Creating DynamoDB table: $table_name"
   
@@ -40,7 +43,23 @@ ensure_ddb_table() {
     -d "{\"tableName\": \"${table_name}\", \"isTimeSorted\": true}"
 }
 
-# ensure_ddb_table "$STREAMING_TABLE_NAME"
+# Ensure Kinesis stream exists via REST API
+ensure_kinesis_stream() {
+  local stream_name="$1"
+  local kinesis_url="$2"
+  local shard_count="${SHARD_COUNT:-1}"
+  
+  echo "Creating Kinesis stream: $stream_name"
+  
+  curl -s -X POST \
+    "${kinesis_url}/v1/kinesis/${stream_name}" \
+    -H 'accept: application/json' \
+    -H 'Content-Type: application/json' \
+    -d "{\"shard_count\": ${shard_count}}"
+}
+
+ensure_ddb_table "$STREAMING_TABLE_NAME"
+ensure_kinesis_stream "$STREAM_NAME" "$KINESIS_SERVICE_URL"
 
 # JAR paths inside containers (mounted via docker-compose volumes)
 FLINK_JAR="/srv/chronon/jars/chronon-flink-assembly.jar"
@@ -57,6 +76,8 @@ echo "=========================================="
 echo "Chronon Flink Job Submission"
 echo "=========================================="
 echo "GroupBy Name: $GROUPBY_NAME"
+echo "Kinesis Stream: $STREAM_NAME"
+echo "Streaming Table: $STREAMING_TABLE_NAME"
 echo "Kafka Bootstrap: $KAFKA_BOOTSTRAP"
 echo "Flink JobManager: $FLINK_JOBMANAGER"
 echo "Online Class: $ONLINE_CLASS"
