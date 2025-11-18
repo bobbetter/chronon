@@ -26,7 +26,7 @@
 
 ### ******************* END ****************************
 
-set -euxo pipefail
+set -euo pipefail
 CHRONON_WORKING_DIR=${CHRONON_TMPDIR:-/tmp}/${USER}
 mkdir -p ${CHRONON_WORKING_DIR}
 export TEST_NAME="${APP_NAME}_${USER}_test"
@@ -35,16 +35,7 @@ unset PYSPARK_PYTHON
 unset SPARK_HOME
 # Note: SPARK_CONF_DIR should be set in docker-compose.yml to /srv/chronon/conf
 # to pick up spark-defaults.conf
-export LOG4J_FILE="${CHRONON_WORKING_DIR}/log4j_file"
-cat > ${LOG4J_FILE} << EOF
-log4j.rootLogger=INFO, stdout
-log4j.appender.stdout=org.apache.log4j.ConsoleAppender
-log4j.appender.stdout.Target=System.out
-log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
-log4j.appender.stdout.layout.ConversionPattern=%d{yyyy-MM-dd HH:mm:ss} %-5p %c{1}:%L - %m%n
-log4j.appender.stdout.layout.ConversionPattern=[%d{yyyy-MM-dd HH:mm:ss}] {%c{1}} %L - %m%n
-log4j.logger.ai.chronon=INFO
-EOF
+
 # Replace None placeholders from Python with env-provided values, if present
 PROCESSED_ARGS=()
 for arg in "$@"; do
@@ -58,8 +49,6 @@ for arg in "$@"; do
 done
 
 $SPARK_SUBMIT_PATH \
---driver-java-options " -Dlog4j.configuration=file:${LOG4J_FILE} -Dderby.system.home=/srv/chronon/metastore" \
---conf "spark.executor.extraJavaOptions= -XX:ParallelGCThreads=4 -XX:+UseParallelGC -XX:+UseCompressedOops -Dderby.system.home=/srv/chronon/metastore" \
 --conf spark.eventLog.enabled=false \
 --conf spark.sql.adaptive.enabled=false \
 --conf spark.sql.adaptive.coalescePartitions.enabled=false \
