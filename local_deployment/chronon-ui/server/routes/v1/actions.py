@@ -37,8 +37,6 @@ class SparkJobRequest(BaseModel):
         example="upload-to-kv"
     )
     
-
-
 class SparkJobResponse(BaseModel):
     """Response model for Spark job execution."""
     status: str = Field(..., description="Status of the job: 'success' or 'error'")
@@ -83,12 +81,17 @@ async def run_spark_job(request: SparkJobRequest):
         if request.mode == "pre-compute-upload":
             request.mode = "upload"
 
-
-        result = spark_runner.run_spark_job(
-            conf_path=request.conf_path,
-            ds=request.ds,
-            mode=request.mode,
-        )
+        if request.mode == "upload-to-kv":
+            result = spark_runner.upload_to_kv(
+                conf_path=request.conf_path,
+                ds=request.ds
+        ) 
+        else:
+            result = spark_runner.run_spark_job(
+                conf_path=request.conf_path,
+                ds=request.ds,
+                mode=request.mode,
+            )
         
         # If the job failed, we still return 200 but with error status
         # The client can check the status field and exit_code
@@ -137,6 +140,11 @@ async def delete_table(table_name: str):
         return spark_runner.delete_table(table_name)
     except Exception as e:
         logger.error(f"Unexpected error deleting table: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete table: {str(e)}"
+        )
+
 
 @router.get("/health")
 async def health_check():
@@ -161,4 +169,3 @@ async def health_check():
             "docker_connected": False,
             "error": str(e)
         }
-

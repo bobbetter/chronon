@@ -251,6 +251,95 @@ class SparkJobRunner:
                 "table_name": table_name
             }
         
+    def upload_to_kv(
+        self,
+        conf_path: str,
+        ds: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Run the DynamoDB bulk upload script inside the Spark container.
+
+        Args:
+            conf_path: Path to the compiled GroupBy configuration relative to /srv/chronon/app (e.g. compiled/group_bys/...).
+            ds: Optional partition date (e.g., "2025-10-17") passed through to the script.
+
+        Returns:
+            Result dictionary matching other operations (status, stdout, stderr, etc.).
+        """
+        start_time = datetime.now()
+
+        jar_list = "/srv/chronon/jars/chronon-spark-assembly.jar,/srv/chronon/jars/chronon-aws-assembly.jar"
+        cmd_parts = [
+            "cd app && spark-shell --master local[*]",
+            f"--jars {jar_list}",
+            f"--conf spark.chronon.bulkput.confPath={conf_path}"
+        ]
+        if ds:
+            cmd_parts.append(f"--conf spark.chronon.bulkput.ds={ds}")
+        cmd_parts.append("-i ./scripts/dynamodb-bulk-put.scala")
+
+        command = " ".join(cmd_parts)
+
+        logger.info(f"Executing upload-to-kv bulk script: {command}")
+
+        try:
+            container = self._find_spark_container()
+            exec_result = container.exec_run(
+                cmd=["bash", "-c", command],
+                stdout=True,
+                stderr=True,
+                stream=False,
+                demux=True
+            )
+
+            exit_code = exec_result.exit_code
+            stdout_bytes, stderr_bytes = exec_result.output
+            stdout = stdout_bytes.decode("utf-8") if stdout_bytes else ""
+            stderr = stderr_bytes.decode("utf-8") if stderr_bytes else ""
+
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+
+            result = {
+                "status": "success" if exit_code == 0 else "error",
+                "exit_code": exit_code,
+                "stdout": stdout,
+                "stderr": stderr,
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "duration_seconds": duration,
+                "command": command,
+                "container": container.name,
+                "conf_path": conf_path,
+                "ds": ds
+            }
+
+            if exit_code == 0:
+                logger.info(f"Upload-to-kv completed successfully in {duration:.2f}s")
+            else:
+                logger.error(f"Upload-to-kv failed with exit code {exit_code}")
+                logger.error(f"stderr: {stderr}")
+
+            return result
+
+        except Exception as e:
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            logger.error(f"Failed to execute upload-to-kv script: {e}")
+            return {
+                "status": "error",
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": str(e),
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "duration_seconds": duration,
+                "command": command,
+                "error": str(e),
+                "conf_path": conf_path,
+                "ds": ds
+            }
+        
     def run_spark_job(
         self,
         conf_path: str,
@@ -373,4 +462,3 @@ class SparkJobRunner:
             self.client.close()
             self.client = None
             logger.info("Docker client closed")
-

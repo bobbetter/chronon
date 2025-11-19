@@ -17,7 +17,6 @@ WORKDIR /srv/chronon
 RUN mkdir -p \
     /srv/chronon/conf \
     /srv/chronon/data \
-    /srv/chronon/scripts \
     /srv/chronon/metastore \
     /srv/chronon/jars \
     /srv/chronon/app
