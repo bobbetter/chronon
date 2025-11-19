@@ -1,7 +1,6 @@
 package ai.chronon.integrations.aws
 
 import ai.chronon.api.Constants
-import ai.chronon.api.Extensions.StringOps
 import ai.chronon.api.Constants.{ContinuationKey, ListLimit}
 import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.online.KVStore
@@ -229,113 +228,7 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
   /** Implementation of bulkPut is currently a TODO for the DynamoDB store. This involves transforming the underlying
     * Parquet data to Amazon's Ion format + swapping out old table for new (as bulkLoad only writes to new tables)
     */
-  override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
-    import org.apache.spark.sql.SparkSession
-    import ai.chronon.spark.catalog.TableUtils
-    import org.apache.spark.sql.Row
-    import ai.chronon.online.KVStore
-
-    // Ensure there is an active SparkSession for reading the offline table
-    val spark = SparkSession.getActiveSession
-      .orElse(SparkSession.getDefaultSession)
-      .getOrElse {
-        ai.chronon.spark.submission.SparkSessionBuilder.build("dynamodb-bulk-put")
-      }
-    val tableUtils = TableUtils(spark)
-
-    val partitionFilter =
-      Option(partition).map { part => s"WHERE ${tableUtils.partitionColumn} = '$part'" }.getOrElse("")
-
-    val offlineDf = tableUtils.sql(s"SELECT * FROM $sourceOfflineTable")
-    val tsColumn =
-      if (offlineDf.columns.contains(Constants.TimeColumn)) Constants.TimeColumn
-      else s"(unix_timestamp(ds, 'yyyy-MM-dd') * 1000 + ${tableUtils.partitionSpec.spanMillis})"
-
-    val df =
-      tableUtils.sql(s"""SELECT key_bytes, value_bytes, $tsColumn as ts
-         |FROM $sourceOfflineTable
-         |$partitionFilter""".stripMargin)
-
-    // Map destination dataset to canonical table name (e.g., QUICKSTART_PURCHASES_V1__1_BATCH)
-    val targetDataset = mapDatasetName(destinationOnlineDataSet)
-
-    // Ensure table exists
-    try {
-      create(targetDataset)
-    } catch {
-      case _: TableAlreadyExistsException => ()
-    }
-
-    // Write in batches to avoid huge request fanout; reuse multiPut
-    val defaultBatchSize = sys.env.getOrElse("DDB_BULKPUT_BATCH_SIZE", "100").toInt
-
-    val requests = df.rdd.map { row: Row =>
-      val key = row.get(0).asInstanceOf[Array[Byte]]
-      val value = row.get(1).asInstanceOf[Array[Byte]]
-      val timestamp = row.get(2).asInstanceOf[Long]
-      KVStore.PutRequest(key, value, targetDataset, Option(timestamp))
-    }
-
-    // group into batches and write per partition without capturing non-serializable class state
-    requests.foreachPartition { it =>
-      import software.amazon.awssdk.services.dynamodb.DynamoDbClient
-      import software.amazon.awssdk.regions.Region
-      import java.net.URI
-
-      // Build a local client on the executor
-      val region = sys.env.getOrElse("AWS_DEFAULT_REGION", "us-west-2")
-      val endpoint = sys.env.getOrElse("DYNAMO_ENDPOINT", "http://localhost:8000")
-      
-      var localClient = DynamoDbClient.builder()
-        .endpointOverride(URI.create(endpoint))
-        .region(Region.of(region))
-        .build()
-      
-      val batch = new scala.collection.mutable.ArrayBuffer[KVStore.PutRequest](defaultBatchSize)
-
-      def putBatch(): Unit = {
-        if (batch.isEmpty) return
-        batch.foreach { req =>
-          val attributeMap: Map[String, AttributeValue] = Map(
-            DynamoDBKVStoreConstants.partitionKeyColumn -> AttributeValue.builder
-              .b(SdkBytes.fromByteArray(req.keyBytes))
-              .build,
-            "valueBytes" -> AttributeValue.builder.b(SdkBytes.fromByteArray(req.valueBytes)).build
-          ) ++ req.tsMillis
-            .map(ts => Map(DynamoDBKVStoreConstants.sortKeyColumn -> AttributeValue.builder.n(ts.toString).build))
-            .getOrElse(Map.empty)
-
-          val putItemReq = PutItemRequest.builder
-            .tableName(req.dataset)
-            .item(attributeMap.toJava)
-            .build()
-
-          // best-effort; exceptions should fail the task
-          localClient.putItem(putItemReq)
-        }
-        batch.clear()
-      }
-
-      try {
-        it.foreach { req =>
-          batch += req
-          if (batch.size >= defaultBatchSize) putBatch()
-        }
-        putBatch()
-      } finally {
-        try localClient.close() catch {
-          case _: Throwable => ()
-        }
-      }
-    }
-  }
-
-  // Mirror BigTable's dataset mapping: default group-by uploads go to *_BATCH
-  private def mapDatasetName(dataset: String): String = {
-    if (dataset == null) return null
-    if (dataset.endsWith("_BATCH") || dataset.endsWith("_STREAMING")) dataset
-    else dataset.sanitize.toUpperCase + "_BATCH"
-  }
+  override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = ???
 
   private def getCapacityUnits(props: Map[String, Any], key: String, defaultValue: Long): Long = {
     props.get(key) match {

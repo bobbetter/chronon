@@ -5,8 +5,32 @@ import logging
 import docker
 from typing import Optional, Dict, Any
 from datetime import datetime
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("uvicorn.error")
+
+
+class SparkJobResponse(BaseModel):
+    """Standardized response for Spark job execution."""
+
+    status: str = Field(..., description="Status of the job: 'success' or 'error'")
+    exit_code: int = Field(..., description="Exit code from the executed command")
+    stdout: str = Field(..., description="Standard output from the job")
+    stderr: str = Field(..., description="Standard error from the job")
+    start_time: str = Field(..., description="Job start time (ISO format)")
+    end_time: str = Field(..., description="Job end time (ISO format)")
+    duration_seconds: float = Field(..., description="Job duration in seconds")
+    command: str = Field(..., description="The actual command that was executed")
+    container: Optional[str] = Field(
+        None, description="Name of the container where job ran"
+    )
+    error: Optional[str] = Field(
+        None, description="Error message when the job execution failed"
+    )
+    extra_parameters: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional parameters specific to a given operation",
+    )
 
 
 class SparkJobRunner:
@@ -24,7 +48,7 @@ class SparkJobRunner:
         """
         self.spark_container_name = spark_container_name
         self.client: Optional[docker.DockerClient] = None
-        
+
     def _get_docker_client(self) -> docker.DockerClient:
         """Get or create a Docker client."""
         if self.client is None:
@@ -67,7 +91,7 @@ class SparkJobRunner:
                 f"Looking for container with name containing 'chronon-spark'"
             )
     
-    def create_database(self, database_name: str) -> Dict[str, Any]:
+    def create_database(self, database_name: str) -> SparkJobResponse:
         """
         Create a database in the chronon-spark container.
         
@@ -75,14 +99,8 @@ class SparkJobRunner:
             database_name: Name of the database to create
             
         Returns:
-            Dictionary with creation results including:
-            - status: "success" or "error"
-            - exit_code: Command exit code
-            - stdout: Standard output from the command
-            - stderr: Standard error from the command
-            - start_time: Job start timestamp
-            - end_time: Job end timestamp
-            - command: The actual command that was executed
+            SparkJobResponse with command execution metadata and the database name
+            placed in the extra_parameters field.
             
         Raises:
             RuntimeError: If Docker operations fail
@@ -111,55 +129,50 @@ class SparkJobRunner:
             )
             
             exit_code = exec_result.exit_code
-            stdout_bytes, stderr_bytes = exec_result.output
-            
-            # Decode output
-            stdout = stdout_bytes.decode('utf-8') if stdout_bytes else ""
-            stderr = stderr_bytes.decode('utf-8') if stderr_bytes else ""
-            
-            end_time = datetime.now()
-            duration = (end_time - start_time).total_seconds()
-            
-            result = {
-                "status": "success" if exit_code == 0 else "error",
-                "exit_code": exit_code,
-                "stdout": stdout,
-                "stderr": stderr,
-                "start_time": start_time.isoformat(),
-                "end_time": end_time.isoformat(),
-                "duration_seconds": duration,
-                "command": command,
-                "container": container.name,
-                "database_name": database_name
-            }
-            
             if exit_code == 0:
                 logger.info(f"Database creation completed successfully in {duration:.2f}s")
             else:
                 logger.error(f"Database creation failed with exit code {exit_code}")
                 logger.error(f"stderr: {stderr}")
+
+            stdout_bytes, stderr_bytes = exec_result.output
+            stdout = stdout_bytes.decode('utf-8') if stdout_bytes else ""
+            stderr = stderr_bytes.decode('utf-8') if stderr_bytes else ""
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
             
-            return result
-            
+            return SparkJobResponse(
+                status="success" if exit_code == 0 else "error",
+                exit_code=exit_code,
+                stdout=stdout,
+                stderr=stderr,
+                start_time=start_time.isoformat(),
+                end_time=end_time.isoformat(),
+                duration_seconds=duration,
+                command=command,
+                container=container.name,
+                extra_parameters={"database_name": database_name}
+            )
+                        
         except Exception as e:
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
             
             logger.error(f"Failed to execute database creation: {e}")
-            return {
-                "status": "error",
-                "exit_code": -1,
-                "stdout": "",
-                "stderr": str(e),
-                "start_time": start_time.isoformat(),
-                "end_time": end_time.isoformat(),
-                "duration_seconds": duration,
-                "command": command,
-                "error": str(e),
-                "database_name": database_name
-            }
+            return SparkJobResponse(
+                status="error",
+                exit_code=-1,
+                stdout="",
+                stderr=str(e),
+                start_time=start_time.isoformat(),
+                end_time=end_time.isoformat(),
+                duration_seconds=duration,
+                command=command,
+                error=str(e),
+                extra_parameters={"database_name": database_name}
+            )
     
-    def delete_table(self, table_name: str) -> Dict[str, Any]:
+    def delete_table(self, table_name: str) -> SparkJobResponse:
         """
         Delete a table in the chronon-spark container.
         
@@ -167,14 +180,8 @@ class SparkJobRunner:
             table_name: Fully qualified table name (database.table_name) or just table name
             
         Returns:
-            Dictionary with deletion results including:
-            - status: "success" or "error"
-            - exit_code: Command exit code
-            - stdout: Standard output from the command
-            - stderr: Standard error from the command
-            - start_time: Job start timestamp
-            - end_time: Job end timestamp
-            - command: The actual command that was executed
+            SparkJobResponse with command execution metadata and the table name
+            placed in the extra_parameters field.
             
         Raises:
             RuntimeError: If Docker operations fail
@@ -212,18 +219,18 @@ class SparkJobRunner:
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
             
-            result = {
-                "status": "success" if exit_code == 0 else "error",
-                "exit_code": exit_code,
-                "stdout": stdout,
-                "stderr": stderr,
-                "start_time": start_time.isoformat(),
-                "end_time": end_time.isoformat(),
-                "duration_seconds": duration,
-                "command": command,
-                "container": container.name,
-                "table_name": table_name
-            }
+            result = SparkJobResponse(
+                status="success" if exit_code == 0 else "error",
+                exit_code=exit_code,
+                stdout=stdout,
+                stderr=stderr,
+                start_time=start_time.isoformat(),
+                end_time=end_time.isoformat(),
+                duration_seconds=duration,
+                command=command,
+                container=container.name,
+                extra_parameters={"table_name": table_name}
+            )
             
             if exit_code == 0:
                 logger.info(f"Table deletion completed successfully in {duration:.2f}s")
@@ -238,24 +245,24 @@ class SparkJobRunner:
             duration = (end_time - start_time).total_seconds()
             
             logger.error(f"Failed to execute table deletion: {e}")
-            return {
-                "status": "error",
-                "exit_code": -1,
-                "stdout": "",
-                "stderr": str(e),
-                "start_time": start_time.isoformat(),
-                "end_time": end_time.isoformat(),
-                "duration_seconds": duration,
-                "command": command,
-                "error": str(e),
-                "table_name": table_name
-            }
+            return SparkJobResponse(
+                status="error",
+                exit_code=-1,
+                stdout="",
+                stderr=str(e),
+                start_time=start_time.isoformat(),
+                end_time=end_time.isoformat(),
+                duration_seconds=duration,
+                command=command,
+                error=str(e),
+                extra_parameters={"table_name": table_name}
+            )
         
     def upload_to_kv(
         self,
         conf_path: str,
         ds: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> SparkJobResponse:
         """
         Run the DynamoDB bulk upload script inside the Spark container.
 
@@ -264,7 +271,8 @@ class SparkJobRunner:
             ds: Optional partition date (e.g., "2025-10-17") passed through to the script.
 
         Returns:
-            Result dictionary matching other operations (status, stdout, stderr, etc.).
+            SparkJobResponse mirroring other operations with conf_path/ds stored
+            in the extra_parameters field.
         """
         start_time = datetime.now()
 
@@ -281,6 +289,10 @@ class SparkJobRunner:
         command = " ".join(cmd_parts)
 
         logger.info(f"Executing upload-to-kv bulk script: {command}")
+
+        extra_parameters = {"conf_path": conf_path}
+        if ds:
+            extra_parameters["ds"] = ds
 
         try:
             container = self._find_spark_container()
@@ -300,19 +312,18 @@ class SparkJobRunner:
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
 
-            result = {
-                "status": "success" if exit_code == 0 else "error",
-                "exit_code": exit_code,
-                "stdout": stdout,
-                "stderr": stderr,
-                "start_time": start_time.isoformat(),
-                "end_time": end_time.isoformat(),
-                "duration_seconds": duration,
-                "command": command,
-                "container": container.name,
-                "conf_path": conf_path,
-                "ds": ds
-            }
+            result = SparkJobResponse(
+                status="success" if exit_code == 0 else "error",
+                exit_code=exit_code,
+                stdout=stdout,
+                stderr=stderr,
+                start_time=start_time.isoformat(),
+                end_time=end_time.isoformat(),
+                duration_seconds=duration,
+                command=command,
+                container=container.name,
+                extra_parameters=extra_parameters
+            )
 
             if exit_code == 0:
                 logger.info(f"Upload-to-kv completed successfully in {duration:.2f}s")
@@ -326,19 +337,18 @@ class SparkJobRunner:
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
             logger.error(f"Failed to execute upload-to-kv script: {e}")
-            return {
-                "status": "error",
-                "exit_code": -1,
-                "stdout": "",
-                "stderr": str(e),
-                "start_time": start_time.isoformat(),
-                "end_time": end_time.isoformat(),
-                "duration_seconds": duration,
-                "command": command,
-                "error": str(e),
-                "conf_path": conf_path,
-                "ds": ds
-            }
+            return SparkJobResponse(
+                status="error",
+                exit_code=-1,
+                stdout="",
+                stderr=str(e),
+                start_time=start_time.isoformat(),
+                end_time=end_time.isoformat(),
+                duration_seconds=duration,
+                command=command,
+                error=str(e),
+                extra_parameters=extra_parameters
+            )
         
     def run_spark_job(
         self,
@@ -346,7 +356,7 @@ class SparkJobRunner:
         ds: str,
         mode: Optional[str] = None,
         additional_args: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+    ) -> SparkJobResponse:
         """
         Execute a Spark job in the chronon-spark container.
         
@@ -357,14 +367,8 @@ class SparkJobRunner:
             additional_args: Optional dictionary of additional command-line arguments
             
         Returns:
-            Dictionary with job execution results including:
-            - status: "success" or "error"
-            - exit_code: Command exit code
-            - stdout: Standard output from the command
-            - stderr: Standard error from the command
-            - start_time: Job start timestamp
-            - end_time: Job end timestamp
-            - command: The actual command that was executed
+            SparkJobResponse capturing stdout/stderr alongside conf_path, ds, and
+            optional args stored in the extra_parameters field.
             
         Raises:
             RuntimeError: If Docker operations fail
@@ -394,6 +398,14 @@ class SparkJobRunner:
                     cmd_parts.append(f"--{key}")
         
         command = " ".join(cmd_parts)
+        extra_parameters: Dict[str, Any] = {
+            "conf_path": conf_path,
+            "ds": ds
+        }
+        if mode:
+            extra_parameters["mode"] = mode
+        if additional_args:
+            extra_parameters["additional_args"] = additional_args
         
         logger.info(f"Executing Spark job: {command}")
         
@@ -419,17 +431,18 @@ class SparkJobRunner:
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
             
-            result = {
-                "status": "success" if exit_code == 0 else "error",
-                "exit_code": exit_code,
-                "stdout": stdout,
-                "stderr": stderr,
-                "start_time": start_time.isoformat(),
-                "end_time": end_time.isoformat(),
-                "duration_seconds": duration,
-                "command": command,
-                "container": container.name
-            }
+            result = SparkJobResponse(
+                status="success" if exit_code == 0 else "error",
+                exit_code=exit_code,
+                stdout=stdout,
+                stderr=stderr,
+                start_time=start_time.isoformat(),
+                end_time=end_time.isoformat(),
+                duration_seconds=duration,
+                command=command,
+                container=container.name,
+                extra_parameters=extra_parameters
+            )
             
             if exit_code == 0:
                 logger.info(f"Spark job completed successfully in {duration:.2f}s")
@@ -444,17 +457,18 @@ class SparkJobRunner:
             duration = (end_time - start_time).total_seconds()
             
             logger.error(f"Failed to execute Spark job: {e}")
-            return {
-                "status": "error",
-                "exit_code": -1,
-                "stdout": "",
-                "stderr": str(e),
-                "start_time": start_time.isoformat(),
-                "end_time": end_time.isoformat(),
-                "duration_seconds": duration,
-                "command": command,
-                "error": str(e)
-            }
+            return SparkJobResponse(
+                status="error",
+                exit_code=-1,
+                stdout="",
+                stderr=str(e),
+                start_time=start_time.isoformat(),
+                end_time=end_time.isoformat(),
+                duration_seconds=duration,
+                command=command,
+                error=str(e),
+                extra_parameters=extra_parameters
+            )
     
     def close(self):
         """Close the Docker client connection."""

@@ -190,8 +190,8 @@ try {
     println(s"[dynamodb-bulk-put] ERROR: bulkPut failed - ${t.getMessage}")
     t.printStackTrace()
     System.exit(1)
-  } finally {
-    try driverClient.close()
+} finally {
+  try driverClient.close()
   catch { case _: Throwable => () }
 }
 

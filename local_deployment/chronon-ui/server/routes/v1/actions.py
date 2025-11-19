@@ -4,8 +4,8 @@ API routes for triggering Chronon actions (backfill, upload, etc.)
 import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
-from server.services.runner import SparkJobRunner
+from typing import Optional
+from server.services.runner import SparkJobRunner, SparkJobResponse
 import logging
 
 logger = logging.getLogger("uvicorn.error")
@@ -37,20 +37,6 @@ class SparkJobRequest(BaseModel):
         example="upload-to-kv"
     )
     
-class SparkJobResponse(BaseModel):
-    """Response model for Spark job execution."""
-    status: str = Field(..., description="Status of the job: 'success' or 'error'")
-    exit_code: int = Field(..., description="Exit code from the command")
-    stdout: str = Field(..., description="Standard output from the job")
-    stderr: str = Field(..., description="Standard error from the job")
-    start_time: str = Field(..., description="Job start time (ISO format)")
-    end_time: str = Field(..., description="Job end time (ISO format)")
-    duration_seconds: float = Field(..., description="Job duration in seconds")
-    command: str = Field(..., description="The actual command that was executed")
-    container: Optional[str] = Field(None, description="Name of the container where job ran")
-    error: Optional[str] = Field(None, description="Error message if job failed")
-
-
 @router.post("/run-spark-job", response_model=SparkJobResponse)
 async def run_spark_job(request: SparkJobRequest):
     """
@@ -93,9 +79,7 @@ async def run_spark_job(request: SparkJobRequest):
                 mode=request.mode,
             )
         
-        # If the job failed, we still return 200 but with error status
-        # The client can check the status field and exit_code
-        return SparkJobResponse(**result)
+        return result
         
     except Exception as e:
         logger.error(f"Unexpected error running Spark job: {e}")
@@ -121,8 +105,7 @@ async def create_database(database_name: str):
     """
     try:
         logger.info(f"Received database creation request: database={database_name}")
-        result = spark_runner.create_database(database_name)
-        return SparkJobResponse(**result)
+        return spark_runner.create_database(database_name)
     except Exception as e:
         logger.error(f"Unexpected error creating database: {e}")
         raise HTTPException(
