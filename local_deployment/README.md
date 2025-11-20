@@ -18,7 +18,8 @@ You will need to be in the root directory of the project to run these commands:
 - Build the flink jar: `./mill flink.assembly`
 - Build the flink connectors jar: `./mill flink_connectors.assembly`
 - Install the Python package locally: `./mill python.installEditable`
-- or from the local_deployment directory, build all packages with `make build-all`
+
+Alternatively, from the local_deployment directory, build all packages with `make build-all`
 
 Requirements:
 - Scala (`brew install coursier`)

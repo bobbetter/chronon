@@ -17,15 +17,17 @@ current_dir = Path(__file__).parent
 server_root = current_dir.parent.parent
 
 ## TODO: Make this dynamic HARDCODED to ONE TEAM NOW
-compiled_dir_gbs = server_root / "chronon_config" / "compiled" / "group_bys" / "quickstart"
-compiled_dir_joins = server_root / "chronon_config" / "compiled" / "joins" / "quickstart"
+compiled_dir_gbs = (
+    server_root / "chronon_config" / "compiled" / "group_bys" / "quickstart"
+)
+compiled_dir_joins = (
+    server_root / "chronon_config" / "compiled" / "joins" / "quickstart"
+)
+
 
 @router.get("/graph_data")
 def get_graph(scanner: DataScanner = Depends(get_datascanner)):
-    parser = GraphParser(
-        str(compiled_dir_gbs), 
-        compiled_dir_joins,
-        scanner)
+    parser = GraphParser(str(compiled_dir_gbs), compiled_dir_joins, scanner)
     graph_dict = parser.parse()
     try:
         num_nodes = len(graph_dict.get("nodes", []))
@@ -37,17 +39,11 @@ def get_graph(scanner: DataScanner = Depends(get_datascanner)):
     return graph_dict
 
 
-
 @router.get("/list_confs")
-def list_confs(
-    conf_type: ConfType
-):
-    
+def list_confs(conf_type: ConfType):
     if conf_type == ConfType.GROUP_BY:
         directory_path = compiled_dir_gbs
     else:
         directory_path = compiled_dir_joins
-    conf_parser = ConfParser(
-        directory_path=directory_path
-    )
+    conf_parser = ConfParser(directory_path=directory_path)
     return conf_parser.parse()

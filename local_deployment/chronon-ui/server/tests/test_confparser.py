@@ -5,9 +5,9 @@ from server.services.confparser import ConfParser, ConfType
 parent_dir = Path(__file__).parent
 expected_one_groupby = [
     {
-        "name": "quickstart.page_views.v1__1", 
-        "conf_type": ConfType.GROUP_BY, 
-        "primary_keys": ["user_id"]
+        "name": "quickstart.page_views.v1__1",
+        "conf_type": ConfType.GROUP_BY,
+        "primary_keys": ["user_id"],
     },
 ]
 
@@ -21,17 +21,16 @@ def test_graphparser_with_directory_path():
 
 expected_two_groupbys = [
     {
-        "name": "quickstart.page_views.v1__1", 
-        "conf_type": ConfType.GROUP_BY, 
-        "primary_keys": ["user_id"]
+        "name": "quickstart.page_views.v1__1",
+        "conf_type": ConfType.GROUP_BY,
+        "primary_keys": ["user_id"],
     },
     {
-        "name": "quickstart.purchases.v1__1", 
-        "conf_type": ConfType.GROUP_BY, 
-        "primary_keys": ["user_id"]
+        "name": "quickstart.purchases.v1__1",
+        "conf_type": ConfType.GROUP_BY,
+        "primary_keys": ["user_id"],
     },
 ]
-
 
 
 def test_graphparser_with_two_group_bys():
@@ -43,11 +42,12 @@ def test_graphparser_with_two_group_bys():
 
 expected_one_join = [
     {
-        "name": "quickstart.training_set.v1__1", 
-        "conf_type": ConfType.JOIN, 
-        "primary_keys": ["user_id"]
+        "name": "quickstart.training_set.v1__1",
+        "conf_type": ConfType.JOIN,
+        "primary_keys": ["user_id"],
     },
 ]
+
 
 def test_graphparser_with_one_join():
     test_dir = parent_dir / "compiled" / "one_join"

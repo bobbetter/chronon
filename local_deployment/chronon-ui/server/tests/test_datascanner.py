@@ -77,15 +77,15 @@ def test_sample_table(scanner):
     assert "row_count" in result
     assert "limit" in result
     assert "offset" in result
-    
+
     # Check that data is a list
     assert isinstance(result["data"], list)
     assert len(result["data"]) <= 10
-    
+
     # Check table schema
     assert isinstance(result["table_schema"], list)
     assert len(result["table_schema"]) > 0
-    
+
     # Check row count
     assert isinstance(result["row_count"], int)
     assert result["row_count"] >= len(result["data"])
@@ -95,7 +95,7 @@ def test_sample_table_with_offset(scanner):
     """Test sampling data with offset."""
     result1 = scanner.sample_table("data", "clicks", limit=5, offset=0)
     result2 = scanner.sample_table("data", "clicks", limit=5, offset=5)
-    
+
     # Both should have data
     assert len(result1["data"]) > 0
     # The data should be different (assuming we have enough rows)
@@ -120,7 +120,7 @@ def test_get_table_stats(scanner):
     assert "row_count" in stats
     assert "column_count" in stats
     assert "columns" in stats
-    
+
     assert isinstance(stats["row_count"], int)
     assert stats["row_count"] > 0
     assert isinstance(stats["column_count"], int)
@@ -133,12 +133,12 @@ def test_execute_query(scanner):
     pattern = scanner._build_parquet_glob("data", "clicks")
     query = f"SELECT * FROM read_parquet('{pattern}') WHERE 1=1"
     result = scanner.execute_query(query, limit=10)
-    
+
     assert isinstance(result, dict)
     assert "data" in result
     assert "table_schema" in result
     assert "row_count" in result
-    
+
     assert isinstance(result["data"], list)
     assert len(result["data"]) <= 10
 
@@ -153,7 +153,9 @@ def test_build_parquet_glob_default_db(scanner):
 def test_build_parquet_glob_named_db(scanner):
     """Test building parquet glob for named database."""
     pattern = scanner._build_parquet_glob("data", "clicks")
-    expected_path = Path(scanner.warehouse_path) / "data.db" / "clicks" / "**" / "*.parquet"
+    expected_path = (
+        Path(scanner.warehouse_path) / "data.db" / "clicks" / "**" / "*.parquet"
+    )
     assert pattern == str(expected_path)
 
 
@@ -162,7 +164,7 @@ def test_has_parquet_under(scanner):
     # Test with a directory that has parquet files
     clicks_dir = Path(scanner.warehouse_path) / "data.db" / "clicks"
     assert scanner._has_parquet_under(clicks_dir)
-    
+
     # Test with warehouse root (should have parquet files somewhere)
     assert scanner._has_parquet_under(Path(scanner.warehouse_path))
 
@@ -171,7 +173,7 @@ def test_multiple_tables(scanner):
     """Test that we can query multiple different tables."""
     tables = scanner.list_tables("data")
     assert len(tables) > 1
-    
+
     # Sample from multiple tables
     for table_name in tables[:3]:  # Test first 3 tables
         result = scanner.sample_table("data", table_name, limit=5)
@@ -183,25 +185,26 @@ def test_schema_consistency(scanner):
     """Test that schema from different methods is consistent."""
     # Get schema using get_table_schema
     schema1 = scanner.get_table_schema("data", "clicks")
-    
+
     # Get schema from sample_table
     sample_result = scanner.sample_table("data", "clicks", limit=1)
     schema2 = sample_result["table_schema"]
-    
+
     # Get schema from get_table_stats
     stats = scanner.get_table_stats("data", "clicks")
     schema3 = stats["columns"]
-    
+
     # All should have the same number of columns
     assert len(schema1) == len(schema2)
     assert len(schema1) == len(schema3)
-    
+
     # Column names should match
     names1 = [col["name"] for col in schema1]
     names2 = [col["name"] for col in schema2]
     names3 = [col["name"] for col in schema3]
     assert names1 == names2
     assert names1 == names3
+
 
 def test_get_table_exists(scanner):
     """Test getting the existence of a table."""

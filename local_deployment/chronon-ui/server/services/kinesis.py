@@ -24,24 +24,24 @@ ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY_ID", "local")
 SECRET_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "local")
 SESSION_TOKEN = None
 
-class KinesisClient:
 
+class KinesisClient:
     def __init__(
-        self, 
-        region_name: str = REGION_NAME, 
-        endpoint_url: str = ENDPOINT_URL, 
-        access_key: str = ACCESS_KEY, 
-        secret_key: str = SECRET_KEY, 
-        session_token: str = SESSION_TOKEN
+        self,
+        region_name: str = REGION_NAME,
+        endpoint_url: str = ENDPOINT_URL,
+        access_key: str = ACCESS_KEY,
+        secret_key: str = SECRET_KEY,
+        session_token: str = SESSION_TOKEN,
     ) -> None:
         self.client = boto3.client(
-        "kinesis",
-        region_name=region_name,
-        endpoint_url=endpoint_url,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        aws_session_token=session_token,
-    )
+            "kinesis",
+            region_name=region_name,
+            endpoint_url=endpoint_url,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            aws_session_token=session_token,
+        )
 
     def build_records(self, count: int) -> List[_RecordSpec]:
         """Generate `count` demo records with predictable payloads."""
@@ -65,8 +65,7 @@ class KinesisClient:
     def put_records(self, stream_name: str, records: Iterable[_RecordSpec]) -> int:
         """Put records to a Kinesis stream and return the count of successfully published records."""
         response = self.client.put_records(
-            Records=list(records), 
-            StreamName=stream_name
+            Records=list(records), StreamName=stream_name
         )
 
         failed = response.get("FailedRecordCount", 0)
@@ -75,7 +74,7 @@ class KinesisClient:
                 f"Completed with {failed} failed record(s). Response: {json.dumps(response, indent=2)}"
             )
 
-        records_pushed = len(response['Records'])
+        records_pushed = len(response["Records"])
         print(f"Successfully pushed {records_pushed} record(s) to '{stream_name}'.")
         return records_pushed
 
@@ -88,7 +87,9 @@ class KinesisClient:
         while True:
             params: Dict[str, Any] = {}
             if limit:
-                params["Limit"] = min(limit - len(streams), 100) if len(streams) < limit else 100
+                params["Limit"] = (
+                    min(limit - len(streams), 100) if len(streams) < limit else 100
+                )
             if exclusive_start_stream_name:
                 params["ExclusiveStartStreamName"] = exclusive_start_stream_name
 
@@ -225,37 +226,50 @@ class KinesisClient:
     def create_stream(self, stream_name: str, shard_count: int = 1) -> Dict[str, Any]:
         """Create a new Kinesis stream with the specified number of shards."""
         response = self.client.create_stream(
-            StreamName=stream_name,
-            ShardCount=shard_count
+            StreamName=stream_name, ShardCount=shard_count
         )
-        
+
         # Wait for the stream to become active
-        waiter = self.client.get_waiter('stream_exists')
-        waiter.wait(StreamName=stream_name, WaiterConfig={'Delay': 1, 'MaxAttempts': 60})
-        
-        print(f"Successfully created stream '{stream_name}' with {shard_count} shard(s).")
+        waiter = self.client.get_waiter("stream_exists")
+        waiter.wait(
+            StreamName=stream_name, WaiterConfig={"Delay": 1, "MaxAttempts": 60}
+        )
+
+        print(
+            f"Successfully created stream '{stream_name}' with {shard_count} shard(s)."
+        )
         return response
 
-    def delete_stream(self, stream_name: str, enforce_consumer_deletion: bool = False) -> Dict[str, Any]:
+    def delete_stream(
+        self, stream_name: str, enforce_consumer_deletion: bool = False
+    ) -> Dict[str, Any]:
         """Delete a Kinesis stream."""
         response = self.client.delete_stream(
-            StreamName=stream_name,
-            EnforceConsumerDeletion=enforce_consumer_deletion
+            StreamName=stream_name, EnforceConsumerDeletion=enforce_consumer_deletion
         )
-        
+
         # Wait for deletion to complete
-        waiter = self.client.get_waiter('stream_not_exists')
-        waiter.wait(StreamName=stream_name, WaiterConfig={'Delay': 1, 'MaxAttempts': 60})
-        
+        waiter = self.client.get_waiter("stream_not_exists")
+        waiter.wait(
+            StreamName=stream_name, WaiterConfig={"Delay": 1, "MaxAttempts": 60}
+        )
+
         print(f"Successfully deleted stream '{stream_name}'.")
         return response
 
-    def clear_stream(self, stream_name: str, shard_count: int = 1, enforce_consumer_deletion: bool = False) -> None:
+    def clear_stream(
+        self,
+        stream_name: str,
+        shard_count: int = 1,
+        enforce_consumer_deletion: bool = False,
+    ) -> None:
         """Delete and recreate a stream to effectively clear all records."""
         # Delete the stream
         self.delete_stream(stream_name, enforce_consumer_deletion)
-        
+
         # Recreate the stream
         self.create_stream(stream_name, shard_count)
-        
-        print(f"Successfully cleared stream '{stream_name}' (deleted and recreated with {shard_count} shard(s)).")
+
+        print(
+            f"Successfully cleared stream '{stream_name}' (deleted and recreated with {shard_count} shard(s))."
+        )

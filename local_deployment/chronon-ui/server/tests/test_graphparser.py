@@ -6,8 +6,8 @@ expected_graph = {
   "nodes": [
     {
       "name": "quickstart.page_views.v1__1",
-      "type": "conf-group_by",
-      "type_visual": "conf",
+      "type": "group_by",
+      "type_visual": "configuration",
       "exists": True,
       "actions": ["backfill", "pre-compute-upload", "show-online-data"],
       'config_file_path': 'compiled/one_groupby/page_views.v1__1',
@@ -15,7 +15,7 @@ expected_graph = {
     },
     {
       "name": "data.page_views",
-      "type": "raw-data",
+      "type": "raw_data",
       "type_visual": "batch-data",
       "exists": False,  # No datascanner provided in test
       "actions": ["show"],
@@ -23,7 +23,7 @@ expected_graph = {
     },
     {
       "name": "quickstart.quickstart_page_views_v1__1",
-      "type": "backfill-group_by",
+      "type": "backfill_group_by",
       "type_visual": "batch-data",
       "exists": False,
       "actions": ["show"],
@@ -31,7 +31,7 @@ expected_graph = {
     },
     {
       "name": "quickstart.quickstart_page_views_v1__1__upload",
-      "type": "upload-group_by",
+      "type": "pre_computed_upload",
       "type_visual": "batch-data",
       "exists": False,
       "actions": ["show", "upload-to-kv"],
@@ -39,7 +39,7 @@ expected_graph = {
     },
     {
       "name": "quickstart_page_views_v1__1_batch",
-      "type": "online-data-batch",
+      "type": "batch_uploaded",
       "type_visual": "online-data",
       "exists": False,
       "actions": None,
@@ -50,25 +50,21 @@ expected_graph = {
     {
       "source": "data.page_views",
       "target": "quickstart.page_views.v1__1",
-      "type": "raw-data-to-conf",
       "exists": True
     },
     {
       "source": "quickstart.page_views.v1__1",
       "target": "quickstart.quickstart_page_views_v1__1",
-      "type": "conf-to-backfill-group_by",
       "exists": True
     },
     {
       "source": "quickstart.page_views.v1__1",
       "target": "quickstart.quickstart_page_views_v1__1__upload",
-      "type": "conf-to-upload-group_by",
       "exists": True
     },
     {
       "source": "quickstart.quickstart_page_views_v1__1__upload",
       "target": "quickstart_page_views_v1__1_batch",
-      "type": "upload-group_by-to-online-data-batch",
       "exists": True
     },
   ]
@@ -86,8 +82,8 @@ second_gb = {
   "nodes": [
      {
       "name": "quickstart.page_views.v1__1",
-      "type": "conf-group_by",
-      "type_visual": "conf",
+      "type": "group_by",
+      "type_visual": "configuration",
       "exists": True,
       "actions": ["backfill", "pre-compute-upload", "show-online-data"],
       'config_file_path': 'compiled/two_groupby/page_views.v1__1',
@@ -95,7 +91,7 @@ second_gb = {
     },
     {
       "name": "data.page_views",
-      "type": "raw-data",
+      "type": "raw_data",
       "type_visual": "batch-data",
       "exists": False,  # No datascanner provided in test
       "actions": ["show"],
@@ -103,7 +99,7 @@ second_gb = {
     },
     {
       "name": "quickstart.quickstart_page_views_v1__1",
-      "type": "backfill-group_by",
+      "type": "backfill_group_by",
       "type_visual": "batch-data",
       "exists": False,
       "actions": ["show"],
@@ -111,7 +107,7 @@ second_gb = {
     },
     {
       "name": "quickstart.quickstart_page_views_v1__1__upload",
-      "type": "upload-group_by",
+      "type": "pre_computed_upload",
       "type_visual": "batch-data",
       "exists": False,
       "actions": ["show", "upload-to-kv"],
@@ -119,7 +115,7 @@ second_gb = {
     },
     {
       "name": "quickstart_page_views_v1__1_batch",
-      "type": "online-data-batch",
+      "type": "batch_uploaded",
       "type_visual": "online-data",
       "exists": False,
       "actions": None,
@@ -127,15 +123,15 @@ second_gb = {
     },
     {
       "name": "quickstart.purchases.v1__1",
-      "type": "conf-group_by",
-      "type_visual": "conf",
+      "type": "group_by",
+      "type_visual": "configuration",
       "exists": True,
       "actions": ["backfill", "pre-compute-upload", "show-online-data"],
       'config_file_path': 'compiled/two_groupby/purchases.v1__1',
     },
     {
       "name": "data.purchases",
-      "type": "raw-data",
+      "type": "raw_data",
       "type_visual": "batch-data",
       "exists": False,  # No datascanner provided in test
       "actions": ["show"],
@@ -143,7 +139,7 @@ second_gb = {
     },
     {
       "name": "quickstart.quickstart_purchases_v1__1",
-      "type": "backfill-group_by",
+      "type": "backfill_group_by",
       "type_visual": "batch-data",
       "exists": False,
       "actions": ["show"],
@@ -151,7 +147,7 @@ second_gb = {
     },
     {
       "name": "quickstart.quickstart_purchases_v1__1__upload",
-      "type": "upload-group_by",
+      "type": "pre_computed_upload",
       "type_visual": "batch-data",
       "exists": False,
       "actions": ["show", "upload-to-kv"],
@@ -159,7 +155,7 @@ second_gb = {
     },
     {
       "name": "quickstart_purchases_v1__1_batch",
-      "type": "online-data-batch",
+      "type": "batch_uploaded",
       "type_visual": "online-data",
       "exists": False,
       "actions": None,
@@ -170,49 +166,41 @@ second_gb = {
     {
       "source": "data.page_views",
       "target": "quickstart.page_views.v1__1",
-      "type": "raw-data-to-conf",
       "exists": True
     },
     {
       "source": "quickstart.page_views.v1__1",
       "target": "quickstart.quickstart_page_views_v1__1",
-      "type": "conf-to-backfill-group_by",
       "exists": True
     },
     {
       "source": "quickstart.page_views.v1__1",
       "target": "quickstart.quickstart_page_views_v1__1__upload",
-      "type": "conf-to-upload-group_by",
       "exists": True
     },
     {
       "source": "quickstart.quickstart_page_views_v1__1__upload",
       "target": "quickstart_page_views_v1__1_batch",
-      "type": "upload-group_by-to-online-data-batch",
       "exists": True
     },
     {
       "source": "data.purchases",
       "target": "quickstart.purchases.v1__1",
-      "type": "raw-data-to-conf",
       "exists": True
     },
     {
       "source": "quickstart.purchases.v1__1",
       "target": "quickstart.quickstart_purchases_v1__1",
-      "type": "conf-to-backfill-group_by",
       "exists": True
     },
     {
       "source": "quickstart.purchases.v1__1",
       "target": "quickstart.quickstart_purchases_v1__1__upload",
-      "type": "conf-to-upload-group_by",
       "exists": True
     },
     {
       "source": "quickstart.quickstart_purchases_v1__1__upload",
       "target": "quickstart_purchases_v1__1_batch",
-      "type": "upload-group_by-to-online-data-batch",
       "exists": True
     },
   ]
@@ -231,8 +219,8 @@ expected_graph_with_joins = {
   "nodes": [
     {
       "name": "quickstart.page_views.v1__1",
-      "type": "conf-group_by",
-      "type_visual": "conf",
+      "type": "group_by",
+      "type_visual": "configuration",
       "exists": True,
       "actions": ["backfill", "pre-compute-upload", "show-online-data"],
       'config_file_path': 'compiled/one_groupby/page_views.v1__1',
@@ -240,7 +228,7 @@ expected_graph_with_joins = {
     },
     {
       "name": "data.page_views",
-      "type": "raw-data",
+      "type": "raw_data",
       "type_visual": "batch-data",
       "exists": False,  # No datascanner provided in test
       "actions": ["show"],
@@ -248,7 +236,7 @@ expected_graph_with_joins = {
     },
     {
       "name": "quickstart.quickstart_page_views_v1__1",
-      "type": "backfill-group_by",
+      "type": "backfill_group_by",
       "type_visual": "batch-data",
       "exists": False,
       "actions": ["show"],
@@ -256,7 +244,7 @@ expected_graph_with_joins = {
     },
     {
       "name": "quickstart.quickstart_page_views_v1__1__upload",
-      "type": "upload-group_by",
+      "type": "pre_computed_upload",
       "type_visual": "batch-data",
       "exists": False,
       "actions": ["show", "upload-to-kv"],
@@ -264,7 +252,7 @@ expected_graph_with_joins = {
     },
     {
       "name": "quickstart_page_views_v1__1_batch",
-      "type": "online-data-batch",
+      "type": "batch_uploaded",
       "type_visual": "online-data",
       "exists": False,
       "actions": None,
@@ -272,7 +260,7 @@ expected_graph_with_joins = {
     },
     {
       "name": "data.checkouts",
-      "type": "raw-data",
+      "type": "raw_data",
       "type_visual": "batch-data",
       "exists": False,
       "actions": ["show"],
@@ -286,8 +274,8 @@ expected_graph_with_joins = {
       'config_file_path': 'compiled/one_join/training_set.v1__1',
       'exists': True,
       'name': 'quickstart.training_set.v1__1',
-      'type': 'conf-join',
-      'type_visual': 'conf',
+      'type': 'join',
+      'type_visual': 'configuration',
     },
     {
       'actions': [
@@ -296,7 +284,7 @@ expected_graph_with_joins = {
       'config_file_path': None,
       'exists': False,
       'name': 'quickstart.quickstart_training_set_v1__1',
-      'type': 'backfill-join',
+      'type': 'backfill_join',
       'type_visual': 'batch-data',
     },
   ],
@@ -304,50 +292,42 @@ expected_graph_with_joins = {
     {
       "source": "data.page_views",
       "target": "quickstart.page_views.v1__1",
-      "type": "raw-data-to-conf",
       "exists": True
     },
     {
       "source": "quickstart.page_views.v1__1",
       "target": "quickstart.quickstart_page_views_v1__1",
-      "type": "conf-to-backfill-group_by",
       "exists": True
     },
     {
       "source": "quickstart.page_views.v1__1",
       "target": "quickstart.quickstart_page_views_v1__1__upload",
-      "type": "conf-to-upload-group_by",
       "exists": True
     },
     {
       "source": "quickstart.quickstart_page_views_v1__1__upload",
       "target": "quickstart_page_views_v1__1_batch",
-      "type": "upload-group_by-to-online-data-batch",
       "exists": True
     },
     {
-      'exists': 'True',
+      'exists': True,
       'source': 'data.checkouts',
       'target': 'quickstart.training_set.v1__1',
-      'type': 'raw-data-to-conf',
     },
     {
-      'exists': 'False',
+      'exists': False,
       'source': 'quickstart.training_set.v1__1',
       'target': 'quickstart.quickstart_training_set_v1__1',
-      'type': 'conf-to-training-data-set',
     },
     {
-      'exists': 'True',
+      'exists': True,
       'source': 'quickstart.purchases.v1__1',
-      'target': 'quickstart.training_set.v1__1',
-      'type': 'conf-to-conf',
+      'target': 'quickstart.training_set.v1__1',  
     },
     {
-      'exists': 'True',
+      'exists': True,
       'source': 'quickstart.returns.v1__1',
       'target': 'quickstart.training_set.v1__1',
-      'type': 'conf-to-conf',
     },
   ]
 }

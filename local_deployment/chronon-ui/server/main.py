@@ -10,10 +10,12 @@ from server.routes import router
 from server.services.datascanner import DataScanner
 from server.services.teamparser import TeamParser
 import logging
+
 logger = logging.getLogger("uvicorn.error")
 
 server_root = Path(__file__).parent
 teams_metadata_dir = str(server_root / "compiled" / "teams_metadata")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -23,7 +25,7 @@ async def lifespan(app: FastAPI):
         warehouse_path = str(server_root / "spark-data/warehouse")
     logger.info(f"Using warehouse path: {warehouse_path}")
     app.state.datascanner = DataScanner(warehouse_path)
-    
+
     logger.info(f"Using teams metadata directory: {teams_metadata_dir}")
     app.state.teamparser = TeamParser(teams_metadata_dir)
     yield
