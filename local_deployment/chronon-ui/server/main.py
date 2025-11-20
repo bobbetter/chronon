@@ -1,11 +1,8 @@
-from typing import Union
-from datetime import datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from server.routes import router
 from server.services.datascanner import DataScanner
 from server.services.teamparser import TeamParser

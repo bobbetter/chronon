@@ -1,7 +1,6 @@
 import os
 import logging
 from pathlib import Path
-from typing import List
 from fastapi import APIRouter
 from server.services.graphparser import GraphParser
 from server.services.confparser import ConfParser, ConfType

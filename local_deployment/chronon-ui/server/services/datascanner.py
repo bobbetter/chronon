@@ -1,15 +1,12 @@
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import duckdb
-import pandas as pd
 import numpy as np
-from pydantic_core.core_schema import none_schema
 
 
 class DataScanner:
     """
     A class to scan and query Spark warehouse data using DuckDB.
-    Similar to duckui/app.py but as a service class.
     """
 
     def __init__(self, warehouse_path: str):

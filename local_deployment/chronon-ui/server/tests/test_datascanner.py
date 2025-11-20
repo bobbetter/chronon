@@ -208,5 +208,5 @@ def test_schema_consistency(scanner):
 
 def test_get_table_exists(scanner):
     """Test getting the existence of a table."""
-    assert False == scanner.get_table_exists("data", "nonexistent")
-    assert True == scanner.get_table_exists("data", "clicks")
+    assert not scanner.get_table_exists("data", "nonexistent")
+    assert scanner.get_table_exists("data", "clicks")
