@@ -139,9 +139,31 @@ class GraphParser:
         self.graph.add_edge(edge)
         self.seen_edges.add(key)
 
-    def _add_compiled_to_graph_gbs(self, compiled_data: Dict[str, Any], config_file_path: Optional[str]=None) -> None:
-        conf_name: str = compiled_data["metaData"]["name"]
-        sources = compiled_data["sources"][0]
+    def _get_stream_name(self, config_data: Dict[str, Any]) -> Union[str, None]:
+        # Not sure what the case for multiple sources is in Chronon
+        events = config_data["sources"][0]["events"]
+
+        if "topic" in events:
+            topic = events["topic"]
+            
+            # Handle both formats:
+            # 1. "kinesis://login-events/fields=..."
+            # 2. "login-events/fields=..."
+            
+            # Strip streaming bus prefix if present
+            if topic.startswith("kinesis://"):
+                topic = topic[len("kinesis://"):]
+            elif topic.startswith("kafka://"):
+                topic = topic[len("kafka://"):]
+            
+            # Get the stream name (first part before /)
+            return topic.split("/")[0]
+        else:
+            return None
+
+    def _parse_group_by_config(self, config_data: Dict[str, Any], config_file_path: Optional[str]=None) -> None:
+        conf_name: str = config_data["metaData"]["name"]
+        sources = config_data["sources"][0]
         if "events" in sources:
             raw_table_name = sources["events"]["table"]
         elif "entities" in sources:
@@ -149,17 +171,10 @@ class GraphParser:
         else:
             raise ValueError(f"Invalid source type: {sources}")
 
-        team_name: str = compiled_data["metaData"]["team"]
+        team_name: str = config_data["metaData"]["team"]
         backfill_name = f"{team_name}.{_underscore_name(conf_name)}"
         upload_name = f"{team_name}.{_underscore_name(conf_name)}__upload"
         online_data_batch_name = f"{_underscore_name(conf_name)}_batch"
-
-        try:
-            stream_event_name: str = compiled_data["sources"][0]["events"]["topic"]
-            stream_event_name = stream_event_name.split("/")[0]
-            online_data_stream_name = f"{team_name}.{_underscore_name(stream_event_name)}_streaming"
-        except Exception as e:
-            stream_event_name = None
 
         nodes = [
             Node(conf_name, NodeTypes.GROUP_BY, NodeTypesVisual.CONFIGURATION, True, ["backfill", "pre-compute-upload", "show-online-data"], config_file_path),
@@ -169,12 +184,14 @@ class GraphParser:
             Node(online_data_batch_name, NodeTypes.BATCH_UPLOADED, NodeTypesVisual.ONLINE_DATA, self._get_batch_data_exists(upload_name), None, None),
         ]
 
+        stream_event_name: str = self._get_stream_name(config_data)
         if stream_event_name:
             nodes.append(
                 Node(stream_event_name, NodeTypes.EVENT_STREAM, NodeTypesVisual.STREAMING_DATA, True, None, None)
             )
+            online_data_stream_name = f"{team_name}.{_underscore_name(stream_event_name)}_streaming"
             nodes.append(
-                Node(online_data_stream_name, NodeTypes.STREAMING_INGESTED, NodeTypesVisual.ONLINE_DATA,  True, None, None)
+                Node(online_data_stream_name, NodeTypes.STREAMING_INGESTED, NodeTypesVisual.ONLINE_DATA, True, None, None)
             )
 
         for node in nodes:
@@ -194,12 +211,12 @@ class GraphParser:
         for edge in edges:
             self._add_edge_once(edge)
 
-    def _add_compiled_to_graph_joins(self, compiled_data: Dict[str, Any], config_file_path: Optional[str]=None) -> None:
-        conf_name: str = compiled_data["metaData"]["name"]
-        join_parts = compiled_data["joinParts"]
-        team_name: str = compiled_data["metaData"]["team"]
+    def _parse_join_config(self, config_data: Dict[str, Any], config_file_path: Optional[str]=None) -> None:
+        conf_name: str = config_data["metaData"]["name"]
+        join_parts = config_data["joinParts"]
+        team_name: str = config_data["metaData"]["team"]
         training_data_set_name = f"{team_name}.{_underscore_name(conf_name)}"
-        left_table_name = compiled_data["left"]["events"]["table"]
+        left_table_name = config_data["left"]["events"]["table"]
         nodes = [
             Node(left_table_name, NodeTypes.RAW_DATA, NodeTypesVisual.BATCH_DATA, self._get_batch_data_exists(left_table_name),["show"],None),
             Node(conf_name, NodeTypes.JOIN, NodeTypesVisual.CONFIGURATION, True, ["backfill", "show-online-data"], config_file_path),
@@ -274,16 +291,16 @@ class GraphParser:
         for file_path, short_path in self._iter_compiled_files(self._directory_path_gbs):
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
-                    compiled_data = json.load(f)
-                self._add_compiled_to_graph_gbs(compiled_data, short_path)
+                    config_data = json.load(f)
+                self._parse_group_by_config(config_data, short_path)
             except Exception as exc:  # noqa: BLE001
                 logger.error("Skipping file %s: %s", file_path, exc)
 
         for file_path, short_path in self._iter_compiled_files(self._directory_path_joins):
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
-                    compiled_data = json.load(f)
-                self._add_compiled_to_graph_joins(compiled_data, short_path)
+                    config_data = json.load(f)
+                self._parse_join_config(config_data, short_path)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Skipping file %s: %s", file_path, exc)
 

@@ -29,7 +29,7 @@ const getNodeColor = (typeVisual: string) => {
       return "node-batch";
     case "online-data":
       return "node-online";
-    case "conf":
+    case "configuration":
       return "node-conf";
     case "streaming-data":
       return "node-streaming";
@@ -83,8 +83,8 @@ export function LineageNode({ data }: LineageNodeProps) {
   const executeActionMutation = useMutation({
     mutationFn: async ({ action, ds }: { action: string; ds?: string }) => {
       try {
-        // Special handling for conf-group_by nodes
-        if ((data.type === "conf-group_by" || data.type === "conf-join" || data.type === "upload-group_by") && data.config_file_path) {
+        // Special handling for group_by and join nodes
+        if ((data.type === "group_by" || data.type === "join" || data.type === "pre_computed_upload") && data.config_file_path) {
           const res = await apiRequest("POST", "/v1/actions/run-spark-job", {
             conf_path: data.config_file_path,
             ds: ds || "2023-12-01", // Use provided date or fallback
@@ -183,7 +183,7 @@ export function LineageNode({ data }: LineageNodeProps) {
   };
 
   const handleAction = (action: string) => {
-    if (action === "show-online-data" && data.type_visual === "conf") {
+    if (action === "show-online-data" && data.type_visual === "configuration") {
       const params = new URLSearchParams();
 
       if (data.type.includes("group_by")) {
@@ -204,8 +204,8 @@ export function LineageNode({ data }: LineageNodeProps) {
       return;
     }
 
-    // Deep link to Batch Data when raw-data or backfill-group_by node with "show" action is clicked
-    if ((data.type === "raw-data" || data.type === "backfill-group_by" || data.type === "upload-group_by" || data.type === "backfill-join") && action === "show" && data.exists) {
+    // Deep link to Batch Data when raw_data or backfill_group_by node with "show" action is clicked
+    if ((data.type === "raw_data" || data.type === "backfill_group_by" || data.type === "pre_computed_upload" || data.type === "backfill_join") && action === "show" && data.exists) {
       const dotIndex = data.name.indexOf(".");
       if (dotIndex > 0 && dotIndex < data.name.length - 1) {
         const db = data.name.substring(0, dotIndex);
@@ -223,7 +223,7 @@ export function LineageNode({ data }: LineageNodeProps) {
     }
 
     // Show date dialog for actions that require a date parameter
-    if ((data.type === "conf-group_by" || data.type === "conf-join" || data.type === "upload-group_by") && data.config_file_path) {
+    if ((data.type === "group_by" || data.type === "join" || data.type === "pre_computed_upload") && data.config_file_path) {
       setPendingAction(action);
       setShowDateDialog(true);
       return;
