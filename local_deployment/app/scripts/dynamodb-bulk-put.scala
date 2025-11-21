@@ -154,7 +154,7 @@ try {
     s"[dynamodb-bulk-put] Loaded number of records from source table: '${df.count()}'"
   )
   val targetDataset = mapDatasetName(destinationDataset)
-  ensureTableExists(targetDataset, isTimeSorted = true)
+  ensureTableExists(targetDataset, isTimeSorted = false)
 
   val defaultBatchSize = sys.env.getOrElse("DDB_BULKPUT_BATCH_SIZE", "100").toInt
   val requests = df.rdd.map { row: Row =>
