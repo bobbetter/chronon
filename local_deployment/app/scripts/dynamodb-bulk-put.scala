@@ -83,7 +83,7 @@ def mapDatasetName(dataset: String): String = {
   target
 }
 
-def ensureTableExists(tableName: String): Unit = {
+def ensureTableExists(tableName: String, isTimeSorted: Boolean = true): Unit = {
   val waiter = driverClient.waiter()
   val describeRequest = DescribeTableRequest.builder().tableName(tableName).build()
   val exists = try {
@@ -94,15 +94,29 @@ def ensureTableExists(tableName: String): Unit = {
   }
 
   if (!exists) {
-    val attributeDefs = List(
-      AttributeDefinition.builder().attributeName("keyBytes").attributeType(ScalarAttributeType.B).build(),
-      AttributeDefinition.builder().attributeName(Constants.TimeColumn).attributeType(ScalarAttributeType.N).build()
-    )
-    val keySchema = List(
-      KeySchemaElement.builder().attributeName("keyBytes").keyType(KeyType.HASH).build(),
-      KeySchemaElement.builder().attributeName(Constants.TimeColumn).keyType(KeyType.RANGE).build()
-    )
-    val throughput = ProvisionedThroughput.builder().readCapacityUnits(10L).writeCapacityUnits(10L).build()
+    val throughput = ProvisionedThroughput.builder().readCapacityUnits(10L).writeCapacityUnits(10L).build()    
+    val attributeDefs = if (isTimeSorted) {
+      List(
+        AttributeDefinition.builder().attributeName("keyBytes").attributeType(ScalarAttributeType.B).build(),
+        AttributeDefinition.builder().attributeName(Constants.TimeColumn).attributeType(ScalarAttributeType.N).build()
+      )
+    } else {
+      List(
+        AttributeDefinition.builder().attributeName("keyBytes").attributeType(ScalarAttributeType.B).build()
+      )
+    }
+    
+    val keySchema = if (isTimeSorted) {
+      List(
+        KeySchemaElement.builder().attributeName("keyBytes").keyType(KeyType.HASH).build(),
+        KeySchemaElement.builder().attributeName(Constants.TimeColumn).keyType(KeyType.RANGE).build()
+      )
+    } else {
+      List(
+        KeySchemaElement.builder().attributeName("keyBytes").keyType(KeyType.HASH).build()
+      )
+    }
+    
     val createRequest = CreateTableRequest
       .builder()
       .tableName(tableName)
@@ -110,7 +124,7 @@ def ensureTableExists(tableName: String): Unit = {
       .keySchema(keySchema.asJava)
       .provisionedThroughput(throughput)
       .build()
-    println(s"[dynamodb-bulk-put] Creating DynamoDB table $tableName")
+    println(s"[dynamodb-bulk-put] Creating DynamoDB table $tableName (time-sorted: $isTimeSorted)")
     driverClient.createTable(createRequest)
     val waiterResponse = waiter.waitUntilTableExists(describeRequest)
     if (waiterResponse.matched().exception().isPresent) {
@@ -140,7 +154,7 @@ try {
     s"[dynamodb-bulk-put] Loaded number of records from source table: '${df.count()}'"
   )
   val targetDataset = mapDatasetName(destinationDataset)
-  ensureTableExists(targetDataset)
+  ensureTableExists(targetDataset, isTimeSorted = true)
 
   val defaultBatchSize = sys.env.getOrElse("DDB_BULKPUT_BATCH_SIZE", "100").toInt
   val requests = df.rdd.map { row: Row =>
