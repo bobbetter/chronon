@@ -1,7 +1,7 @@
 # Local Deployment
 
 This is a local deployment of the Chronon stack, including:
-- Web UI for launching batch jobs, viewing data from offline and KV stores and inspecting lineage of groupbys and joins. UI at `http://localhost:8005`
+- Web UI for launching batch jobs, viewing data from offline and KV stores and inspecting lineage of groupbys and joins. UI at `http://localhost:5001`
 - Spark cluster for batch processing 
 - Flink cluster for streaming processing. Flink UI at `http://localhost:8081`
 - DynamoDB local instance for the KV store. DynamoDB Admin UI at `http://localhost:8001`

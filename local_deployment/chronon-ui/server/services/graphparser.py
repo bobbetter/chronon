@@ -151,7 +151,13 @@ class GraphParser:
 
     def _get_stream_name(self, config_data: Dict[str, Any]) -> Union[str, None]:
         # Not sure what the case for multiple sources is in Chronon
-        events = config_data["sources"][0]["events"]
+        sources = config_data["sources"][0]
+        
+        # Check if this is an events source (not entities)
+        if "events" not in sources:
+            return None
+            
+        events = sources["events"]
 
         if "topic" in events:
             topic = events["topic"]
