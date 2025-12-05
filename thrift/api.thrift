@@ -338,6 +338,7 @@ enum ConfType {
     JOIN = 1,
     STAGING_QUERY = 2,
     MODEL = 3,
+    MODEL_TRANSFORMS = 4,
 }
 
 struct Conf {
