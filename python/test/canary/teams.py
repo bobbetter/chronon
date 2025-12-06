@@ -42,15 +42,8 @@ test = Team(
         },
         modeEnvironments={
             RunMode.BACKFILL: {
-                "EXECUTOR_CORES": "2",
-                "DRIVER_MEMORY": "15G",
-                "EXECUTOR_MEMORY": "4G",
-                "PARALLELISM": "4",
-                "MAX_EXECUTORS": "4",
             },
             RunMode.UPLOAD: {
-                "PARALLELISM": "2",
-                "MAX_EXECUTORS": "4",
             }
         }
     ),
@@ -104,6 +97,10 @@ gcp = Team(
             "spark.chronon.coalesce.factor": "10",
             "spark.default.parallelism": "10",
             "spark.sql.shuffle.partitions": "10",
+            "spark.driver.memory": "1g",
+            "spark.driver.cores": "1",
+            "spark.executor.memory": "1g",
+            "spark.executor.cores": "1",
         },
         modeConfigs={
             RunMode.BACKFILL: {
