@@ -85,7 +85,7 @@
     },
     "name": "gcp.listing.v1__2",
     "outputNamespace": "data",
-    "sourceFile": "models/gcp/listing.py",
+    "sourceFile": "model_transforms/gcp/listing.py",
     "team": "gcp",
     "version": "2"
   },

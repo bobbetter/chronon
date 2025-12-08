@@ -1,6 +1,7 @@
 from group_bys.gcp import dim_listings, dim_merchants, user_activities
 from staging_queries.gcp import exports
 
+from ai.chronon.group_by import GroupBy
 from ai.chronon.join import Derivation, Join, JoinPart
 from ai.chronon.query import Query, selects
 from ai.chronon.source import EventSource

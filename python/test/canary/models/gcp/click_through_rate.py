@@ -4,6 +4,7 @@ from ai.chronon.model import Model, ModelBackend, InferenceSpec, ModelTransforms
 from ai.chronon.query import Query, selects
 from ai.chronon.group_by import Window, TimeUnit
 from ai.chronon.source import JoinSource
+
 from ai.chronon.data_types import DataType
 
 """
@@ -68,25 +69,9 @@ ctr_model = Model(
             machine_type="n1-standard-4"
         ),
         rollout_strategy=RolloutStrategy(
-            # More sophisticated deployment strategies (e.g. blue/green) and 
+            # More sophisticated deployment strategies (e.g. blue/green) and
             # gradual traffic ramps are possible as well
             rollout_type=DeploymentStrategyType.IMMEDIATE,
         )
     )
-)
-
-# Create a ModelTransforms where we enrich the demo join fields with the ctr model score
-v1 = ModelTransforms(
-    sources=[source],
-    models=[ctr_model],
-    # include relevant pass through fields from the source / join lookup
-    passthrough_fields=["user_id", "listing_id", "user_id_click_event_average_7d", "listing_id_price_cents", "price_log", "price_bucket"],
-    version=1,
-    output_namespace="data",
-    key_fields=[
-        ("user_id_click_event_average_7d", DataType.DOUBLE),
-        ("listing_id_price_cents", DataType.LONG),
-        ("price_log", DataType.DOUBLE),
-        ("price_bucket", DataType.INT)
-    ]
 )

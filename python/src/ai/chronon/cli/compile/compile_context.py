@@ -7,6 +7,7 @@ from gen_thrift.api.ttypes import (
     GroupBy,
     Join,
     MetaData,
+    Model,
     ModelTransforms,
     StagingQuery,
     Team,
@@ -52,7 +53,8 @@ class CompileContext:
                 cls=StagingQuery,
                 config_type=ConfType.STAGING_QUERY,
             ),
-            ConfigInfo(folder_name="models", cls=ModelTransforms, config_type=ConfType.MODEL),
+            ConfigInfo(folder_name="model_transforms", cls=ModelTransforms, config_type=ConfType.MODEL_TRANSFORMS),
+            ConfigInfo(folder_name="models", cls=Model, config_type=ConfType.MODEL),
             ConfigInfo(
                 folder_name="teams_metadata", cls=MetaData, config_type=None
             ),  # only for team metadata

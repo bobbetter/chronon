@@ -10,14 +10,6 @@ This model takes some of the listing related fields from the demo join and uses 
 to build up a couple of listing related embeddings
 """
 
-source = JoinSource(
-    join=demo.v1,
-    # filter rows where the headline / long_description is null as Vertex doesn't like empty content strings
-    query=Query(
-        wheres=["(listing_id_headline IS NOT NULL AND listing_id_headline != '') OR (listing_id_long_description IS NOT NULL AND listing_id_long_description != '')"]
-    )
-)
-
 statistics = DataType.STRUCT("statistics", ("truncated", DataType.BOOLEAN), ("token_count", DataType.INT) )
 values = DataType.LIST(DataType.DOUBLE)
 embeddings = DataType.STRUCT("embeddings", ("statistics", statistics), ("values", values))
@@ -70,16 +62,3 @@ item_img_model = Model(
     ]
 )
 
-# Create a listing_model transforms
-v1 = ModelTransforms(
-    sources=[source],
-    models=[item_description_model],
-    # include a couple of pass through fields from the source / join lookup
-    passthrough_fields=["user_id", "listing_id", "listing_id_is_active"],
-    version=2,
-    output_namespace="data",
-    key_fields=[
-        ("listing_id_headline", DataType.STRING),
-        ("listing_id_long_description", DataType.STRING),
-    ]
-)
