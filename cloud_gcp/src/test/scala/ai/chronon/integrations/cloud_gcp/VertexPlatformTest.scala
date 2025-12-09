@@ -2,7 +2,6 @@ package ai.chronon.integrations.cloud_gcp
 
 import ai.chronon.api.{Builders => B, ModelBackend}
 import ai.chronon.online.PredictRequest
-import com.google.auth.oauth2.GoogleCredentials
 import io.vertx.core.{AsyncResult, Future => VertxFuture, Handler}
 import io.vertx.core.buffer.Buffer
 import io.vertx.core.json.{JsonArray, JsonObject}
@@ -22,8 +21,7 @@ class VertexPlatformTest extends AnyFlatSpec with Matchers with MockitoSugar wit
   implicit val ec: ExecutionContext = ExecutionContext.global
 
   private val mockWebClient = mock[WebClient]
-  private val mockCredentials = mock[GoogleCredentials]
-  private val platform = new VertexPlatform("test-project", "us-central1", Some(mockWebClient), Some(mockCredentials))
+  private val platform = new VertexPlatform("test-project", "us-central1", Some(mockWebClient))
 
   it should "handle missing model_name parameter" in {
 
@@ -142,7 +140,7 @@ class VertexPlatformTest extends AnyFlatSpec with Matchers with MockitoSugar wit
       "max_tokens" -> "100"                 // Should be included
     )
 
-    val requestBody = platform.createRequestBody(inputRequests, modelParams)
+    val requestBody = VertexHttpUtils.createPredictionRequestBody(inputRequests, modelParams)
 
     // Check that instances are correctly added
     requestBody.containsKey("instances") shouldBe true
@@ -197,7 +195,7 @@ class VertexPlatformTest extends AnyFlatSpec with Matchers with MockitoSugar wit
         .add(new JsonObject().put("score", 0.8).put("label", "positive"))
         .add(new JsonObject().put("score", 0.3).put("label", "negative")))
 
-    val results = platform.extractPredictionResults(responseBody)
+    val results = VertexHttpUtils.extractPredictionResults(responseBody)
 
     results should have size 2
 
@@ -216,7 +214,7 @@ class VertexPlatformTest extends AnyFlatSpec with Matchers with MockitoSugar wit
       .put("other_field", "value")
 
     val exception = intercept[RuntimeException] {
-      platform.extractPredictionResults(responseBody)
+      VertexHttpUtils.extractPredictionResults(responseBody)
     }
 
     exception.getMessage should include("No 'predictions' array found in response")
@@ -232,7 +230,7 @@ class VertexPlatformTest extends AnyFlatSpec with Matchers with MockitoSugar wit
     )
 
     val inputRequests = Seq(Map("instance" -> nestedMap.asInstanceOf[AnyRef]))
-    val requestBody = platform.createRequestBody(inputRequests, Map.empty)
+    val requestBody = VertexHttpUtils.createPredictionRequestBody(inputRequests, Map.empty)
 
     requestBody.containsKey("instances") shouldBe true
     val instances = requestBody.getJsonArray("instances")

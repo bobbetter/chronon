@@ -3,7 +3,7 @@ package ai.chronon.online.test
 import ai.chronon.api.{Builders => B, _}
 import ai.chronon.online.fetcher.Fetcher.{Request, Response}
 import ai.chronon.online.fetcher.ModelTransformsFetcher
-import ai.chronon.online.{ModelPlatform, ModelPlatformProvider, PredictRequest, PredictResponse}
+import ai.chronon.online.{DeployModelRequest, ModelPlatform, ModelPlatformProvider, PredictRequest, PredictResponse, TrainingRequest}
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
@@ -11,7 +11,7 @@ import org.scalatest.matchers.should.Matchers
 import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Success, Failure}
+import scala.util.{Failure, Success}
 
 class ModelTransformsFetcherTest extends AnyFlatSpec with Matchers with ScalaFutures {
   
@@ -480,6 +480,11 @@ class TestModelPlatform(responseMap: Map[Map[String, AnyRef], Map[String, AnyRef
     }
     Future.successful(PredictResponse(predictRequest, Success(outputs)))
   }
+
+  override def submitTrainingJob(trainingRequest: TrainingRequest): Future[String] = ???
+  override def createEndpoint(endpointConfig: EndpointConfig): Future[String] = ???
+  override def deployModel(deployModelRequest: DeployModelRequest): Future[String] = ???
+  override def getJobStatus(operation: ai.chronon.online.ModelOperation, id: String): Future[ai.chronon.online.ModelJobStatus] = ???
 }
 
 class CallTrackingModelPlatform(responseMap: Map[Map[String, AnyRef], Map[String, AnyRef]]) extends ModelPlatform {
@@ -498,6 +503,11 @@ class CallTrackingModelPlatform(responseMap: Map[Map[String, AnyRef], Map[String
     }
     Future.successful(PredictResponse(predictRequest, Success(outputs)))
   }
+
+  override def submitTrainingJob(trainingRequest: TrainingRequest): Future[String] = ???
+  override def createEndpoint(endpointConfig: EndpointConfig): Future[String] = ???
+  override def deployModel(deployModelRequest: DeployModelRequest): Future[String] = ???
+  override def getJobStatus(operation: ai.chronon.online.ModelOperation, id: String): Future[ai.chronon.online.ModelJobStatus] = ???
 }
 
 // Platform that returns different outputs based on the model name in the request
@@ -522,4 +532,9 @@ class MultiOutputModelPlatform extends ModelPlatform {
     
     Future.successful(PredictResponse(predictRequest, Success(outputs)))
   }
+
+  override def submitTrainingJob(trainingRequest: TrainingRequest): Future[String] = ???
+  override def createEndpoint(endpointConfig: EndpointConfig): Future[String] = ???
+  override def deployModel(deployModelRequest: DeployModelRequest): Future[String] = ???
+  override def getJobStatus(operation: ai.chronon.online.ModelOperation, id: String): Future[ai.chronon.online.ModelJobStatus] = ???
 }

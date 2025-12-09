@@ -299,6 +299,14 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
 case class PredictRequest(model: Model, inputRequests: Seq[Map[String, AnyRef]])
 case class PredictResponse(predictRequest: PredictRequest, outputs: Try[Seq[Map[String, AnyRef]]])
+case class TrainingRequest(trainingSource: Source, model: Model, date: String, window: Window)
+case class DeployModelRequest(model: Model, version: String, date: String)
+
+// Trait used to distinguish between long-running Model Platform operations
+sealed trait ModelOperation
+case object DeployModel extends ModelOperation
+case object SubmitTrainingJob extends ModelOperation
+case class ModelJobStatus(jobStatusType: JobStatusType, message: String)
 
 /** Defines the interface that model platforms meant to be used in Chronon ModelSources / Transforms must implement.
   */
@@ -313,6 +321,24 @@ trait ModelPlatform extends Serializable {
     * is chosen to maximize compatibility with prospective model backend platforms that might not support both modes.
     */
   def predict(predictRequest: PredictRequest): Future[PredictResponse]
+
+  /** Used to trigger a model training job for a given model and training source. The implementation
+    * will use the training source and input transforms to generate a training dataset to feed model training.
+    * The Model's TrainingSpec can be used to configure model parameters such as hyperparameters, compute resources, etc.
+    */
+  def submitTrainingJob(trainingRequest: TrainingRequest): Future[String]
+
+  /** Create an endpoint for a given model - this is a prerequisite for deploying models
+    */
+  def createEndpoint(endpointConfig: EndpointConfig): Future[String]
+
+  /** Initiates a model deployment to a given endpoint. A deployment id is returned that can be used to track the deployment status.
+    */
+  def deployModel(deployModelRequest: DeployModelRequest): Future[String]
+
+  /** Looks up the status of a long-running job (e.g., model deployment, training job etc) by its ID.
+    */
+  def getJobStatus(operation: ModelOperation, id: String): Future[ModelJobStatus]
 }
 
 /** Helps construct and cache ModelPlatform instances based on the model backend type and parameters.

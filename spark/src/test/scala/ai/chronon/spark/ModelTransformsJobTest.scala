@@ -4,7 +4,7 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api.{Builders => B, _}
 import ai.chronon.api.Extensions.MetadataOps
-import ai.chronon.online.{ModelPlatform, ModelPlatformProvider, PredictRequest, PredictResponse}
+import ai.chronon.online.{DeployModelRequest, ModelPlatform, ModelPlatformProvider, PredictRequest, PredictResponse, TrainingRequest}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.utils.{DataFrameGen, SparkTestBase}
@@ -778,6 +778,11 @@ class TestModelPlatform(
     }
     Future.successful(PredictResponse(predictRequest, Success(outputs)))
   }
+
+  override def submitTrainingJob(trainingRequest: TrainingRequest): Future[String] = ???
+  override def createEndpoint(endpointConfig: EndpointConfig): Future[String] = ???
+  override def deployModel(deployModelRequest: DeployModelRequest): Future[String] = ???
+  override def getJobStatus(operation: ai.chronon.online.ModelOperation, id: String): Future[ai.chronon.online.ModelJobStatus] = ???
 }
 
 // Test platform that returns a successful Future with a Failure in PredictResponse.outputs
@@ -788,4 +793,9 @@ class FailingResponseModelPlatform extends ModelPlatform {
       PredictResponse(predictRequest, scala.util.Failure(new RuntimeException("Model inference failed")))
     )
   }
+
+  override def submitTrainingJob(trainingRequest: TrainingRequest): Future[String] = ???
+  override def createEndpoint(endpointConfig: EndpointConfig): Future[String] = ???
+  override def deployModel(deployModelRequest: DeployModelRequest): Future[String] = ???
+  override def getJobStatus(operation: ai.chronon.online.ModelOperation, id: String): Future[ai.chronon.online.ModelJobStatus] = ???
 }
