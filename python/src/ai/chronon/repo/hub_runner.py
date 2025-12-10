@@ -71,7 +71,7 @@ def get_conf_type(conf):
     elif "compiled/models" in conf:
         return "models"
     elif "compiled/model_transforms" in conf:
-        return" model_transforms"
+        return "model_transforms"
     else:
         raise ValueError(f"Unsupported conf type: {conf}")
 
