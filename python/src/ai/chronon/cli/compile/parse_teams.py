@@ -6,7 +6,7 @@ from copy import deepcopy
 from enum import Enum
 from typing import Any, Dict, Optional, Union
 
-from gen_thrift.api.ttypes import Join, MetaData, Team
+from gen_thrift.api.ttypes import Join, JoinPart, MetaData, Model, ModelTransforms, Team
 from gen_thrift.common.ttypes import (
     ClusterConfigProperties,
     ConfigProperties,
@@ -92,34 +92,37 @@ def update_metadata(obj: Any, team_dict: Dict[str, Team]):
     if not metadata.outputNamespace:
         metadata.outputNamespace = team_dict[team].outputNamespace
 
+
+    def set_join_part_or_models_metadata(part: Union[JoinPart, Model], output_namespace):
+        if part is not None:
+            if part.metaData:
+                # Only set the outputNamespace if it hasn't been set already
+                if not part.metaData.outputNamespace:
+                    part.metaData.outputNamespace = output_namespace
+                if not part.metaData.team:
+                    part.metaData.team = team
+            else:
+                # If there's no metaData at all, create it and set outputNamespace
+                part.metaData = MetaData()
+                part.metaData.outputNamespace = output_namespace
+                part.metaData.team = team
+
+            merge_team_execution_info(
+                part.metaData, team_dict, part.metaData.team
+            )
+
     if isinstance(obj, Join):
         join_namespace = obj.metaData.outputNamespace
-
-        # set the metadata for each join part
-        def set_group_by_metadata(join_part_gb, output_namespace):
-            if join_part_gb is not None:
-                if join_part_gb.metaData:
-                    # Only set the outputNamespace if it hasn't been set already
-                    if not join_part_gb.metaData.outputNamespace:
-                        join_part_gb.metaData.outputNamespace = output_namespace
-                    # Only set the team if it hasn't been set already
-                    # TODO: ensure groupBys always have teams set (some unit tests don't have them set which is invalid).
-                    if not join_part_gb.metaData.team:
-                        join_part_gb.metaData.team = team
-                else:
-                    # If there's no metaData at all, create it and set outputNamespace
-                    join_part_gb.metaData = MetaData()
-                    join_part_gb.metaData.outputNamespace = output_namespace
-                    join_part_gb.metaData.team = team
-
-                merge_team_execution_info(
-                    join_part_gb.metaData, team_dict, join_part_gb.metaData.team
-                )
-
         if obj.joinParts:
             for jp in obj.joinParts or []:
                 jp.useLongNames = obj.useLongNames
-                set_group_by_metadata(jp.groupBy, join_namespace)
+                set_join_part_or_models_metadata(jp.groupBy, join_namespace)
+    elif isinstance(obj, ModelTransforms):
+        model_transforms_namespace = obj.metaData.outputNamespace
+
+        if obj.models:
+            for m in obj.models or []:
+                set_join_part_or_models_metadata(m, model_transforms_namespace)
 
     if metadata.executionInfo is None:
         metadata.executionInfo = ExecutionInfo()
