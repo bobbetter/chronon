@@ -74,6 +74,12 @@ class VertexOrchestration(project: String, location: String) extends Serializabl
         val createdJob = jobServiceClient.createCustomJob(parent, customJob)
         val jobName = createdJob.getName
         logger.info(s"Training job submitted successfully: $jobName")
+
+        // CustomJob return the direct job id so will extract.
+        // Ex: `projects/703996152583/locations/us-central1/customJobs/6897601805316784128`
+        val customJobId = jobName.split("/").last
+        logger.info(
+          s"Follow job progress at: https://console.cloud.google.com/vertex-ai/locations/$location/training/$customJobId")
         jobName
       } catch {
         case e: Exception =>
