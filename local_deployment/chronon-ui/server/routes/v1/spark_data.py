@@ -3,7 +3,8 @@ import logging
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from pydantic import BaseModel, Field
-from server.services.datascanner import DataScanner
+from server.services.datascanner_base import DataScannerBase
+from server.config import ComputeEngine
 
 path = os.path.basename(os.path.dirname(__file__))
 router = APIRouter(prefix=f"/{path}/spark-data", tags=["spark-data"])
@@ -28,7 +29,7 @@ class TablesResponse(BaseModel):
 class TableStatsResponse(BaseModel):
     database: str
     table: str
-    row_count: int
+    row_count: Optional[int]
     column_count: int
     columns: List[ColumnSchema]
 
@@ -38,7 +39,7 @@ class TableSampleResponse(BaseModel):
     table: str
     data: List[Dict[str, Any]]
     table_schema: List[ColumnSchema]
-    row_count: int
+    row_count: Optional[int]
     limit: int
     offset: int
 
@@ -54,13 +55,33 @@ class QueryResponse(BaseModel):
     row_count: int
 
 
-def get_datascanner(request: Request) -> DataScanner:
-    """Dependency to access the singleton DataScanner from app state."""
-    return request.app.state.datascanner
+def get_datascanner(
+    request: Request,
+    compute_engine: ComputeEngine = Query(
+        default=ComputeEngine.LOCAL,
+        description="Compute engine to use: 'local' for local Spark warehouse, 'remote' for AWS Glue",
+    ),
+) -> DataScannerBase:
+    """
+    Dependency to get the appropriate DataScanner based on compute engine.
+
+    Args:
+        request: FastAPI request object
+        compute_engine: The compute engine to use (local or remote)
+
+    Returns:
+        DataScannerBase: Either DataScannerLocal or DataScannerRemote
+    """
+    if compute_engine == ComputeEngine.REMOTE:
+        logger.debug("Using remote DataScanner (AWS Glue)")
+        return request.app.state.datascanner_remote
+    else:
+        logger.debug("Using local DataScanner")
+        return request.app.state.datascanner_local
 
 
 @router.get("/databases", response_model=DatabaseResponse)
-def list_databases(scanner: DataScanner = Depends(get_datascanner)):
+def list_databases(scanner: DataScannerBase = Depends(get_datascanner)):
     """
     List all available databases in the Spark warehouse.
 
@@ -79,7 +100,7 @@ def list_databases(scanner: DataScanner = Depends(get_datascanner)):
 
 
 @router.get("/databases/{db_name}/tables", response_model=TablesResponse)
-def list_tables(db_name: str, scanner: DataScanner = Depends(get_datascanner)):
+def list_tables(db_name: str, scanner: DataScannerBase = Depends(get_datascanner)):
     """
     List all tables in a specific database.
 
@@ -104,7 +125,7 @@ def list_tables(db_name: str, scanner: DataScanner = Depends(get_datascanner)):
     "/databases/{db_name}/tables/{table_name}/stats", response_model=TableStatsResponse
 )
 def get_table_stats(
-    db_name: str, table_name: str, scanner: DataScanner = Depends(get_datascanner)
+    db_name: str, table_name: str, scanner: DataScannerBase = Depends(get_datascanner)
 ):
     """
     Get statistics for a specific table.
@@ -119,7 +140,7 @@ def get_table_stats(
     try:
         stats = scanner.get_table_stats(db_name, table_name)
         logger.info(
-            f"Retrieved stats for {db_name}.{table_name}: {stats['row_count']} rows, {stats['column_count']} columns"
+            f"Retrieved stats for {db_name}.{table_name}: {stats.get('row_count')} rows, {stats['column_count']} columns"
         )
         return TableStatsResponse(database=db_name, table=table_name, **stats)
     except Exception as e:
@@ -142,7 +163,7 @@ def sample_table(
         default=100, ge=1, le=1000, description="Maximum number of rows to return"
     ),
     offset: int = Query(default=0, ge=0, description="Number of rows to skip"),
-    scanner: DataScanner = Depends(get_datascanner),
+    scanner: DataScannerBase = Depends(get_datascanner),
 ):
     """
     Get a sample of rows from a specific table.
@@ -158,9 +179,10 @@ def sample_table(
     """
     try:
         result = scanner.sample_table(db_name, table_name, limit=limit, offset=offset)
-        # logger.info(f"Retrieved {len(result['data'])} rows from {db_name}.{table_name} (limit={limit}, offset={offset})")
-        # logger.info(f"Result: {result['data'][0]['value_bytes']}")
         return TableSampleResponse(database=db_name, table=table_name, **result)
+    except NotImplementedError as e:
+        logger.warning(f"sample_table not implemented: {e}")
+        raise HTTPException(status_code=501, detail=str(e))
     except Exception as e:
         logger.error(f"Error sampling {db_name}.{table_name}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to sample table: {str(e)}")
@@ -170,7 +192,7 @@ def sample_table(
     "/databases/{db_name}/tables/{table_name}/schema", response_model=List[ColumnSchema]
 )
 def get_table_schema(
-    db_name: str, table_name: str, scanner: DataScanner = Depends(get_datascanner)
+    db_name: str, table_name: str, scanner: DataScannerBase = Depends(get_datascanner)
 ):
     """
     Get the schema of a specific table.
@@ -199,7 +221,7 @@ def get_table_schema(
 
 @router.post("/query", response_model=QueryResponse)
 def execute_query(
-    request: QueryRequest, scanner: DataScanner = Depends(get_datascanner)
+    request: QueryRequest, scanner: DataScannerBase = Depends(get_datascanner)
 ):
     """
     Execute a custom SQL query against the warehouse.
@@ -214,6 +236,9 @@ def execute_query(
         result = scanner.execute_query(request.query, limit=request.limit)
         logger.info(f"Executed custom query, returned {result['row_count']} rows")
         return QueryResponse(**result)
+    except NotImplementedError as e:
+        logger.warning(f"execute_query not implemented: {e}")
+        raise HTTPException(status_code=501, detail=str(e))
     except Exception as e:
         logger.error(f"Error executing query: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"Query execution failed: {str(e)}")

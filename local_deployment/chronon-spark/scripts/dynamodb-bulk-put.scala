@@ -20,7 +20,7 @@ import scala.jdk.CollectionConverters._
 //   --jars /srv/chronon/jars/chronon-spark-assembly.jar,/srv/chronon/jars/chronon-aws-assembly.jar \
 //   --conf spark.chronon.bulkput.confPath=compiled/group_bys/quickstart/logins.v1__1 \
 //   --conf spark.chronon.bulkput.ds=2025-10-17 \
-//   -i ./scripts/dynamodb-bulk-put.scala
+//   -i /srv/chronon/scripts/dynamodb-bulk-put.scala
 val region = sys.env.getOrElse("AWS_DEFAULT_REGION", "us-west-2")
 val endpoint = sys.env.getOrElse("DYNAMO_ENDPOINT", "http://localhost:8000")
 val confBase = "/srv/chronon/app"
@@ -83,7 +83,7 @@ def mapDatasetName(dataset: String): String = {
   target
 }
 
-def ensureTableExists(tableName: String, isTimeSorted: Boolean = true): Unit = {
+def ensureTableExists(tableName: String): Unit = {
   val waiter = driverClient.waiter()
   val describeRequest = DescribeTableRequest.builder().tableName(tableName).build()
   val exists = try {
@@ -94,29 +94,16 @@ def ensureTableExists(tableName: String, isTimeSorted: Boolean = true): Unit = {
   }
 
   if (!exists) {
-    val throughput = ProvisionedThroughput.builder().readCapacityUnits(10L).writeCapacityUnits(10L).build()    
-    val attributeDefs = if (isTimeSorted) {
-      List(
-        AttributeDefinition.builder().attributeName("keyBytes").attributeType(ScalarAttributeType.B).build(),
-        AttributeDefinition.builder().attributeName(Constants.TimeColumn).attributeType(ScalarAttributeType.N).build()
-      )
-    } else {
-      List(
-        AttributeDefinition.builder().attributeName("keyBytes").attributeType(ScalarAttributeType.B).build()
-      )
-    }
+    val throughput = ProvisionedThroughput.builder().readCapacityUnits(10L).writeCapacityUnits(10L).build()
     
-    val keySchema = if (isTimeSorted) {
-      List(
-        KeySchemaElement.builder().attributeName("keyBytes").keyType(KeyType.HASH).build(),
-        KeySchemaElement.builder().attributeName(Constants.TimeColumn).keyType(KeyType.RANGE).build()
-      )
-    } else {
-      List(
-        KeySchemaElement.builder().attributeName("keyBytes").keyType(KeyType.HASH).build()
-      )
-    }
-    
+    // Always create non-time-sorted tables - works for now with untiled jobs, 
+    // but has to be revised for tiled jobs potentially.
+    val attributeDefs = List(
+      AttributeDefinition.builder().attributeName("keyBytes").attributeType(ScalarAttributeType.B).build()
+    )
+    val keySchema = List(
+      KeySchemaElement.builder().attributeName("keyBytes").keyType(KeyType.HASH).build()
+    )
     val createRequest = CreateTableRequest
       .builder()
       .tableName(tableName)
@@ -124,7 +111,7 @@ def ensureTableExists(tableName: String, isTimeSorted: Boolean = true): Unit = {
       .keySchema(keySchema.asJava)
       .provisionedThroughput(throughput)
       .build()
-    println(s"[dynamodb-bulk-put] Creating DynamoDB table $tableName (time-sorted: $isTimeSorted)")
+    println(s"[dynamodb-bulk-put] Creating DynamoDB table $tableName")
     driverClient.createTable(createRequest)
     val waiterResponse = waiter.waitUntilTableExists(describeRequest)
     if (waiterResponse.matched().exception().isPresent) {
@@ -154,7 +141,7 @@ try {
     s"[dynamodb-bulk-put] Loaded number of records from source table: '${df.count()}'"
   )
   val targetDataset = mapDatasetName(destinationDataset)
-  ensureTableExists(targetDataset, isTimeSorted = false)
+  ensureTableExists(targetDataset)
 
   val defaultBatchSize = sys.env.getOrElse("DDB_BULKPUT_BATCH_SIZE", "100").toInt
   val requests = df.rdd.map { row: Row =>

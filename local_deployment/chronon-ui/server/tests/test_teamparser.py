@@ -13,7 +13,7 @@ def test_metadata_path():
 def test_parse_teams_metadata(test_metadata_path):
     """Test parsing team metadata and verify expected structure."""
     parser = TeamParser(test_metadata_path)
-    teams = parser.parse()
+    teams = parser.get_metadata()
 
     # Verify the complete structure matches expected
     assert teams == {
@@ -43,11 +43,20 @@ def test_parse_teams_metadata(test_metadata_path):
         },
     }
 
+    team = parser.get_metadata("quickstart")
 
-def test_parse_team_names_only(test_metadata_path):
-    """Test parsing with team_names_only=True returns only team names."""
+    assert team == {
+        "executionInfo": {
+            "conf": {"common": {"spark.chronon.coalesce.factor": "10"}},
+            "env": {"common": {"ARTIFACT_PREFIX": "<customer-artifact-bucket>"}},
+        }
+    }
+
+
+def test_get_team_names(test_metadata_path):
+    """Test get_team_names returns only team names."""
     parser = TeamParser(test_metadata_path)
-    team_names = parser.parse(team_names_only=True)
+    team_names = parser.get_team_names()
 
     # Should return a sorted list of team names
     assert isinstance(team_names, list)

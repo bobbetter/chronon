@@ -1,9 +1,9 @@
 import os
 import logging
 from typing import Dict, List, Any
-from fastapi import APIRouter, Query, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 from server.services.teamparser import TeamParser
-
+from server.errors import TeamNotFoundError
 path = os.path.basename(os.path.dirname(__file__))
 router = APIRouter(prefix=f"/{path}/teams", tags=["teams"])
 logger = logging.getLogger("uvicorn.error")
@@ -14,28 +14,35 @@ def get_teamparser(request: Request) -> TeamParser:
     return request.app.state.teamparser
 
 
-@router.get("/list")
+@router.get("")
 def list_teams(
-    names_only: bool = Query(
-        False, description="If true, return only team names as a list"
-    ),
     parser: TeamParser = Depends(get_teamparser),
 ) -> Dict[str, Any] | List[str]:
     """
-    Get teams metadata or just team names.
-
-    Args:
-        names_only: If True, return only team names as a list ["default", "quickstart"].
-                   If False, return full metadata dictionary.
+    Get list of all team names.
 
     Returns:
-        Either a list of team names or a dictionary mapping team names to their metadata.
+        Sorted list of team names: ["default", "quickstart"]
     """
-    teams_data = parser.parse(team_names_only=names_only)
+    return parser.get_team_names()
 
-    if names_only:
-        logger.info("Retrieved %d team name(s)", len(teams_data))
-    else:
-        logger.info("Retrieved metadata for %d team(s)", len(teams_data))
-
-    return teams_data
+@router.get("/metadata/{team_name}")
+def get_team_metadata(
+    team_name: str,
+    parser: TeamParser = Depends(get_teamparser),
+) -> Dict[str, Any]:
+    """
+    Get metadata for a specific team.
+    """
+    try:
+        return parser.get_metadata(team_name)
+    except TeamNotFoundError as e:
+        logger.error(f"Team not found: {e}")
+        raise HTTPException(
+            status_code=404, detail=f"{str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error getting team metadata: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Unexpected error getting team metadata: {str(e)}"
+        )

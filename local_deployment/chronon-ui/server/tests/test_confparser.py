@@ -11,11 +11,11 @@ expected_one_groupby = [
 ]
 
 
-def test_graphparser_with_directory_path():
+def test_confparser_with_directory_path():
     test_dir = parent_dir / "compiled" / "one_groupby"
-    graph_parser = ConfParser(str(test_dir))
-    graph = graph_parser.parse()
-    assert graph == expected_one_groupby
+    conf_parser = ConfParser(test_dir)
+    confs = conf_parser.parse("test-team")
+    assert confs == expected_one_groupby
 
 
 expected_two_groupbys = [
@@ -32,10 +32,10 @@ expected_two_groupbys = [
 ]
 
 
-def test_graphparser_with_two_group_bys():
+def test_confparser_with_two_group_bys():
     test_dir = parent_dir / "compiled" / "two_groupby"
-    conf_parser = ConfParser(str(test_dir))
-    result = conf_parser.parse()
+    conf_parser = ConfParser(test_dir)
+    result = conf_parser.parse("test-team")
     assert result == expected_two_groupbys
 
 
@@ -48,8 +48,8 @@ expected_one_join = [
 ]
 
 
-def test_graphparser_with_one_join():
+def test_confparser_with_one_join():
     test_dir = parent_dir / "compiled" / "one_join"
-    conf_parser = ConfParser(str(test_dir))
-    result = conf_parser.parse()
+    conf_parser = ConfParser(test_dir)
+    result = conf_parser.parse("test-team")
     assert result == expected_one_join

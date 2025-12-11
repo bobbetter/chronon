@@ -1,6 +1,4 @@
 from gen_thrift.api.ttypes import Team
-
-from ai.chronon.repo.constants import RunMode
 from ai.chronon.types import ConfigProperties, EnvironmentVariables
 
 default = Team(
@@ -31,12 +29,7 @@ default = Team(
     env=EnvironmentVariables(
         common={
             # TODO: Please fill in the following values
-            "CUSTOMER_ID": "<customer_id>",
-            "GCP_PROJECT_ID": "<project-id>",
-            "GCP_REGION": "<region>",
-            "GCP_DATAPROC_CLUSTER_NAME": "<dataproc-cluster-name>",
-            "GCP_BIGTABLE_INSTANCE_ID": "<bigtable-instance-id>",
-            "ARTIFACT_PREFIX": "<customer-artifact-bucket>",
+            "EMR_APPLICATION_ID": "00fvgrsoabsudb0d",
             "CLOUD_PROVIDER": "aws",
         },
     ),
@@ -46,6 +39,14 @@ default = Team(
 
 quickstart = Team(
     outputNamespace="quickstart",
+    env=EnvironmentVariables(
+        common={},
+    ),
+)
+
+
+mli = Team(
+    outputNamespace="mli",
     env=EnvironmentVariables(
         common={},
     ),

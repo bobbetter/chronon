@@ -2,7 +2,9 @@ from typing import List, Dict, Any
 from enum import Enum
 import json
 import os
+from pathlib import Path
 
+from server.errors import TeamNotFoundError
 
 class ConfType(Enum):
     GROUP_BY = "group_by"
@@ -26,7 +28,7 @@ class Conf:
 class ConfParser:
     IGNORE_FILES = ["schema.v1__1"]
 
-    def __init__(self, directory_path: str):
+    def __init__(self, directory_path: Path):
         self.directory_path = directory_path
 
     def _parse_conf_file(self, file_path: str) -> Conf:
@@ -49,15 +51,15 @@ class ConfParser:
 
         return Conf(name, conf_type, primary_keys)
 
-    def parse(self) -> List[Dict[str, Any]]:
+    def parse(self, team_name: str) -> List[Dict[str, Any]]:
         """Parse all configuration files in the directory and return a list of conf dictionaries."""
         confs = []
 
-        if not os.path.isdir(self.directory_path):
-            return confs
+        if not os.path.isdir(self.directory_path / team_name):
+            raise TeamNotFoundError(f"Team folder not found: {self.directory_path / team_name}")
 
-        for entry in sorted(os.listdir(self.directory_path)):
-            file_path = os.path.join(self.directory_path, entry)
+        for entry in sorted(os.listdir(self.directory_path / team_name)):
+            file_path = os.path.join(self.directory_path, team_name, entry)
 
             # Skip if not a file or if it's in the ignore list
             if not os.path.isfile(file_path) or entry in self.IGNORE_FILES:

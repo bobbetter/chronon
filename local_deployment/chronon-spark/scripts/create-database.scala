@@ -1,6 +1,6 @@
 // Create a database with a given name.
 // Usage examples:
-//   spark-shell -i ./scripts/create-database.scala --master local[*] --conf spark.chronon.database=data
+//   spark-shell -i /srv/chronon/scripts/create-database.scala --master local[*] --conf spark.chronon.database=data
 
 // Resolve database parameter from Spark conf
 // Pass via: --conf spark.chronon.database=<db>

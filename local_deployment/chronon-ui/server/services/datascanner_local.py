@@ -1,17 +1,29 @@
+"""
+Local data scanner implementation using DuckDB.
+
+This module provides the DataScannerLocal class for scanning and querying
+local Spark warehouse data stored as Parquet files.
+"""
+
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 import duckdb
-import numpy as np
+
+from .datascanner_base import DataScannerBase
 
 
-class DataScanner:
+class DataScannerLocal(DataScannerBase):
     """
-    A class to scan and query Spark warehouse data using DuckDB.
+    A class to scan and query local Spark warehouse data using DuckDB.
+
+    This implementation reads Parquet files from a local Spark warehouse directory
+    structure and uses DuckDB for SQL query execution.
     """
 
     def __init__(self, warehouse_path: str):
         """
-        Initialize the DataScanner with a warehouse path.
+        Initialize the DataScannerLocal with a warehouse path.
 
         Args:
             warehouse_path: Path to the Spark warehouse directory
@@ -58,6 +70,7 @@ class DataScanner:
 
         Args:
             db_name: Name of the database
+            with_db_name: If True, prefix table names with database name
 
         Returns:
             List of table names
@@ -108,6 +121,13 @@ class DataScanner:
     def get_table_exists(self, db_name: str, table_name: str) -> bool:
         """
         Check if a table exists.
+
+        Args:
+            db_name: Name of the database
+            table_name: Name of the table
+
+        Returns:
+            True if the table exists, False otherwise
         """
         if db_name == "default":
             table_dir = self.warehouse_path / table_name
@@ -135,8 +155,10 @@ class DataScanner:
         Returns:
             Dictionary containing:
                 - data: List of dictionaries representing rows
-                - schema: List of column definitions
+                - table_schema: List of column definitions
                 - row_count: Total number of rows in the table
+                - limit: The limit used
+                - offset: The offset used
         """
         pattern = self._build_parquet_glob(db_name, table_name)
         con = duckdb.connect()
@@ -154,7 +176,6 @@ class DataScanner:
 
             # Convert DataFrame to list of dicts
             data = df.to_dict(orient="records")
-            # print(data)
             # Convert numpy arrays and types to native Python types for JSON serialization
             data = [self._convert_numpy_to_native(row) for row in data]
 
@@ -261,27 +282,3 @@ class DataScanner:
         except Exception:
             return False
 
-    def _convert_numpy_to_native(self, obj: Any) -> Any:
-        """
-        Convert numpy types to native Python types for JSON serialization.
-
-        Args:
-            obj: Object to convert
-
-        Returns:
-            Object with numpy types converted to native Python types
-        """
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, np.generic):
-            return obj.item()
-        elif isinstance(obj, bytearray):
-            return str(obj)
-        elif isinstance(obj, dict):
-            return {
-                key: self._convert_numpy_to_native(value) for key, value in obj.items()
-            }
-        elif isinstance(obj, (list, tuple)):
-            return [self._convert_numpy_to_native(item) for item in obj]
-        else:
-            return obj

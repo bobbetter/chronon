@@ -1,6 +1,6 @@
 // Delete a specific table in a database.
 // Usage examples:
-//   spark-shell -i ./scripts/delete-table.scala --master local[*] --conf spark.chronon.table=data.my_table
+//   spark-shell -i /srv/chronon/scripts/delete-table.scala --master local[*] --conf spark.chronon.table=data.my_table
 
 // Resolve table parameter from Spark conf (format: database.table_name)
 // Pass via: --conf spark.chronon.table=<database>.<table>

@@ -4,11 +4,13 @@ Service for running Spark jobs in the chronon-spark container via Docker API.
 
 import logging
 import docker
-from typing import Optional, Dict, Any
+from server.config import ComputeEngine
+from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("uvicorn.error")
+
 
 
 class SparkJobResponse(BaseModel):
@@ -28,10 +30,23 @@ class SparkJobResponse(BaseModel):
     error: Optional[str] = Field(
         None, description="Error message when the job execution failed"
     )
-    extra_parameters: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Additional parameters specific to a given operation",
+
+class SparkJobRequest(BaseModel):
+    """Request model for triggering a Spark job."""
+
+    conf_path: str = Field(
+        ...,
+        description="Path to the compiled config relative to app directory",
+        example="compiled/group_bys/quickstart/page_views.v1__1",
     )
+    ds: str = Field(
+        ..., description="Date string in YYYY-MM-DD format", example="2025-11-01"
+    )
+    # compute_engine: ComputeEngine = Field(..., description="Compute engine to use", example=ComputeEngine.LOCAL)
+    mode: Optional[str] = Field(
+        None, description="Optional mode (e.g., 'upload-to-kv')", example="upload-to-kv"
+    )
+    
 
 
 class SparkJobRunner:
@@ -91,7 +106,6 @@ class SparkJobRunner:
         self,
         command: str,
         operation_name: str,
-        extra_parameters: Optional[Dict[str, Any]] = None,
     ) -> SparkJobResponse:
         """
         Execute a command in the Spark container and return a standardized response.
@@ -107,13 +121,11 @@ class SparkJobRunner:
         Args:
             command: The bash command to execute in the container
             operation_name: Human-readable name for logging (e.g., "database creation", "table deletion")
-            extra_parameters: Optional dict of parameters to include in the response
 
         Returns:
             SparkJobResponse with execution results and metadata
         """
         start_time = datetime.now()
-        extra_params = extra_parameters or {}
 
         logger.info(f"Executing {operation_name}: {command}")
 
@@ -160,7 +172,6 @@ class SparkJobRunner:
                 duration_seconds=duration,
                 command=command,
                 container=container.name,
-                extra_parameters=extra_params,
             )
 
         except Exception as e:
@@ -178,7 +189,6 @@ class SparkJobRunner:
                 duration_seconds=duration,
                 command=command,
                 error=str(e),
-                extra_parameters=extra_params,
             )
 
     def create_database(self, database_name: str) -> SparkJobResponse:
@@ -189,48 +199,43 @@ class SparkJobRunner:
             database_name: Name of the database to create
 
         Returns:
-            SparkJobResponse with command execution metadata and the database name
-            placed in the extra_parameters field.
+            SparkJobResponse with command execution metadata
         """
-        # Build the spark-shell command
         command = (
             f"cd app && spark-shell --master local[*] "
             f"--conf spark.chronon.database={database_name} "
-            f"-i ./scripts/create-database.scala"
+            f"-i /srv/chronon/scripts/create-database.scala"
         )
 
         return self._execute(
             command=command,
             operation_name="database creation",
-            extra_parameters={"database_name": database_name},
         )
 
-    def delete_table(self, table_name: str) -> SparkJobResponse:
+    def delete_table(self, table_name: str, application_id: Optional[str] = None) -> SparkJobResponse:
         """
         Delete a table in the chronon-spark container.
 
         Args:
             table_name: Fully qualified table name (database.table_name) or just table name
+            application_id: Unused for local execution (included for interface compatibility)
 
         Returns:
-            SparkJobResponse with command execution metadata and the table name
-            placed in the extra_parameters field.
+            SparkJobResponse with command execution metadata
         """
-        # Build the spark-shell command
         command = (
             f"cd app && spark-shell --master local[*] "
             f"--conf spark.chronon.table={table_name} "
-            f"-i ./scripts/delete-table.scala"
+            f"-i /srv/chronon/scripts/delete-table.scala"
         )
 
         return self._execute(
             command=command,
             operation_name="table deletion",
-            extra_parameters={"table_name": table_name},
         )
 
-    def upload_to_kv(
-        self, conf_path: str, ds: Optional[str] = None
+    def _upload_to_kv_command(  
+        self, job_request: SparkJobRequest
     ) -> SparkJobResponse:
         """
         Run the DynamoDB bulk upload script inside the Spark container.
@@ -240,81 +245,60 @@ class SparkJobRunner:
             ds: Optional partition date (e.g., "2025-10-17") passed through to the script.
 
         Returns:
-            SparkJobResponse mirroring other operations with conf_path/ds stored
-            in the extra_parameters field.
+            SparkJobResponse with command execution metadata
         """
         jar_list = "/srv/chronon/jars/chronon-spark-assembly.jar,/srv/chronon/jars/chronon-aws-assembly.jar"
         cmd_parts = [
             "cd app && spark-shell --master local[*]",
             f"--jars {jar_list}",
-            f"--conf spark.chronon.bulkput.confPath={conf_path}",
+            f"--conf spark.chronon.bulkput.confPath={job_request.conf_path}",
         ]
-        if ds:
-            cmd_parts.append(f"--conf spark.chronon.bulkput.ds={ds}")
-        cmd_parts.append("-i ./scripts/dynamodb-bulk-put.scala")
+        if job_request.ds:
+            cmd_parts.append(f"--conf spark.chronon.bulkput.ds={job_request.ds}")
+        cmd_parts.append("-i /srv/chronon/scripts/dynamodb-bulk-put.scala")
 
-        command = " ".join(cmd_parts)
+        return " ".join(cmd_parts)
 
-        extra_parameters = {"conf_path": conf_path}
-        if ds:
-            extra_parameters["ds"] = ds
 
-        return self._execute(
-            command=command,
-            operation_name="upload-to-kv",
-            extra_parameters=extra_parameters,
-        )
+    def _regular_command(self, job_request: SparkJobRequest) -> str:
 
-    def run_spark_job(
+        cmd_parts = ["cd app &&", "python3 run.py"]
+
+        # Add mode first if specified
+        if job_request.mode:
+            cmd_parts.append(f"--mode {job_request.mode}")
+
+        # Add required arguments
+        cmd_parts.append(f"--conf={job_request.conf_path}")
+        cmd_parts.append(f"--ds {job_request.ds}")  # Use space not equals for --ds
+
+        return " ".join(cmd_parts)
+
+    def submit_job(
         self,
-        conf_path: str,
-        ds: str,
-        mode: Optional[str] = None,
-        additional_args: Optional[Dict[str, str]] = None,
+        job_request: SparkJobRequest,
     ) -> SparkJobResponse:
         """
         Execute a Spark job in the chronon-spark container.
 
         Args:
-            conf_path: Path to the compiled config (e.g., "compiled/group_bys/quickstart/page_views.v1__1")
-            ds: Date string (e.g., "2025-11-01")
-            mode: Optional mode flag (e.g., "backfill", "upload", "upload-to-kv")
-            additional_args: Optional dictionary of additional command-line arguments
+            job_request: SparkJobRequest containing conf_path, ds, and mode
 
         Returns:
             SparkJobResponse capturing stdout/stderr alongside conf_path, ds, and
-            optional args stored in the extra_parameters field.
+            mode.
         """
-        # Build the command - note that run.py uses --ds with space, not equals
-        cmd_parts = ["cd app &&", "python3 run.py"]
 
-        # Add mode first if specified
-        if mode:
-            cmd_parts.append(f"--mode {mode}")
-
-        # Add required arguments
-        cmd_parts.append(f"--conf={conf_path}")
-        cmd_parts.append(f"--ds {ds}")  # Use space not equals for --ds
-
-        # Add any additional arguments
-        if additional_args:
-            for key, value in additional_args.items():
-                if value:
-                    cmd_parts.append(f"--{key}={value}")
-                else:
-                    cmd_parts.append(f"--{key}")
-
-        command = " ".join(cmd_parts)
-        extra_parameters: Dict[str, Any] = {"conf_path": conf_path, "ds": ds}
-        if mode:
-            extra_parameters["mode"] = mode
-        if additional_args:
-            extra_parameters["additional_args"] = additional_args
+        if job_request.mode == "upload-to-kv":
+            command = self._upload_to_kv_command(job_request)
+            operation_name = "upload-to-kv"
+        else:
+            command = self._regular_command(job_request)
+            operation_name="Spark job"
 
         return self._execute(
             command=command,
-            operation_name="Spark job",
-            extra_parameters=extra_parameters,
+            operation_name=operation_name,
         )
 
     def close(self):

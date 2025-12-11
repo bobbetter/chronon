@@ -8,6 +8,9 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { Loader2, Trash2 } from "lucide-react";
+import { useTeam } from "@/context/TeamContext";
+import { useComputeEngine, isActionAllowedForRemote } from "@/context/ComputeEngineContext";
+import { useActionDate } from "@/context/ActionDateContext";
 import {
   Dialog,
   DialogContent,
@@ -49,10 +52,33 @@ export function LineageNode({ data }: LineageNodeProps) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+  const { selectedTeam, teamEnvConfig } = useTeam();
+  const { computeEngine } = useComputeEngine();
+  const { prevActionDate, setPrevActionDate } = useActionDate();
 
   const deleteTableMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", `/v1/actions/delete-table?table_name=${encodeURIComponent(data.name)}`, null);
+      const params = new URLSearchParams({
+        compute_engine: computeEngine,
+      });
+
+      const requestBody: {
+        table_name: string;
+        application_id?: string;
+      } = {
+        table_name: data.name,
+      };
+
+      // Include application_id for remote compute engine
+      if (computeEngine === "remote" && teamEnvConfig?.EMR_APPLICATION_ID) {
+        requestBody.application_id = teamEnvConfig.EMR_APPLICATION_ID;
+      }
+
+      const res = await apiRequest(
+        "POST",
+        `/v1/compute/spark/delete-table?${params.toString()}`,
+        requestBody
+      );
 
       if (!res.ok) {
         const errorText = await res.text();
@@ -76,7 +102,7 @@ export function LineageNode({ data }: LineageNodeProps) {
     },
     onSettled: () => {
       // Re-fetch graph data after deletion completes
-      queryClient.invalidateQueries({ queryKey: ["/v1/graph/graph_data"] });
+      queryClient.invalidateQueries({ queryKey: ["/v1/graph", selectedTeam, `graph_data?compute_engine=${computeEngine}`] });
     },
   });
 
@@ -85,10 +111,11 @@ export function LineageNode({ data }: LineageNodeProps) {
       try {
         // Special handling for group_by and join nodes
         if ((data.type === "group_by" || data.type === "join" || data.type === "pre_computed_upload") && data.config_file_path) {
-          const res = await apiRequest("POST", "/v1/actions/run-spark-job", {
+          const res = await apiRequest("POST", `/v1/compute/spark/run-job?compute_engine=${computeEngine}`, {
             conf_path: data.config_file_path,
-            ds: ds || "2023-12-01", // Use provided date or fallback
+            ds: ds,
             mode: action,
+            application_id: teamEnvConfig?.EMR_APPLICATION_ID,
           });
 
           if (!res.ok) {
@@ -136,7 +163,7 @@ export function LineageNode({ data }: LineageNodeProps) {
     },
     onSettled: () => {
       // Re-fetch graph data after mutation completes (success or error)
-      queryClient.invalidateQueries({ queryKey: ["/v1/graph/graph_data"] });
+      queryClient.invalidateQueries({ queryKey: ["/v1/graph", selectedTeam, `graph_data?compute_engine=${computeEngine}`] });
     },
   });
 
@@ -174,6 +201,8 @@ export function LineageNode({ data }: LineageNodeProps) {
     }
 
     if (pendingAction) {
+      // Save the date for future use
+      setPrevActionDate(dateValue);
       executeActionMutation.mutate({ action: pendingAction, ds: dateValue });
       setShowDateDialog(false);
       setDateValue("");
@@ -225,6 +254,10 @@ export function LineageNode({ data }: LineageNodeProps) {
     // Show date dialog for actions that require a date parameter
     if ((data.type === "group_by" || data.type === "join" || data.type === "pre_computed_upload") && data.config_file_path) {
       setPendingAction(action);
+      // Prefill with the previously used date if available
+      if (prevActionDate) {
+        setDateValue(prevActionDate);
+      }
       setShowDateDialog(true);
       return;
     }
@@ -250,7 +283,7 @@ export function LineageNode({ data }: LineageNodeProps) {
         `}
         style={{
           backgroundColor: data.exists
-            ? `hsl(var(--chart-${data.type_visual === 'batch-data' ? '1' : data.type_visual === 'online-data' ? '2' : data.type_visual === 'streaming-data' ? '4' : '3'}) / 0.15)`
+            ? `hsl(var(--chart-${data.type_visual === 'batch-data' ? '1' : data.type_visual === 'online-data' ? '2' : data.type_visual === 'streaming-data' ? '4' : '3'}) / 0.45)`
             : 'transparent',
           borderColor: `hsl(var(--chart-${data.type_visual === 'batch-data' ? '1' : data.type_visual === 'online-data' ? '2' : data.type_visual === 'streaming-data' ? '4' : '3'}))`,
           borderStyle: data.exists ? 'solid' : 'dashed',
@@ -272,19 +305,26 @@ export function LineageNode({ data }: LineageNodeProps) {
           <div className="mt-2">
             <div className="text-xs text-muted-foreground mb-1">Actions:</div>
             <div className="flex gap-2">
-              {data.actions && data.actions.map((action) => (
-                <Button
-                  key={action}
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => handleAction(action)}
-                  disabled={!data.exists || executeActionMutation.isPending}
-                  className="h-6 text-xs"
-                  data-testid={`button-${action}-${data.name}`}
-                >
-                  {action}
-                </Button>
-              ))}
+              {data.actions && data.actions.map((action) => {
+                const isAllowedForRemote = isActionAllowedForRemote(action);
+                const isDisabledByComputeEngine = computeEngine === "remote" && !isAllowedForRemote;
+                const isDisabled = !data.exists || executeActionMutation.isPending || isDisabledByComputeEngine;
+
+                return (
+                  <Button
+                    key={action}
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handleAction(action)}
+                    disabled={isDisabled}
+                    className={`h-6 text-xs ${isDisabledByComputeEngine ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    data-testid={`button-${action}-${data.name}`}
+                    title={isDisabledByComputeEngine ? 'This action is not available in remote compute mode' : undefined}
+                  >
+                    {action}
+                  </Button>
+                );
+              })}
               {data.type_visual === "batch-data" && data.exists && (
                 <Button
                   size="sm"
