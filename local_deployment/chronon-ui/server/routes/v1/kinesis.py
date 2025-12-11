@@ -15,11 +15,8 @@ logger = logging.getLogger("uvicorn.error")
 path = os.path.basename(os.path.dirname(__file__))
 router = APIRouter(prefix=f"/{path}/kinesis", tags=["kinesis"])
 
-# Initialize the KinesisClient
 kinesis_client = KinesisClient()
 
-
-# Enums
 class ShardIteratorType(str, Enum):
     """Enum for Kinesis shard iterator types."""
 
@@ -27,7 +24,6 @@ class ShardIteratorType(str, Enum):
     LATEST = "LATEST"  # Start reading from the newest record
 
 
-# Request/Response models
 class PutRecordsRequest(BaseModel):
     """Request model for putting records to a Kinesis stream."""
 
@@ -102,7 +98,7 @@ class ListStreamsResponse(BaseModel):
 class CreateStreamRequest(BaseModel):
     """Request model for creating a stream."""
 
-    shard_count: int
+    shard_count: int = 1
 
 
 class CreateStreamResponse(BaseModel):

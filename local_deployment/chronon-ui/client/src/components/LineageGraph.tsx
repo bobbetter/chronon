@@ -18,7 +18,9 @@ import { LineageNode } from "./LineageNode";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, RotateCcw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
+import { useTeam } from "@/context/TeamContext";
+import { useComputeEngine } from "@/context/ComputeEngineContext";
 
 interface LineageGraphProps {
   data?: GraphData;
@@ -30,12 +32,15 @@ const nodeTypes = {
 
 export function LineageGraph({ data: initialData }: LineageGraphProps) {
   const queryClient = useQueryClient();
+  const { selectedTeam } = useTeam();
+  const { computeEngine } = useComputeEngine();
   const { data: graphData, isLoading, error, refetch, isFetching } = useQuery<GraphData>({
-    queryKey: ["/v1/graph/graph_data"],
+    queryKey: ["/v1/graph", selectedTeam, `graph_data?compute_engine=${computeEngine}`],
     initialData: initialData,
+    enabled: !!selectedTeam,
   });
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
-  
+
   // Load hidden types from localStorage on mount
   const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(() => {
     try {
@@ -45,7 +50,7 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
       return new Set();
     }
   });
-  
+
   // Load hidePending from localStorage on mount
   const [hidePending, setHidePending] = useState(() => {
     try {
@@ -68,14 +73,14 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
       } else {
         newSet.add(typeVisual);
       }
-      
+
       // Save to localStorage
       try {
         localStorage.setItem('lineage-graph-hidden-types', JSON.stringify(Array.from(newSet)));
       } catch (error) {
         console.warn('Failed to save hidden types:', error);
       }
-      
+
       return newSet;
     });
   }, []);
@@ -83,14 +88,14 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
   const toggleHidePending = useCallback(() => {
     setHidePending((prev: boolean) => {
       const newValue = !prev;
-      
+
       // Save to localStorage
       try {
         localStorage.setItem('lineage-graph-hide-pending', JSON.stringify(newValue));
       } catch (error) {
         console.warn('Failed to save hide pending state:', error);
       }
-      
+
       return newValue;
     });
   }, []);
@@ -228,13 +233,6 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
   const [nodes, setNodes] = useNodesState(computedNodes);
   const [edges, setEdges] = useEdgesState(computedEdges);
 
-  const handleResetLayout = useCallback(() => {
-    // Clear saved positions
-    localStorage.removeItem('lineage-graph-node-positions');
-    // Force recomputation by refetching
-    refetch();
-  }, [refetch]);
-
   useEffect(() => {
     if (graphData) console.debug('[graph] loaded', { nodes: graphData.nodes?.length, edges: graphData.edges?.length });
   }, [graphData]);
@@ -256,7 +254,7 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
     (changes: NodeChange[]) => {
       setNodes((nds) => {
         const updatedNodes = applyNodeChanges(changes, nds);
-        
+
         // Save positions after drag operations
         const hasDragChanges = changes.some(
           (change) => change.type === 'position' && change.dragging === false
@@ -264,7 +262,7 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
         if (hasDragChanges) {
           saveNodePositions(updatedNodes);
         }
-        
+
         return updatedNodes;
       });
     },
@@ -280,6 +278,25 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
   }
 
   if (error) {
+    // Check if it's a 404 error (team has no graph data)
+    const is404 = error instanceof Error && error.message.startsWith("404:");
+
+    if (is404) {
+      return (
+        <div className="h-full w-full flex items-center justify-center p-8">
+          <div className="text-center max-w-md">
+            <div className="text-muted-foreground text-lg">
+              No feature lineage available for Team:{" "}
+              <span className="font-semibold text-foreground">{selectedTeam}</span>.
+            </div>
+            <div className="text-muted-foreground mt-2">
+              Add Python configuration files and run compile command.
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="h-full w-full flex items-center justify-center">
         <div className="text-red-500">Failed to load graph</div>
@@ -330,16 +347,6 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
           >
             <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={handleResetLayout}
-            className="h-7 px-2"
-            data-testid="graph-reset-layout-button"
-            title="Reset node positions to default"
-          >
-            <RotateCcw className="h-4 w-4" />
-          </Button>
         </Panel>
         <Panel position="bottom-left" className="text-xs text-muted-foreground bg-card/80 backdrop-blur-sm p-2 rounded-md border border-border">
           {`Nodes: ${nodes.filter(n => !n.hidden).length}/${nodes.length} · Edges: ${edges.length}`}
@@ -347,11 +354,10 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
         <Panel position="top-left" className="flex gap-2">
           <Badge
             variant="outline"
-            className={`cursor-pointer transition-opacity ${
-              hiddenTypes.has('batch-data')
-                ? 'opacity-40 line-through'
-                : 'bg-node-batch/20 border-node-batch'
-            }`}
+            className={`cursor-pointer transition-opacity ${hiddenTypes.has('batch-data')
+              ? 'opacity-40 line-through'
+              : 'bg-node-batch/20 border-node-batch'
+              }`}
             onClick={() => toggleTypeVisibility('batch-data')}
             data-testid="legend-batch-data"
           >
@@ -359,11 +365,10 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
           </Badge>
           <Badge
             variant="outline"
-            className={`cursor-pointer transition-opacity ${
-              hiddenTypes.has('online-data')
-                ? 'opacity-40 line-through'
-                : 'bg-node-online/20 border-node-online'
-            }`}
+            className={`cursor-pointer transition-opacity ${hiddenTypes.has('online-data')
+              ? 'opacity-40 line-through'
+              : 'bg-node-online/20 border-node-online'
+              }`}
             onClick={() => toggleTypeVisibility('online-data')}
             data-testid="legend-online-data"
           >
@@ -371,11 +376,10 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
           </Badge>
           <Badge
             variant="outline"
-            className={`cursor-pointer transition-opacity ${
-              hiddenTypes.has('streaming-data')
-                ? 'opacity-40 line-through'
-                : 'bg-node-streaming/20 border-node-streaming'
-            }`}
+            className={`cursor-pointer transition-opacity ${hiddenTypes.has('streaming-data')
+              ? 'opacity-40 line-through'
+              : 'bg-node-streaming/20 border-node-streaming'
+              }`}
             onClick={() => toggleTypeVisibility('streaming-data')}
             data-testid="legend-streaming-data"
           >
@@ -383,11 +387,10 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
           </Badge>
           <Badge
             variant="outline"
-            className={`cursor-pointer transition-opacity ${
-              hiddenTypes.has('conf')
-                ? 'opacity-40 line-through'
-                : 'bg-node-conf/20 border-node-conf'
-            }`}
+            className={`cursor-pointer transition-opacity ${hiddenTypes.has('conf')
+              ? 'opacity-40 line-through'
+              : 'bg-node-conf/20 border-node-conf'
+              }`}
             onClick={() => toggleTypeVisibility('conf')}
             data-testid="legend-conf"
           >
@@ -396,11 +399,10 @@ export function LineageGraph({ data: initialData }: LineageGraphProps) {
           <div className="h-6 w-px bg-border" />
           <Badge
             variant="outline"
-            className={`cursor-pointer transition-opacity ${
-              hidePending
-                ? 'opacity-40 line-through'
-                : 'bg-muted/20 border-muted-foreground'
-            }`}
+            className={`cursor-pointer transition-opacity ${hidePending
+              ? 'opacity-40 line-through'
+              : 'bg-muted/20 border-muted-foreground'
+              }`}
             onClick={toggleHidePending}
             data-testid="legend-hide-pending"
           >

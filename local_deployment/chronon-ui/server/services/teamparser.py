@@ -1,7 +1,8 @@
 import json
 import os
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List
+from server.errors import TeamNotFoundError
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -12,42 +13,27 @@ class TeamParser:
     Given a top-level metadata directory, this parser will:
     1. Find all team subdirectories
     2. Read the metadata file for each team
-    3. Return a dictionary mapping team names to their metadata
+    3. Store the parsed metadata for retrieval
     """
 
     def __init__(self, metadata_directory: str):
-        """Initialize the TeamParser.
+        """Initialize the TeamParser and parse all team metadata.
 
         Args:
             metadata_directory: Path to the top-level teams_metadata directory
         """
         self._metadata_directory = metadata_directory
+        self._teams_metadata: Dict[str, Any] = {}
+        
 
-    def parse(self, team_names_only: bool = False) -> Dict[str, Any] | list[str]:
-        """Parse all team metadata files.
-
-        Args:
-            team_names_only: If True, return only team names as a list.
-                           If False, return full metadata dictionary.
-
-        Returns:
-            If team_names_only is True:
-                List of team names: ["default", "quickstart"]
-            If team_names_only is False:
-                Dictionary mapping team names to their metadata:
-                {
-                    "default": {...metadata...},
-                    "quickstart": {...metadata...}
-                }
-        """
-        teams_metadata = {}
-
+    def _parse(self) -> None:
+        """Parse all team metadata files and store in instance variable."""
         # Check if directory exists
         if not os.path.isdir(self._metadata_directory):
             logger.warning(
                 "Metadata directory does not exist: %s", self._metadata_directory
             )
-            return [] if team_names_only else teams_metadata
+            return
 
         logger.info("Parsing teams metadata directory: %s", self._metadata_directory)
 
@@ -76,7 +62,7 @@ class TeamParser:
             try:
                 with open(metadata_file_path, "r", encoding="utf-8") as f:
                     metadata = json.load(f)
-                teams_metadata[team_name] = metadata
+                self._teams_metadata[team_name] = metadata
                 logger.info("Successfully parsed metadata for team: %s", team_name)
             except json.JSONDecodeError as exc:
                 logger.error(
@@ -93,8 +79,37 @@ class TeamParser:
                     exc,
                 )
 
-        logger.info("Parsed %d team(s)", len(teams_metadata))
+        logger.info("Parsed %d team(s)", len(self._teams_metadata))
 
-        if team_names_only:
-            return sorted(teams_metadata.keys())
-        return teams_metadata
+    def get_team_names(self) -> List[str]:
+        """Get list of all team names.
+
+        Returns:
+            Sorted list of team names: ["default", "quickstart"]
+        """
+        self._parse()
+        return sorted(self._teams_metadata.keys())
+
+    def get_metadata(self, team_name: str | None = None) -> Dict[str, Any] | None:
+        """Get team metadata.
+
+        Args:
+            team_name: Optional team name to get metadata for a specific team.
+                      If None, returns all team metadata.
+
+        Returns:
+            If team_name is provided:
+                The metadata dict for that team, or None if not found.
+            If team_name is None:
+                Dictionary mapping team names to their metadata:
+                {
+                    "default": {...metadata...},
+                    "quickstart": {...metadata...}
+                }
+        """
+        self._parse()
+        if team_name is not None:
+            if team_name not in self._teams_metadata:
+                raise TeamNotFoundError(f"Team not found: {team_name}")
+            return self._teams_metadata[team_name]
+        return self._teams_metadata

@@ -8,11 +8,12 @@ build-all:
 	cd .. && ./mill python.installEditable
 
 load-data:
-	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && spark-shell -i ./scripts/data-loader.scala --master local[*]"
+	docker exec -it local_deployment-chronon-spark-1 bash -c "cd app && spark-shell -i /srv/chronon/scripts/data-loader.scala --master local[*]"
 
 compile:
 	cd app && zipline compile
 	make upload-meta
+	make upload-compiled-s3
 
 upload-meta:
 	curl -X 'POST' \
@@ -20,6 +21,12 @@ upload-meta:
 	  -H 'accept: application/json' \
 	  -H 'Content-Type: application/json' \
 	  -d '{"teamName": "quickstart"}'
+
+upload-compiled-s3:
+	curl -X 'POST' \
+	'http://localhost:8005/v1/remote-resources/upload_s3/compiled_configs' \
+	-H 'accept: application/json' \
+	-d ''
 
 connect:
 	docker exec -it local_deployment-chronon-spark-1 bash

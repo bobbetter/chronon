@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from server.services.datascanner import DataScanner
+from server.services.datascanner_local import DataScannerLocal
 
 
 @pytest.fixture
@@ -13,12 +13,12 @@ def test_warehouse_path():
 @pytest.fixture
 def scanner(test_warehouse_path):
     """Create a DataScanner instance with the test warehouse."""
-    return DataScanner(test_warehouse_path)
+    return DataScannerLocal(test_warehouse_path)
 
 
 def test_datascanner_initialization(test_warehouse_path):
     """Test that DataScanner can be initialized."""
-    scanner = DataScanner(test_warehouse_path)
+    scanner = DataScannerLocal(test_warehouse_path)
     assert scanner.warehouse_path == Path(test_warehouse_path)
 
 
@@ -34,7 +34,7 @@ def test_list_databases(scanner):
 
 def test_list_databases_nonexistent_path():
     """Test listing databases with a non-existent path."""
-    scanner = DataScanner("/nonexistent/path")
+    scanner = DataScannerLocal("/nonexistent/path")
     databases = scanner.list_databases()
     assert databases == []
 

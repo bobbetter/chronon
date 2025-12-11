@@ -3,11 +3,16 @@ import os
 import re
 import logging
 from enum import Enum
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
-from server.services.datascanner import DataScanner
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
+from server.services.datascanner_base import DataScannerBase
+from server.services.dynamodb import DynamoDBClient
+from server.services.kinesis import KinesisClient
+from server.config import ComputeEngine
+from pathlib import Path
 
 logger = logging.getLogger("uvicorn.error")
-HARDCODED_DB_NAME = "data"  # TODO: Make this dynamic
+RAW_DATA_DB_NAME = "data" # TODO: Make this dynamic
+
 
 
 class NodeTypes(Enum):
@@ -102,6 +107,69 @@ def _underscore_name(name: str) -> str:
     return name.replace(".", "_")
 
 
+class _ParseContext:
+    """
+    Thread-safe context for a single parse operation.
+    
+    This holds all the mutable state needed during parsing, ensuring that
+    concurrent parse() calls don't interfere with each other.
+    """
+    
+    def __init__(
+        self,
+        datascanner: Optional[DataScannerBase],
+        dynamodb_client: Optional[DynamoDBClient] = None,
+    ):
+        self.graph = Graph()
+        self.seen_nodes: Set[str] = set()
+        self.seen_edges: Set[Tuple[str, str]] = set()
+        self.datascanner = datascanner
+        self.dynamodb_client = dynamodb_client
+
+    def add_node_once(self, node: Node) -> None:
+        if node.name in self.seen_nodes:
+            return
+        self.graph.add_node(node)
+        self.seen_nodes.add(node.name)
+
+    def add_edge_once(self, edge: Edge) -> None:
+        key = (edge.source, edge.target)
+        if key in self.seen_edges:
+            return
+        self.graph.add_edge(edge)
+        self.seen_edges.add(key)
+
+    def get_batch_data_exists(self, table_name: str) -> bool:
+        if self.datascanner is None:
+            return False
+
+        database_name = RAW_DATA_DB_NAME
+        table = table_name
+        if "." in table_name:
+            database_name, table = table_name.split(".", 1)
+
+        return self.datascanner.get_table_exists(database_name, table)
+
+    def get_online_table_exists(self, dataset_name: str) -> bool:
+        """
+        Check if an online table exists in DynamoDB.
+        
+        Args:
+            dataset_name: The dataset/config name (will be sanitized to DynamoDB table name)
+            
+        Returns:
+            True if the DynamoDB table exists, False otherwise
+        """
+        if self.dynamodb_client is None:
+            return False
+
+        try:
+            return self.dynamodb_client.table_exists(dataset_name, sanitize=True)
+        except Exception as e:
+            logger.warning(f"Error checking online table existence for '{dataset_name}': {e}")
+            return False
+
+
 class GraphParser:
     """This parses all configuration files and creates a "full graph" of configuration files,
     raw data nodes, streaming data nodes, online data nodes, and edges between them.
@@ -111,51 +179,41 @@ class GraphParser:
 
     def __init__(
         self,
-        directory_path_gbs: str,
-        directory_path_joins: str = None,
-        datascanner: DataScanner = None,
+        directory_path_gbs: Path,
+        directory_path_joins: Path = None,
+        datascanner_local: Optional[DataScannerBase] = None,
+        datascanner_remote: Optional[DataScannerBase] = None,
+        dynamodb_client_local: Optional[DynamoDBClient] = None,
+        dynamodb_client_remote: Optional[DynamoDBClient] = None,
+        kinesis_client: KinesisClient = None,
     ):
         self._directory_path_gbs = directory_path_gbs
         self._directory_path_joins = directory_path_joins
-        self._datascanner = datascanner
-        self.graph = Graph()
-        self.seen_nodes: set = set()
-        self.seen_edges: set = set()
+        self._datascanner_local = datascanner_local
+        self._datascanner_remote = datascanner_remote
+        self._dynamodb_client_local = dynamodb_client_local
+        self._dynamodb_client_remote = dynamodb_client_remote
+        self._kinesis_client = kinesis_client
 
-    def _get_batch_data_exists(self, table_name: str) -> bool:
-        # If no datascanner is provided, we can't check existence
-        if self._datascanner is None:
-            return False
+    def _get_datascanner(self, compute_engine: ComputeEngine) -> Optional[DataScannerBase]:
+        """Get the appropriate datascanner based on compute engine."""
+        if compute_engine == ComputeEngine.REMOTE:
+            return self._datascanner_remote
+        return self._datascanner_local
 
-        database_name = HARDCODED_DB_NAME
-        table = table_name
-        if "." in table_name:
-            database_name, table = table_name.split(".", 1)
+    def _get_dynamodb_client(self, compute_engine: ComputeEngine) -> Optional[DynamoDBClient]:
+        """Get the appropriate DynamoDB client based on compute engine."""
+        if compute_engine == ComputeEngine.REMOTE:
+            return self._dynamodb_client_remote
+        return self._dynamodb_client_local
 
-        return self._datascanner.get_table_exists(database_name, table)
-
-    def _add_node_once(self, node: Node) -> None:
-        if node.name in self.seen_nodes:
-            return
-
-        self.graph.add_node(node)
-        self.seen_nodes.add(node.name)
-
-    def _add_edge_once(self, edge: Edge) -> None:
-        key = (edge.source, edge.target)
-        if key in self.seen_edges:
-            return
-
-        self.graph.add_edge(edge)
-        self.seen_edges.add(key)
-
-    def _get_stream_name(self, config_data: Dict[str, Any]) -> Union[str, None]:
+    def _get_stream_name(self, config_data: Dict[str, Any]) -> Union[Tuple[str, bool], None]:
         # Not sure what the case for multiple sources is in Chronon
         sources = config_data["sources"][0]
         
         # Check if this is an events source (not entities)
         if "events" not in sources:
-            return None
+            return (None, False)
             
         events = sources["events"]
 
@@ -173,12 +231,22 @@ class GraphParser:
                 topic = topic[len("kafka://") :]
 
             # Get the stream name (first part before /)
-            return topic.split("/")[0]
+            stream_name = topic.split("/")[0]
+            logger.info(f"Found event stream name: {stream_name}")
+            if self._kinesis_client:
+                exists = stream_name in self._kinesis_client.list_streams()
+                logger.info(f"Stream exists: {exists}")
+            else:
+                exists = False
+            return (stream_name, exists)
         else:
-            return None
+            return (None, False)
 
     def _parse_group_by_config(
-        self, config_data: Dict[str, Any], config_file_path: Optional[str] = None
+        self,
+        ctx: _ParseContext,
+        config_data: Dict[str, Any],
+        config_file_path: Optional[str] = None,
     ) -> None:
         conf_name: str = config_data["metaData"]["name"]
         sources = config_data["sources"][0]
@@ -193,6 +261,7 @@ class GraphParser:
         backfill_name = f"{team_name}.{_underscore_name(conf_name)}"
         upload_name = f"{team_name}.{_underscore_name(conf_name)}__upload"
         online_data_batch_name = f"{_underscore_name(conf_name)}_batch"
+        online_data_streaming_table_name = f"{_underscore_name(conf_name)}_streaming"
 
         nodes = [
             Node(
@@ -207,7 +276,7 @@ class GraphParser:
                 raw_table_name,
                 NodeTypes.RAW_DATA,
                 NodeTypesVisual.BATCH_DATA,
-                self._get_batch_data_exists(raw_table_name),
+                ctx.get_batch_data_exists(raw_table_name),
                 ["show"],
                 None,
             ),
@@ -215,7 +284,7 @@ class GraphParser:
                 backfill_name,
                 NodeTypes.BACKFILL_GROUP_BY,
                 NodeTypesVisual.BATCH_DATA,
-                self._get_batch_data_exists(backfill_name),
+                ctx.get_batch_data_exists(backfill_name),
                 ["show"],
                 None,
             ),
@@ -223,7 +292,7 @@ class GraphParser:
                 upload_name,
                 NodeTypes.PRE_COMPUTED_UPLOAD,
                 NodeTypesVisual.BATCH_DATA,
-                self._get_batch_data_exists(upload_name),
+                ctx.get_batch_data_exists(upload_name),
                 ["show", "upload-to-kv"],
                 config_file_path,
             ),
@@ -231,40 +300,37 @@ class GraphParser:
                 online_data_batch_name,
                 NodeTypes.BATCH_UPLOADED,
                 NodeTypesVisual.ONLINE_DATA,
-                self._get_batch_data_exists(upload_name),
+                ctx.get_online_table_exists(online_data_batch_name),
                 None,
                 None,
             ),
         ]
 
-        stream_event_name: str = self._get_stream_name(config_data)
-        if stream_event_name:
+        input_stream_name, stream_exists = self._get_stream_name(config_data)
+        if input_stream_name:
             nodes.append(
                 Node(
-                    stream_event_name,
+                    input_stream_name,
                     NodeTypes.EVENT_STREAM,
                     NodeTypesVisual.STREAMING_DATA,
-                    True,
+                    stream_exists,
                     None,
                     None,
                 )
             )
-            online_data_stream_name = (
-                f"{team_name}.{_underscore_name(stream_event_name)}_streaming"
-            )
             nodes.append(
                 Node(
-                    online_data_stream_name,
+                    online_data_streaming_table_name,
                     NodeTypes.STREAMING_INGESTED,
                     NodeTypesVisual.ONLINE_DATA,
-                    True,
+                    ctx.get_online_table_exists(online_data_streaming_table_name),
                     None,
                     None,
                 )
             )
 
         for node in nodes:
-            self._add_node_once(node)
+            ctx.add_node_once(node)
 
         edges = [
             Edge(raw_table_name, conf_name, True),
@@ -273,15 +339,20 @@ class GraphParser:
             Edge(upload_name, online_data_batch_name, True),
         ]
 
-        if stream_event_name:
-            edges.append(Edge(stream_event_name, conf_name, True))
-            edges.append(Edge(conf_name, online_data_stream_name, True))
+        if input_stream_name:
+            edges.append(Edge(input_stream_name, conf_name, True))
+        
+        if online_data_streaming_table_name:
+            edges.append(Edge(conf_name, online_data_streaming_table_name, True))
 
         for edge in edges:
-            self._add_edge_once(edge)
+            ctx.add_edge_once(edge)
 
     def _parse_join_config(
-        self, config_data: Dict[str, Any], config_file_path: Optional[str] = None
+        self,
+        ctx: _ParseContext,
+        config_data: Dict[str, Any],
+        config_file_path: Optional[str] = None,
     ) -> None:
         conf_name: str = config_data["metaData"]["name"]
         join_parts = config_data["joinParts"]
@@ -293,7 +364,7 @@ class GraphParser:
                 left_table_name,
                 NodeTypes.RAW_DATA,
                 NodeTypesVisual.BATCH_DATA,
-                self._get_batch_data_exists(left_table_name),
+                ctx.get_batch_data_exists(left_table_name),
                 ["show"],
                 None,
             ),
@@ -309,24 +380,25 @@ class GraphParser:
                 training_data_set_name,
                 NodeTypes.BACKFILL_JOIN,
                 NodeTypesVisual.BATCH_DATA,
-                self._get_batch_data_exists(training_data_set_name),
+                ctx.get_batch_data_exists(training_data_set_name),
                 ["show"],
                 None,
             ),
         ]
         for node in nodes:
-            self._add_node_once(node)
+            ctx.add_node_once(node)
 
-        self._add_edge_once(Edge(source=left_table_name, target=conf_name, exists=True))
+        ctx.add_edge_once(
+            Edge(source=left_table_name, target=conf_name, exists=True))
 
-        self._add_edge_once(
-            Edge(source=conf_name, target=training_data_set_name, exists=False)
+        ctx.add_edge_once(
+            Edge(source=conf_name, target=training_data_set_name, exists=True)
         )
 
         for join_part in join_parts:
             group_by_name = join_part["groupBy"]["metaData"]["name"]
             edge = Edge(source=group_by_name, target=conf_name, exists=True)
-            self._add_edge_once(edge)
+            ctx.add_edge_once(edge)
 
     def _get_short_config_file_path(self, config_file_path: str) -> str:
         """/app/server/chronon_config/compiled/group_bys/quickstart/users.v1__1
@@ -336,19 +408,20 @@ class GraphParser:
             return match.group(1)
         return config_file_path
 
-    def _add_orphan_raw_data_nodes(self) -> None:
-        if self._datascanner is None:
+    def _add_orphan_raw_data_nodes(self, ctx: _ParseContext) -> None:
+        """Add raw data nodes that have not been referenced in any configuration files yet."""
+        if ctx.datascanner is None:
             return
-        all_raw_data_nodes = self._datascanner.list_tables(
-            db_name=HARDCODED_DB_NAME, with_db_name=True
+        all_raw_data_nodes = ctx.datascanner.list_tables(
+            db_name=RAW_DATA_DB_NAME, with_db_name=True
         )
         raw_data_nodes_from_conf = [
-            x.name for x in self.graph.nodes if x.type == NodeTypes.RAW_DATA.value
+            x.name for x in ctx.graph.nodes if x.type == NodeTypes.RAW_DATA.value
         ]
 
         for raw_data_node in all_raw_data_nodes:
             if raw_data_node not in raw_data_nodes_from_conf:
-                self.graph.add_node(
+                ctx.graph.add_node(
                     Node(
                         raw_data_node,
                         NodeTypes.RAW_DATA,
@@ -359,17 +432,18 @@ class GraphParser:
                     )
                 )
 
-    def _add_orphan_streaming_data_nodes_FAKE(self) -> None:
-        if self._datascanner is None:
+    def _add_orphan_streaming_data_nodes(self, ctx: _ParseContext) -> None:
+        if self._kinesis_client is None:
             return
-        all_streaming_data_nodes = ["events.page_views", "events.logins"]
+        all_streaming_data_nodes = self._kinesis_client.list_streams()
         streaming_data_nodes_from_conf = [
-            x.name for x in self.graph.nodes if x.type == NodeTypes.EVENT_STREAM.value
+            x.name for x in ctx.graph.nodes if x.type == NodeTypes.EVENT_STREAM.value
         ]
 
         for streaming_data_node in all_streaming_data_nodes:
             if streaming_data_node not in streaming_data_nodes_from_conf:
-                self.graph.add_node(
+                logger.info(f"Adding orphan streaming data node: {streaming_data_node}")
+                ctx.graph.add_node(
                     Node(
                         streaming_data_node,
                         NodeTypes.EVENT_STREAM,
@@ -384,9 +458,9 @@ class GraphParser:
         self, directory_path: Optional[str]
     ) -> Iterable[Tuple[str, str]]:
         """Yield (file_path, short_config_file_path) for compiled config files."""
-        if not directory_path or not os.path.isdir(directory_path):
+        if not os.path.isdir(directory_path):
+            logger.warning(f"Directory not found for parsing: {directory_path}")
             return []
-
         for entry in sorted(os.listdir(directory_path)):
             file_path = os.path.join(directory_path, entry)
             if not os.path.isfile(file_path) or entry in self.IGNORE_FILES:
@@ -394,27 +468,48 @@ class GraphParser:
 
             yield file_path, self._get_short_config_file_path(file_path)
 
-    def parse(self) -> Dict[str, Any]:
-        for file_path, short_path in self._iter_compiled_files(
-            self._directory_path_gbs
-        ):
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    config_data = json.load(f)
-                self._parse_group_by_config(config_data, short_path)
-            except Exception as exc:  # noqa: BLE001
-                logger.error("Skipping file %s: %s", file_path, exc)
+    def parse(
+        self, team_name: str, compute_engine: ComputeEngine = ComputeEngine.LOCAL
+    ) -> Dict[str, Any]:
+        """
+        Parse configuration files and build a graph.
+        
+        This method is thread-safe - all mutable state is kept in a local _ParseContext.
+        
+        Args:
+            team_name: The team name to parse configurations for
+            compute_engine: Which compute engine to use for checking data existence
+            
+        Returns:
+            Dictionary representation of the graph with nodes and edges
+        """
+        # Create a thread-local context for this parse operation
+        datascanner = self._get_datascanner(compute_engine)
+        dynamodb_client = self._get_dynamodb_client(compute_engine)
+        ctx = _ParseContext(datascanner, dynamodb_client)
 
-        for file_path, short_path in self._iter_compiled_files(
-            self._directory_path_joins
-        ):
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    config_data = json.load(f)
-                self._parse_join_config(config_data, short_path)
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Skipping file %s: %s", file_path, exc)
+        if self._directory_path_gbs:
+            for file_path, short_path in self._iter_compiled_files(
+                str(self._directory_path_gbs / team_name)
+            ):
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        config_data = json.load(f)
+                    self._parse_group_by_config(ctx, config_data, short_path)
+                except Exception as e:
+                    logger.error(f"Skipping file {file_path}: {e}")
 
-        self._add_orphan_raw_data_nodes()
-        self._add_orphan_streaming_data_nodes_FAKE()
-        return self.graph.to_dict()
+        if self._directory_path_joins:
+            for file_path, short_path in self._iter_compiled_files(
+                str(self._directory_path_joins / team_name)
+            ):
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        config_data = json.load(f)
+                    self._parse_join_config(ctx, config_data, short_path)
+                except Exception as e:
+                    logger.debug(f"Skipping file {file_path}: {e}")
+
+        self._add_orphan_raw_data_nodes(ctx)
+        self._add_orphan_streaming_data_nodes(ctx)
+        return ctx.graph.to_dict()

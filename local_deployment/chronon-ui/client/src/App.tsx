@@ -6,10 +6,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { TeamProvider } from "@/context/TeamContext";
+import { ComputeEngineProvider } from "@/context/ComputeEngineContext";
+import { ActionDateProvider } from "@/context/ActionDateContext";
 import LineagePage from "@/pages/LineagePage";
 import BatchDataPageV2 from "@/pages/BatchDataPageV2";
 import OnlineDataPage from "@/pages/OnlineDataPage";
 import StreamingDataPage from "@/pages/StreamingDataPage";
+import TeamSettingsPage from "@/pages/TeamSettingsPage";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -19,6 +23,7 @@ function Router() {
       <Route path="/batch-data" component={BatchDataPageV2} />
       <Route path="/online-data" component={OnlineDataPage} />
       <Route path="/streaming-data" component={StreamingDataPage} />
+      <Route path="/settings/team" component={TeamSettingsPage} />
 
       <Route component={NotFound} />
     </Switch>
@@ -33,26 +38,32 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <SidebarProvider style={style as React.CSSProperties}>
-          <div className="flex h-screen w-full">
-            <AppSidebar />
-            <div className="flex flex-col flex-1">
-              <header className="flex items-center justify-between gap-2 p-4 border-b border-border sticky top-0 z-50 bg-background">
-                <div className="flex items-center gap-2">
-                  <SidebarTrigger data-testid="button-sidebar-toggle" />
-                  <h1 className="text-2xl font-semibold">ChronoForce - Feature Engineering Platform</h1>
-                </div>
-                <ThemeToggle />
-              </header>
-              <main className="flex-1 overflow-hidden">
-                <Router />
-              </main>
+      <TeamProvider>
+        <ComputeEngineProvider>
+          <ActionDateProvider>
+          <TooltipProvider>
+          <SidebarProvider style={style as React.CSSProperties}>
+            <div className="flex h-screen w-full">
+              <AppSidebar />
+              <div className="flex flex-col flex-1">
+                <header className="flex items-center justify-between gap-2 p-4 border-b border-border sticky top-0 z-50 bg-background">
+                  <div className="flex items-center gap-2">
+                    <SidebarTrigger data-testid="button-sidebar-toggle" />
+                    <h1 className="text-2xl font-semibold">ChronoForce - Feature Engineering Platform</h1>
+                  </div>
+                  <ThemeToggle />
+                </header>
+                <main className="flex-1 overflow-hidden">
+                  <Router />
+                </main>
+              </div>
             </div>
-          </div>
-        </SidebarProvider>
-        <Toaster />
-      </TooltipProvider>
+          </SidebarProvider>
+          <Toaster />
+        </TooltipProvider>
+        </ActionDateProvider>
+        </ComputeEngineProvider>
+      </TeamProvider>
     </QueryClientProvider>
   );
 }

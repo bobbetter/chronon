@@ -9,7 +9,7 @@ expected_graph = {
             "type_visual": "configuration",
             "exists": True,
             "actions": ["backfill", "pre-compute-upload", "show-online-data"],
-            "config_file_path": "compiled/one_groupby/page_views.v1__1",
+            "config_file_path": "compiled/one_groupby/test-team/page_views.v1__1",
         },
         {
             "name": "data.page_views",
@@ -33,7 +33,7 @@ expected_graph = {
             "type_visual": "batch-data",
             "exists": False,
             "actions": ["show", "upload-to-kv"],
-            "config_file_path": "compiled/one_groupby/page_views.v1__1",
+            "config_file_path": "compiled/one_groupby/test-team/page_views.v1__1",
         },
         {
             "name": "quickstart_page_views_v1__1_batch",
@@ -73,8 +73,12 @@ parent_dir = Path(__file__).parent
 
 def test_graphparser_with_directory_path():
     test_dir = parent_dir / "compiled" / "one_groupby"
-    graph_parser = GraphParser(str(test_dir))
-    graph = graph_parser.parse()
+
+    print("--------------------------------")
+    print(test_dir)
+    print("--------------------------------")
+    graph_parser = GraphParser(test_dir)
+    graph = graph_parser.parse("test-team")
     assert graph == expected_graph
 
 
@@ -86,7 +90,7 @@ second_gb = {
             "type_visual": "configuration",
             "exists": True,
             "actions": ["backfill", "pre-compute-upload", "show-online-data"],
-            "config_file_path": "compiled/two_groupby/page_views.v1__1",
+            "config_file_path": "compiled/two_groupby/test-team/page_views.v1__1",
         },
         {
             "name": "data.page_views",
@@ -110,7 +114,7 @@ second_gb = {
             "type_visual": "batch-data",
             "exists": False,
             "actions": ["show", "upload-to-kv"],
-            "config_file_path": "compiled/two_groupby/page_views.v1__1",
+            "config_file_path": "compiled/two_groupby/test-team/page_views.v1__1",
         },
         {
             "name": "quickstart_page_views_v1__1_batch",
@@ -126,7 +130,7 @@ second_gb = {
             "type_visual": "configuration",
             "exists": True,
             "actions": ["backfill", "pre-compute-upload", "show-online-data"],
-            "config_file_path": "compiled/two_groupby/purchases.v1__1",
+            "config_file_path": "compiled/two_groupby/test-team/purchases.v1__1",
         },
         {
             "name": "data.purchases",
@@ -150,7 +154,7 @@ second_gb = {
             "type_visual": "batch-data",
             "exists": False,
             "actions": ["show", "upload-to-kv"],
-            "config_file_path": "compiled/two_groupby/purchases.v1__1",
+            "config_file_path": "compiled/two_groupby/test-team/purchases.v1__1",
         },
         {
             "name": "quickstart_purchases_v1__1_batch",
@@ -208,8 +212,8 @@ second_gb = {
 
 def test_graphparser_two_gb():
     test_dir = parent_dir / "compiled" / "two_groupby"
-    graph_parser = GraphParser(str(test_dir))
-    graph = graph_parser.parse()
+    graph_parser = GraphParser(test_dir)
+    graph = graph_parser.parse("test-team")
     assert graph == second_gb
 
 
@@ -221,7 +225,7 @@ expected_graph_with_joins = {
             "type_visual": "configuration",
             "exists": True,
             "actions": ["backfill", "pre-compute-upload", "show-online-data"],
-            "config_file_path": "compiled/one_groupby/page_views.v1__1",
+            "config_file_path": "compiled/one_groupby/test-team/page_views.v1__1",
         },
         {
             "name": "data.page_views",
@@ -245,7 +249,7 @@ expected_graph_with_joins = {
             "type_visual": "batch-data",
             "exists": False,
             "actions": ["show", "upload-to-kv"],
-            "config_file_path": "compiled/one_groupby/page_views.v1__1",
+            "config_file_path": "compiled/one_groupby/test-team/page_views.v1__1",
         },
         {
             "name": "quickstart_page_views_v1__1_batch",
@@ -268,7 +272,7 @@ expected_graph_with_joins = {
                 "backfill",
                 "show-online-data",
             ],
-            "config_file_path": "compiled/one_join/training_set.v1__1",
+            "config_file_path": "compiled/one_join/test-team/training_set.v1__1",
             "exists": True,
             "name": "quickstart.training_set.v1__1",
             "type": "join",
@@ -336,5 +340,5 @@ parent_dir = Path(__file__).parent
 def test_graphparser_gb_with_joins():
     test_dir_gb = parent_dir / "compiled" / "one_groupby"
     test_dir_joins = parent_dir / "compiled" / "one_join"
-    graph_parser = GraphParser(str(test_dir_gb), str(test_dir_joins))
-    assert graph_parser.parse() == expected_graph_with_joins
+    graph_parser = GraphParser(test_dir_gb, test_dir_joins)
+    assert graph_parser.parse("test-team") == expected_graph_with_joins

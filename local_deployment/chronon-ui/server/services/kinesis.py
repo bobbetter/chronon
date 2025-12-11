@@ -19,9 +19,9 @@ class _ConsumedRecord(TypedDict):
 
 
 ENDPOINT_URL = os.environ.get("KINESIS_ENDPOINT_URL", "http://localstack:4566")
-REGION_NAME = os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
-ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY_ID", "local")
-SECRET_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "local")
+REGION_NAME = os.environ.get("AWS_DEFAULT_REGION_LOCAL", "us-west-2")
+ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY_ID_LOCAL", "local")
+SECRET_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY_LOCAL", "local")
 SESSION_TOKEN = None
 
 

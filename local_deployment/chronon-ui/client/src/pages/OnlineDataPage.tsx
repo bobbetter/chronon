@@ -34,6 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { Database, Globe, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, fetcherRequest } from "@/lib/queryClient";
+import { useTeam } from "@/context/TeamContext";
 
 interface OnlineConf {
     name: string;
@@ -89,6 +90,7 @@ export default function OnlineDataPage() {
     const [keysInput, setKeysInput] = useState<string>("{}");
     const { toast } = useToast();
     const skipNextReset = useRef(false);
+    const { selectedTeam } = useTeam();
 
     useEffect(() => {
         if (skipNextReset.current) {
@@ -106,11 +108,12 @@ export default function OnlineDataPage() {
         error: listError,
         refetch: refetchConfigs,
     } = useQuery<OnlineConf[]>({
-        queryKey: ["online-confs", dataKind],
+        queryKey: ["online-confs", selectedTeam, dataKind],
         queryFn: async () => {
-            const res = await apiRequest("GET", `/v1/graph/list_confs?conf_type=${dataKind}`);
+            const res = await apiRequest("GET", `/v1/graph/${selectedTeam}/list_confs?conf_type=${dataKind}`);
             return (await res.json()) as OnlineConf[];
         },
+        enabled: !!selectedTeam,
     });
 
     const selectedConfig = useMemo(
@@ -328,28 +331,29 @@ export default function OnlineDataPage() {
                             />
                         </DataTable>
                     </div>
+                    {/* Theme-aware styling for table - supports both light and dark modes */}
                     <style>{`
-                        .custom-datatable .p-datatable-wrapper { background: white; }
+                        .custom-datatable .p-datatable-wrapper { background: hsl(var(--background)) !important; }
                         .custom-datatable .p-datatable-table { border-collapse: separate; border-spacing: 0; }
                         .custom-datatable .p-datatable-thead > tr > th {
-                          background-color: #e5e7eb;
-                          color: #4b5563;
-                          border-bottom: 1px solid #d1d5db;
-                          border-right: 1px solid #d1d5db;
+                          background-color: hsl(var(--muted)) !important;
+                          color: hsl(var(--muted-foreground)) !important;
+                          border-bottom: 1px solid hsl(var(--border)) !important;
+                          border-right: 1px solid hsl(var(--border)) !important;
                           position: sticky; top: 0; z-index: 1;
                         }
-                        .custom-datatable .p-datatable-thead > tr > th:last-child { border-right: none; }
+                        .custom-datatable .p-datatable-thead > tr > th:last-child { border-right: none !important; }
                         .custom-datatable .p-datatable-tbody > tr > td {
-                          border-top: 1px solid #e5e7eb;
-                          border-right: 1px solid #e5e7eb;
-                          color: #000000;
-                          background-color: #ffffff;
+                          border-top: 1px solid hsl(var(--border)) !important;
+                          border-right: 1px solid hsl(var(--border)) !important;
+                          color: hsl(var(--foreground)) !important;
+                          background-color: hsl(var(--background)) !important;
                           padding: 0.375rem 0.75rem;
                           line-height: 1.75;
                         }
-                        .custom-datatable .p-datatable-tbody > tr > td:last-child { border-right: none; }
-                        .custom-datatable .p-datatable-tbody > tr:nth-child(even) > td { background-color: #f9fafb; }
-                        .custom-datatable .p-datatable-tbody > tr:hover > td { background-color: #eff6ff; }
+                        .custom-datatable .p-datatable-tbody > tr > td:last-child { border-right: none !important; }
+                        .custom-datatable .p-datatable-tbody > tr:nth-child(even) > td { background-color: hsl(var(--card)) !important; }
+                        .custom-datatable .p-datatable-tbody > tr:hover > td { background-color: hsl(var(--secondary)) !important; }
                     `}</style>
                 </CardContent>
             </Card>
