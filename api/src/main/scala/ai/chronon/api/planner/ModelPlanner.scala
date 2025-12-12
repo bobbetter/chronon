@@ -22,23 +22,26 @@ class ModelPlanner(model: Model)(implicit outputPartitionSpec: PartitionSpec)
     semantic
   }
 
-  def createTrainNode: Option[Node] = {
-    if (!model.isSetTrainingConf) {
-      return None
+  private def createTrainNode: Option[Node] = {
+    val result = for {
+      trainingConf <- Option(model.trainingConf)
+      trainingDataSource <- Option(trainingConf.trainingDataSource)
+      trainingDataWindow <- Option(trainingConf.trainingDataWindow)
+      tableDeps <- TableDependencies.fromSource(trainingDataSource, maxWindowOpt = Option(trainingDataWindow))
+    } yield {
+      val metaData =
+        MetaDataUtils.layer(
+          model.metaData,
+          "model_training",
+          model.metaData.name + "__model_training",
+          Seq(tableDeps),
+          None
+        )
+      val node = new TrainModelNode().setModel(eraseExecutionInfo)
+      val copy = semanticModel(model)
+      toNode(metaData, _.setTrainModel(node), copy)
     }
-    val tableDeps =
-      TableDependencies.fromSource(model.trainingConf.trainingDataSource, maxWindowOpt = Some(WindowUtils.zero())).get
-    val metaData =
-      MetaDataUtils.layer(
-        model.metaData,
-        "model_training",
-        model.metaData.name + "__model_training",
-        Seq(tableDeps),
-        None
-      )
-    val node = new TrainModelNode().setModel(eraseExecutionInfo)
-    val copy = semanticModel(model)
-    Some(toNode(metaData, _.setTrainModel(node), copy))
+    result
   }
 
   def createEndpointNode: Node = {

@@ -498,11 +498,14 @@ object Builders {
 
   object TrainingSpec {
     def apply(
-        trainingDataSource: Source = null
+        trainingDataSource: Source = null,
+        trainingDataWindow: Window = null
     ): TrainingSpec = {
       val result = new TrainingSpec()
       if (trainingDataSource != null)
         result.setTrainingDataSource(trainingDataSource)
+      if (trainingDataWindow != null)
+        result.setTrainingDataWindow(trainingDataWindow)
       result
     }
   }

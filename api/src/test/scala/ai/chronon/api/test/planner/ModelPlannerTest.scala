@@ -13,14 +13,15 @@ class ModelPlannerTest extends AnyFlatSpec with Matchers {
 
   private implicit val testPartitionSpec: PartitionSpec = PartitionSpec.daily
 
-  private def buildModelWithTrainingSpec(name: String): Model = {
+  private def buildModelWithTrainingSpec(name: String, trainingDataSource: Source, trainingWindow: Window): Model = {
     B.Model(
       metaData = B.MetaData(
         name = name,
         namespace = "test_namespace"
       ),
       trainingSpec = B.TrainingSpec(
-        trainingDataSource = B.Source.events(table = "training_data_table", query = Query())
+        trainingDataSource = trainingDataSource,
+        trainingDataWindow = trainingWindow
       ),
       inferenceSpec = B.InferenceSpec(
         modelBackend = ModelBackend.VertexAI,
@@ -43,7 +44,8 @@ class ModelPlannerTest extends AnyFlatSpec with Matchers {
   }
 
   "ModelPlanner" should "create trainModel, createEndpoint and deployModel nodes when trainingSpec is present" in {
-    val model = buildModelWithTrainingSpec("test_model_with_training")
+    val trainingDataTable = "training_data_table"
+    val model = buildModelWithTrainingSpec("test_model_with_training", B.Source.events(table = trainingDataTable, query = Query()), new Window().setTimeUnit(TimeUnit.DAYS).setLength(5))
     val planner = new ModelPlanner(model)
     val plan = planner.buildPlan
 
@@ -56,6 +58,13 @@ class ModelPlannerTest extends AnyFlatSpec with Matchers {
     val deployModelNode = plan.nodes.asScala.find(_.content.isSetDeployModel)
 
     trainModelNode should be(defined)
+
+    // Verify trainModel node's table deps
+    val trainTableDeps = trainModelNode.get.metaData.executionInfo.tableDependencies.asScala
+    trainTableDeps should have size 1
+    trainTableDeps.head.tableInfo.table shouldBe trainingDataTable
+    trainTableDeps.head.startOffset shouldBe new Window().setTimeUnit(TimeUnit.DAYS).setLength(5)
+
     createEndpointNode should be(defined)
     deployModelNode should be(defined)
 
