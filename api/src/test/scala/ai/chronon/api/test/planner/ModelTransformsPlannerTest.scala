@@ -66,7 +66,7 @@ class ModelTransformsPlannerTest extends AnyFlatSpec with Matchers {
     plan.terminalNodeNames.get(Mode.DEPLOY) shouldBe uploadNode.get.metaData.name
   }
 
-  "ModelTransformsPlanner" should "handle model transforms with join source" in {
+  "ModelTransformsPlanner" should "handle model transforms with join source and no derivations" in {
     val join = B.Join(
       left = B.Source.events(
         query = B.Query(),
@@ -97,7 +97,61 @@ class ModelTransformsPlannerTest extends AnyFlatSpec with Matchers {
     // Verify the node has dependencies (should include the upstream join metadata upload)
     val deps = uploadNode.get.metaData.executionInfo.tableDependencies.asScala
     deps should not be empty
+
+    val backfillNode = plan.nodes.asScala.find(_.content.isSetModelTransformsBackfill)
+    backfillNode should be(defined)
+    val backfillDeps = backfillNode.get.metaData.executionInfo.tableDependencies.asScala
+    backfillDeps should not be empty
+    backfillDeps.length shouldBe 1
+    backfillDeps.head.tableInfo.table shouldBe "test_namespace.test_join"
   }
+
+  "ModelTransformsPlanner" should "handle model transforms with join source and contains derivations" in {
+    val join = B.Join(
+      left = B.Source.events(
+        query = B.Query(),
+        table = "test_namespace.events_table"
+      ),
+      joinParts = Seq.empty,
+      metaData = B.MetaData(
+        name = "test_join",
+        namespace = "test_namespace"
+      ),
+      derivations = Seq(
+        B.Derivation(
+          name = "derived_col",
+          expression = "some-expression")
+      )
+    )
+
+    val joinSource = B.Source.joinSource(
+      join = join,
+      query = B.Query()
+    )
+
+    val modelTransforms = buildModelTransforms("test_model_transforms_with_join", joinSource)
+    val planner = new ModelTransformsPlanner(modelTransforms)
+    val plan = planner.buildPlan
+
+    // Should create plan successfully with both upload and backfill nodes
+    plan.nodes.asScala should have size 2
+
+    val uploadNode = plan.nodes.asScala.find(_.content.isSetModelTransformsUpload)
+    uploadNode should be(defined)
+
+    // Verify the node has dependencies (should include the upstream join metadata upload)
+    val deps = uploadNode.get.metaData.executionInfo.tableDependencies.asScala
+    deps should not be empty
+
+    val backfillNode = plan.nodes.asScala.find(_.content.isSetModelTransformsBackfill)
+    backfillNode should be(defined)
+    val backfillDeps = backfillNode.get.metaData.executionInfo.tableDependencies.asScala
+    backfillDeps should not be empty
+    backfillDeps.length shouldBe 1
+    backfillDeps.head.tableInfo.table shouldBe "test_namespace.test_join__derived"
+  }
+
+
 
   it should "create both backfill and upload nodes" in {
     val source = B.Source.events(
