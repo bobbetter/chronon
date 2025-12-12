@@ -5,7 +5,7 @@ set -e
 # Usage: ./run_flink_job.sh <groupby-name>
 
 # Configuration
-GROUPBY_NAME="${1:-quickstart.logins.v1__1}"
+GROUPBY_NAME="${1:-mli.logins.v1__1}"
 STREAM_NAME="login-events"
 KAFKA_BOOTSTRAP="${KAFKA_BOOTSTRAP:-kafka:9092}"
 FLINK_JOBMANAGER="${FLINK_JOBMANAGER:-flink-jobmanager:8081}"

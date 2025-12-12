@@ -20,7 +20,7 @@ upload-meta:
 	  'http://localhost:8083/api/v1/metadata/upload' \
 	  -H 'accept: application/json' \
 	  -H 'Content-Type: application/json' \
-	  -d '{"teamName": "quickstart"}'
+	  -d '{"teamName": "mli"}'
 
 upload-compiled-s3:
 	curl -X 'POST' \

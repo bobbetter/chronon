@@ -162,8 +162,6 @@ services:
       dockerfile: chronon-ui/server/Dockerfile
     ports:
       - "8005:8005"
-    env_file:
-      - ./chronon-ui/server/.env
     environment:
       PYTHONUNBUFFERED: 1
       KINESIS_ENDPOINT_URL: http://localstack:4566
