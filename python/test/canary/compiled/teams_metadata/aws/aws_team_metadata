@@ -2,7 +2,7 @@
   "executionInfo": {
     "clusterConf": {
       "common": {
-        "emr.config": "{\"releaseLabel\": \"emr-7.12.0\", \"instanceType\": \"m5.xlarge\", \"instanceCount\": 3, \"subnetName\": \"zipline-canary-subnet-main\", \"securityGroupName\": \"zipline-canary-sg\", \"autoTerminationPolicy\": {\"idleTimeout\": 300}}"
+        "emr.config": "{\"releaseLabel\": \"emr-7.12.0\", \"instanceType\": \"m5.xlarge\", \"instanceCount\": 3, \"autoTerminationPolicy\": {\"idleTimeout\": 300}, \"subnetName\": \"zipline-canary-subnet-main\", \"securityGroupName\": \"zipline-canary-sg\"}"
       }
     },
     "conf": {
@@ -31,7 +31,7 @@
       "common": {
         "ARTIFACT_PREFIX": "s3://zipline-artifacts-dev",
         "AWS_REGION": "us-west-2",
-        "CHRONON_ONLINE_ARGS": "-Ztasks=4",
+        "CHRONON_ONLINE_ARGS": " -Ztasks=4",
         "CLOUD_PROVIDER": "aws",
         "CUSTOMER_ID": "dev",
         "EMR_CLUSTER_NAME": "zipline-canary-emr",

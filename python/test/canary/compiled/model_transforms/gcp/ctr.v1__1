@@ -273,7 +273,7 @@
               "name": "price_log"
             },
             {
-              "expression": "\n                CASE \n                    WHEN listing_id_price_cents < 1000 THEN 0\n                    WHEN listing_id_price_cents < 5000 THEN 1\n                    WHEN listing_id_price_cents < 10000 THEN 2\n                    WHEN listing_id_price_cents < 50000 THEN 3\n                    ELSE 4\n                END\n            ",
+              "expression": "\n                CASE\n                    WHEN listing_id_price_cents < 1000 THEN 0\n                    WHEN listing_id_price_cents < 5000 THEN 1\n                    WHEN listing_id_price_cents < 10000 THEN 2\n                    WHEN listing_id_price_cents < 50000 THEN 3\n                    ELSE 4\n                END\n            ",
               "name": "price_bucket"
             },
             {

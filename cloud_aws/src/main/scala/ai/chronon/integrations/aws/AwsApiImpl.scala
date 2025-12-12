@@ -58,4 +58,6 @@ class AwsApiImpl(conf: Map[String, String]) extends Api(conf) {
   override def genMetricsKvStore(tableBaseName: String): KVStore = {
     new DynamoDBKVStoreImpl(ddbClient)
   }
+
+  override def genEnhancedStatsKvStore(tableBaseName: String): KVStore = ???
 }

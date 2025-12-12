@@ -1,7 +1,7 @@
 {
   "deploymentConf": {
     "containerConfig": {
-      "image": "763104351884.dkr.ecr.us-west-2.amazonaws.com/xgboost-inference:latest"
+      "image": "763104351884.dkr.ecr.us-east-1.amazonaws.com/xgboost-inference:latest"
     },
     "endpointConfig": {
       "endpointName": "test_ctr_model"
@@ -29,7 +29,7 @@
     "executionInfo": {
       "clusterConf": {
         "common": {
-          "emr.config": "{\"releaseLabel\": \"emr-7.12.0\", \"instanceType\": \"m5.xlarge\", \"instanceCount\": 3, \"subnetName\": \"zipline-canary-subnet-main\", \"securityGroupName\": \"zipline-canary-sg\", \"autoTerminationPolicy\": {\"idleTimeout\": 300}}"
+          "emr.config": "{\"releaseLabel\": \"emr-7.12.0\", \"instanceType\": \"m5.xlarge\", \"instanceCount\": 3, \"autoTerminationPolicy\": {\"idleTimeout\": 300}, \"subnetName\": \"zipline-canary-subnet-main\", \"securityGroupName\": \"zipline-canary-sg\"}"
         }
       },
       "conf": {
@@ -83,7 +83,7 @@
     "ctr": "score"
   },
   "trainingConf": {
-    "image": "763104351884.dkr.ecr.us-west-2.amazonaws.com/xgboost-training:latest",
+    "image": "763104351884.dkr.ecr.us-east-1.amazonaws.com/xgboost-training:latest",
     "jobConfigs": {
       "eta": "0.1",
       "max-depth": "4",

@@ -698,6 +698,7 @@
           },
           "metaData": {
             "executionInfo": {
+              "enableStatsCompute": 1,
               "scheduleCron": "@daily",
               "stepDays": 2
             },
