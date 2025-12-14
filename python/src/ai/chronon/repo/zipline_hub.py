@@ -3,46 +3,66 @@ import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
-import google.auth
 import requests
-from google.auth.transport.requests import Request
-from google.cloud import iam_credentials_v1
 
 from ai.chronon.cli.formatter import Format, format_print
 
 
 class ZiplineHub:
-    def __init__(self, base_url, sa_name=None, use_auth=False, eval_url=None, format: Format = Format.TEXT):
+    def __init__(self, base_url, sa_name=None, use_auth=False, eval_url=None, cloud_provider=None, format: Format = Format.TEXT):
         if not base_url:
             raise ValueError("Base URL for ZiplineHub cannot be empty.")
         self.base_url = base_url
         self.eval_url = eval_url
         self.format = format
+        self.cloud_provider = cloud_provider.lower() if cloud_provider is not None else cloud_provider
         if self.base_url.startswith("https") or use_auth:
-            self.use_auth = True
-            format_print("\n 🔐 Using Google Cloud authentication for ZiplineHub.", format=format)
-
-            # First try to get ID token from environment (GitHub Actions)
-            self.id_token = os.getenv("GCP_ID_TOKEN")
-            if self.id_token:
-                format_print(" 🔑 Using ID token from environment", format=format)
-            elif sa_name is not None:
-                # Fallback to Google Cloud authentication
-                format_print(" 🔑 Generating ID token from service account credentials", format=format)
-                credentials, project_id = google.auth.default()
-                self.project_id = project_id
-                credentials.refresh(Request())
-
-                self.sa = f"{sa_name}@{project_id}.iam.gserviceaccount.com"
+            if self.cloud_provider == "gcp":
+                self.use_auth = True
+                self._setup_gcp_auth(sa_name)
             else:
-                format_print(" 🔑 Generating ID token from default credentials", format=format)
-                credentials, project_id = google.auth.default()
-                credentials.refresh(Request())
-                self.sa = None
-                self.id_token = credentials.id_token
+                # For non-GCP clouds, check for generic token
+                self.id_token = os.getenv("ID_TOKEN")
+                if not self.id_token:
+                    # Disable auth if ID_TOKEN is not available for non-GCP clouds
+                    self.use_auth = False
+                    self.id_token = None
+                    self.sa = None
+                    format_print("\n ⚠️  No ID_TOKEN found in environment for non-GCP cloud provider. Disabling authentication for ZiplineHub.", format=format)
+                else:
+                    self.use_auth = True
+                    format_print("\n 🔐 Using authentication for ZiplineHub.", format=format)
+                    self.sa = None
         else:
             self.use_auth = False
             format_print("\n 🔓 Not using authentication for ZiplineHub.", format=format)
+
+    def _setup_gcp_auth(self, sa_name):
+        """Setup Google Cloud authentication."""
+        import google.auth
+        from google.auth.transport.requests import Request
+
+        format_print("\n 🔐 Using Google Cloud authentication for ZiplineHub.", format=self.format)
+
+        # First try to get ID token from environment (GitHub Actions)
+        self.id_token = os.getenv("GCP_ID_TOKEN")
+        if self.id_token:
+            format_print(" 🔑 Using ID token from environment", format=self.format)
+            self.sa = None
+        elif sa_name is not None:
+            # Fallback to Google Cloud authentication
+            format_print(" 🔑 Generating ID token from service account credentials", format=self.format)
+            credentials, project_id = google.auth.default()
+            self.project_id = project_id
+            credentials.refresh(Request())
+
+            self.sa = f"{sa_name}@{project_id}.iam.gserviceaccount.com"
+        else:
+            format_print(" 🔑 Generating ID token from default credentials", format=self.format)
+            credentials, project_id = google.auth.default()
+            credentials.refresh(Request())
+            self.sa = None
+            self.id_token = credentials.id_token
 
     def auth_headers(self, url):
         headers = {"Content-Type": "application/json"}
@@ -109,6 +129,9 @@ class ZiplineHub:
             str: A signed JWT that can be used to access IAP protected apps.
                 Use in Authorization header as: 'Bearer <signed_jwt>'
         """
+        import google.auth
+        from google.cloud import iam_credentials_v1
+
         # Get default credentials from environment or application credentials
         source_credentials, project_id = google.auth.default()
 
