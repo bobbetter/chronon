@@ -35,5 +35,4 @@ object `package` extends build.BaseModule {
   }
 
   def prependShellScript = ""
-
 }

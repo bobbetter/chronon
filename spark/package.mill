@@ -21,7 +21,6 @@ object `package` extends build.BaseModule {
 //      mvn"org.apache.parquet:parquet-avro:1.15.2".forceVersion(),
     )
   
-
   // Single test module for all Spark tests
   object test extends build.BaseTestModule {
     def moduleDeps = Seq(build.spark, build.api.test, build.aggregator.test)

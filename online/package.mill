@@ -44,5 +44,4 @@ object `package` extends build.BaseModule {
       "-Djdk.internal.loader.ClassLoaders.setAccessible=true"
     )
   }
-
 }
