@@ -1,0 +1,233 @@
+name: Reusable Spark Tests
+
+on:
+  workflow_call:
+    inputs:
+      scala-version:
+        required: true
+        type: string
+        description: 'Scala version to test (e.g., 2.12.18 or 2.13.17)'
+
+env:
+  SCALA_VERSION: ${{ inputs.scala-version }}
+
+jobs:
+  spark_tests:
+    runs-on: ubuntu_32_core_128gb
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install curl
+        run: |
+          apt-get update && apt-get install -y curl
+
+      - name: Run Other Spark tests
+        run: |
+          ./mill spark\[${{ env.SCALA_VERSION }}\].test.testOnly "ai.chronon.spark.other.*"
+
+  batch_tests:
+    runs-on: ubuntu_32_core_128gb
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install curl
+        run: |
+          apt-get update && apt-get install -y curl
+
+      - name: Run Batch tests
+        run: |
+          ./mill spark\[${{ env.SCALA_VERSION }}\].test.testOnly "ai.chronon.spark.batch.*"
+
+  fetcher_tests:
+    runs-on: ubuntu_32_core_128gb
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install curl
+        run: |
+          apt-get update && apt-get install -y curl
+
+      - name: Run Fetcher tests
+        run: |
+          ./mill spark\[${{ env.SCALA_VERSION }}\].test.testOnly "ai.chronon.spark.fetcher.*"
+
+  join_tests:
+    runs-on: ubuntu_32_core_128gb
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install curl
+        run: |
+          apt-get update && apt-get install -y curl
+
+      - name: Run Join tests
+        run: |
+          ./mill spark\[${{ env.SCALA_VERSION }}\].test.testOnly "ai.chronon.spark.join.*"
+
+  groupby_tests:
+    runs-on: ubuntu_32_core_128gb
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install curl
+        run: |
+          apt-get update && apt-get install -y curl
+
+      - name: Run GroupBy tests
+        run: |
+          ./mill spark\[${{ env.SCALA_VERSION }}\].test.testOnly "ai.chronon.spark.groupby.*"
+
+  analyzer_tests:
+    runs-on: ubuntu-8_cores-32_gb
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install curl
+        run: |
+          apt-get update && apt-get install -y curl
+
+      - name: Run Analyzer tests
+        run: |
+          ./mill spark\[${{ env.SCALA_VERSION }}\].test.testOnly "ai.chronon.spark.analyzer.*" "ai.chronon.spark.bootstrap.*"
+
+  streaming_tests:
+    runs-on: ubuntu-8_cores-32_gb
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install curl
+        run: |
+          apt-get update && apt-get install -y curl
+
+      - name: Run Streaming tests
+        run: |
+          ./mill spark\[${{ env.SCALA_VERSION }}\].test.testOnly "ai.chronon.spark.streaming.*"
+
+  kv_store_tests:
+    runs-on: ubuntu-8_cores-32_gb
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install curl
+        run: |
+          apt-get update && apt-get install -y curl
+
+      - name: Run KV Store tests
+        run: |
+          ./mill spark\[${{ env.SCALA_VERSION }}\].test.testOnly "ai.chronon.spark.kv_store.*"
+
+  udafs_tests:
+    runs-on: ubuntu-8_cores-32_gb
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install curl
+        run: |
+          apt-get update && apt-get install -y curl
+
+      - name: Run UDAFs tests
+        run: |
+          ./mill spark\[${{ env.SCALA_VERSION }}\].test.testOnly "ai.chronon.spark.udafs.*"
+
+  stats_tests:
+    runs-on: ubuntu-8_cores-32_gb
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install curl
+        run: |
+          apt-get update && apt-get install -y curl
+
+      - name: Run Stats tests
+        run: |
+          ./mill spark\[${{ env.SCALA_VERSION }}\].test.testOnly "ai.chronon.spark.stats.*"

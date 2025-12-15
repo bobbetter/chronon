@@ -56,5 +56,9 @@ class AwsApiImpl(conf: Map[String, String]) extends Api(conf) {
     */
   override def logResponse(resp: LoggableResponse): Unit = ()
 
-  override def genMetricsKvStore(tableBaseName: String): KVStore = new DynamoDBKVStoreImpl(ddbClient)
+  override def genMetricsKvStore(tableBaseName: String): KVStore = {
+    new DynamoDBKVStoreImpl(ddbClient)
+  }
+
+  override def genEnhancedStatsKvStore(tableBaseName: String): KVStore = ???
 }

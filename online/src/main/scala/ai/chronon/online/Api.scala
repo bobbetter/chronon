@@ -28,7 +28,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.function.Consumer
-import scala.collection.Seq
+
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
@@ -205,9 +205,9 @@ object ExternalSourceHandler {
 // Chronon issues the request in parallel to groupBy fetches.
 // There is a Java Friendly Handler that extends this and handles conversions
 // see: [[ai.chronon.online.JavaExternalSourceHandler]]
-abstract class ExternalSourceHandler extends Serializable {
+trait ExternalSourceHandler extends Serializable {
   implicit lazy val executionContext: ExecutionContext = ExternalSourceHandler.executor
-  def fetch(requests: Seq[Fetcher.Request]): Future[Seq[Fetcher.Response]]
+  def fetch(requests: scala.Seq[Fetcher.Request]): Future[scala.Seq[Fetcher.Response]]
 }
 
 // the implementer of this class should take a single argument, a scala map of string to string
@@ -226,6 +226,8 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   def genMetricsKvStore(tableBaseName: String): KVStore
 
+  def genEnhancedStatsKvStore(tableBaseName: String): KVStore
+
   def externalRegistry: ExternalSourceRegistry
 
   private var timeoutMillis: Long = 10000
@@ -238,6 +240,8 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   // kafka has built-in support - but one can add support to other types using this method.
   def generateStreamBuilder(streamType: String): StreamBuilder = null
+
+  def generateModelPlatformProvider: ModelPlatformProvider = null
 
   @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
   def setupLogging(): Unit = {}
@@ -266,6 +270,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
       logFunc = responseConsumer,
       debug = debug,
       externalSourceRegistry = externalRegistry,
+      modelPlatformProvider = generateModelPlatformProvider,
       timeoutMillis = timeoutMillis,
       callerName = callerName,
       flagStore = flagStore,
@@ -273,14 +278,17 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     )
 
   final def buildJavaFetcher(callerName: String = null, disableErrorThrows: Boolean = false): JavaFetcher = {
-    new JavaFetcher(genKvStore,
-                    Constants.MetadataDataset,
-                    timeoutMillis,
-                    responseConsumer,
-                    externalRegistry,
-                    callerName,
-                    flagStore,
-                    disableErrorThrows)
+    new JavaFetcher(
+      genKvStore,
+      Constants.MetadataDataset,
+      timeoutMillis,
+      responseConsumer,
+      externalRegistry,
+      generateModelPlatformProvider,
+      callerName,
+      flagStore,
+      disableErrorThrows
+    )
   }
 
   final def buildJavaFetcher(): JavaFetcher = buildJavaFetcher(null)
@@ -289,4 +297,54 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     new Consumer[LoggableResponse] {
       override def accept(t: LoggableResponse): Unit = logResponse(t)
     }
+}
+
+case class PredictRequest(model: Model, inputRequests: Seq[Map[String, AnyRef]])
+case class PredictResponse(predictRequest: PredictRequest, outputs: Try[Seq[Map[String, AnyRef]]])
+case class TrainingRequest(trainingSource: Source, model: Model, date: String, window: Window)
+case class DeployModelRequest(model: Model, version: String, date: String)
+
+// Trait used to distinguish between long-running Model Platform operations
+sealed trait ModelOperation
+case object DeployModel extends ModelOperation
+case object SubmitTrainingJob extends ModelOperation
+case class ModelJobStatus(jobStatusType: JobStatusType, message: String)
+
+/** Defines the interface that model platforms meant to be used in Chronon ModelSources / Transforms must implement.
+  */
+trait ModelPlatform extends Serializable {
+
+  /** Trigger one/more online predictions for a given model.
+    * The mapping from the input keys (using Spark expression eval) as well as the output mapping (also using Spark
+    * expression eval) is done outside the ModelPlatform implementation.
+    *
+    * Currently, this supports both online batch inference calls and Spark job driven batch inference calls. In the
+    * future we might carve out the bulk batch predictions into a separate `batchPredict` method. The current approach
+    * is chosen to maximize compatibility with prospective model backend platforms that might not support both modes.
+    */
+  def predict(predictRequest: PredictRequest): Future[PredictResponse]
+
+  /** Used to trigger a model training job for a given model and training source. The implementation
+    * will use the training source and input transforms to generate a training dataset to feed model training.
+    * The Model's TrainingSpec can be used to configure model parameters such as hyperparameters, compute resources, etc.
+    */
+  def submitTrainingJob(trainingRequest: TrainingRequest): Future[String]
+
+  /** Create an endpoint for a given model - this is a prerequisite for deploying models
+    */
+  def createEndpoint(endpointConfig: EndpointConfig): Future[String]
+
+  /** Initiates a model deployment to a given endpoint. A deployment id is returned that can be used to track the deployment status.
+    */
+  def deployModel(deployModelRequest: DeployModelRequest): Future[String]
+
+  /** Looks up the status of a long-running job (e.g., model deployment, training job etc) by its ID.
+    */
+  def getJobStatus(operation: ModelOperation, id: String): Future[ModelJobStatus]
+}
+
+/** Helps construct and cache ModelPlatform instances based on the model backend type and parameters.
+  */
+trait ModelPlatformProvider extends Serializable {
+  def getPlatform(modelBackend: ModelBackend, backendParams: Map[String, String]): ModelPlatform
 }

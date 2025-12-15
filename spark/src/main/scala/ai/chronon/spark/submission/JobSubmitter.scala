@@ -163,10 +163,10 @@ object JobSubmitterConstants {
   val ClusterInstanceCount = "clusterInstanceCount"
   val ClusterInstanceType = "clusterInstanceType"
   val ClusterIdleTimeout = "clusterIdleTimeout"
-  val EmrReleaseLabel = "emrReleaseLabel"
-  val ShouldCreateCluster = "shouldCreateCluster"
   val ClusterId = "jobFlowId"
   val ClusterName = "clusterName"
+  val SubnetId = "subnetId"
+  val SecurityGroupId = "securityGroupId"
 
   val JarUriArgKeyword = "--jar-uri"
   val JobTypeArgKeyword = "--job-type"
@@ -221,6 +221,7 @@ object JobSubmitterConstants {
   val GcpBigtableInstanceIdEnvVar = "GCP_BIGTABLE_INSTANCE_ID"
   val GcpProjectIdEnvVar = "GCP_PROJECT_ID"
   val GcpRegionEnvVar = "GCP_REGION"
+  val GcpLocationEnvVar = "GCP_LOCATION"
   val GcpDataprocClusterNameEnvVar = "GCP_DATAPROC_CLUSTER_NAME"
   val GcpEnableUploadKVClientEnvVar = "ENABLE_UPLOAD_CLIENTS"
 

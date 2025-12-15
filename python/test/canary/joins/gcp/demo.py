@@ -1,6 +1,7 @@
 from group_bys.gcp import dim_listings, dim_merchants, user_activities
 from staging_queries.gcp import exports
 
+from ai.chronon.group_by import GroupBy
 from ai.chronon.join import Derivation, Join, JoinPart
 from ai.chronon.query import Query, selects
 from ai.chronon.source import EventSource
@@ -11,7 +12,7 @@ This Join combines user activity events with:
 2. Listing-level attributes (from dim_listings GroupBy)
 
 Left side: Raw user activity events
-Right parts: 
+Right parts:
 - User behavioral aggregations (keyed by user_id)
 - Listing dimension attributes (keyed by listing_id)
 """
@@ -53,6 +54,7 @@ v1 = Join(
     online=True,
     output_namespace="data",
     step_days=2,
+    enable_stats_compute=True,
 )
 
 # Example join with some derivations
@@ -60,9 +62,11 @@ derivations_v1 = Join(
     left=source,
     row_ids=["event_id"], # TODO -- kill this once the SPJ API change goes through
     right_parts=[
-        # Listing dimension attributes (point-in-time lookup)
         JoinPart(
             group_by=dim_listings.v1,
+        ),
+        JoinPart(
+            group_by=user_activities.v1,
         ),
     ],
     derivations=[
@@ -76,11 +80,28 @@ derivations_v1 = Join(
             expression="array_contains(split(listing_id_tags, ','), 'handmade')"
         ),
         Derivation(
+            name="price_log",
+            expression="log1p(listing_id_price_cents)"
+        ),
+        Derivation(
+            name="price_bucket",
+            expression=
+            """
+                CASE
+                    WHEN listing_id_price_cents < 1000 THEN 0
+                    WHEN listing_id_price_cents < 5000 THEN 1
+                    WHEN listing_id_price_cents < 10000 THEN 2
+                    WHEN listing_id_price_cents < 50000 THEN 3
+                    ELSE 4
+                END
+            """
+        ),
+        Derivation(
             name="*",
             expression="*"
         )
     ],
-    version=1,
+    version=2,
     online=True,
     output_namespace="data",
     step_days=2,
