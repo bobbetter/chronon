@@ -1,2 +1,0 @@
-class TeamNotFoundError(Exception):
-    pass
