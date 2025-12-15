@@ -9,6 +9,7 @@ import click
 import requests
 from gen_thrift.planner.ttypes import Mode
 
+from ai.chronon.cli.formatter import Format, format_print, jsonify_exceptions_if_json_format
 from ai.chronon.cli.git_utils import get_current_branch
 from ai.chronon.click_helpers import handle_compile, handle_conf_not_found
 from ai.chronon.repo import hub_uploader, utils
@@ -27,6 +28,8 @@ class HubConfig:
     sa_name: Optional[str] = None
     eval_url: Optional[str] = None
     fetcher_url: Optional[str] = None
+    cloud_provider: Optional[str] = None
+    artifact_prefix: Optional[str] = None
 
 
 @dataclass
@@ -48,6 +51,14 @@ def hub_url_option(func):
     return click.option(
         "--hub_url", help="Zipline Hub address, e.g. http://localhost:3903", default=None
     )(func)
+def format_option(func):
+    return click.option(
+        "--format", help="Format of the response", default=Format.TEXT, type=click.Choice(Format, case_sensitive=False)
+    )(func)
+def force_option(func):
+    return click.option(
+        "--force", help="Force compile even if there are version changes to existing confs", is_flag=True
+    )(func)
 
 
 def get_conf_type(conf):
@@ -59,6 +70,8 @@ def get_conf_type(conf):
         return "groupbys"
     elif "compiled/models" in conf:
         return "models"
+    elif "compiled/model_transforms" in conf:
+        return "modeltransforms"
     else:
         raise ValueError(f"Unsupported conf type: {conf}")
 
@@ -68,6 +81,8 @@ def common_options(func):
     func = click.option("--conf", required=True, help="Conf param - required for every mode")(func)
     func = hub_url_option(func)
     func = use_auth_option(func)
+    func = format_option(func)
+    func = force_option(func)
     return func
 
 
@@ -105,21 +120,21 @@ def end_ds_option(func):
         default=str(date.today() - timedelta(days=2)),
     )(func)
 
-def _get_zipline_hub(hub_url: Optional[str], hub_conf: Optional[HubConfig], use_auth: bool):
+def _get_zipline_hub(hub_url: Optional[str], hub_conf: Optional[HubConfig], use_auth: bool, format: Format = Format.TEXT):
     if hub_url is not None:
-        zipline_hub = ZiplineHub(base_url=hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth)
+        zipline_hub = ZiplineHub(base_url=hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, cloud_provider=hub_conf.cloud_provider, format=format)
     else:
-        zipline_hub = ZiplineHub(base_url=hub_conf.hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth)
+        zipline_hub = ZiplineHub(base_url=hub_conf.hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, cloud_provider=hub_conf.cloud_provider, format=format)
     return zipline_hub
 
-def submit_workflow(repo, conf, mode, start_ds, end_ds, hub_url=None, use_auth=True):
+def submit_workflow(repo, conf, mode, start_ds, end_ds, hub_url=None, use_auth=True, format: Format = Format.TEXT):
     hub_conf = get_hub_conf(conf, root_dir=repo)
-    zipline_hub = _get_zipline_hub(hub_url, hub_conf, use_auth)
+    zipline_hub = _get_zipline_hub(hub_url, hub_conf, use_auth, format)
     conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
     branch = get_current_branch()
 
     hub_uploader.compute_and_upload_diffs(
-        branch, zipline_hub=zipline_hub, local_repo_confs=conf_name_to_hash_dict
+        branch, zipline_hub=zipline_hub, local_repo_confs=conf_name_to_hash_dict, format=format
     )
 
     # get conf name
@@ -137,24 +152,28 @@ def submit_workflow(repo, conf, mode, start_ds, end_ds, hub_url=None, use_auth=T
     )
 
     workflow_id = response_json.get("workflowId", "N/A")
-    print(" 🆔 Workflow Id:", workflow_id)
+    if format == Format.JSON:
+        print(json.dumps(response_json, indent=4))
+        sys.exit(0)
+    format_print(f" 🆔 Workflow Id: {workflow_id}", format=format)
     print_wf_url(
         conf=conf,
         conf_name=conf_name,
         mode=mode,
         workflow_id=workflow_id,
-        repo=repo
+        repo=repo,
+        format=format
     )
 
 
-def submit_schedule(repo, conf, hub_url=None, use_auth=True):
+def submit_schedule(repo, conf, hub_url=None, use_auth=True, format: Format = Format.TEXT):
     hub_conf = get_hub_conf(conf, root_dir=repo)
-    zipline_hub = _get_zipline_hub(hub_url, hub_conf, use_auth)
+    zipline_hub = _get_zipline_hub(hub_url, hub_conf, use_auth, format)
     conf_name_to_obj_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
     branch = get_current_branch()
 
     hub_uploader.compute_and_upload_diffs(
-        branch, zipline_hub=zipline_hub, local_repo_confs=conf_name_to_obj_dict
+        branch, zipline_hub=zipline_hub, local_repo_confs=conf_name_to_obj_dict, format=format
     )
 
     # get conf name
@@ -165,17 +184,19 @@ def submit_schedule(repo, conf, hub_url=None, use_auth=True):
         RunMode.BACKFILL.value.upper(): schedule_modes.offline_schedule,
         RunMode.DEPLOY.value.upper(): schedule_modes.online,
     }
-
     response_json = zipline_hub.call_schedule_api(
         modes=modes,
         branch=branch,
         conf_name=conf_name,
         conf_hash=conf_name_to_obj_dict[conf_name].hash,
     )
+    if format == Format.JSON:
+        print(json.dumps(response_json, indent=4))
+        sys.exit(0)
 
     schedules = response_json.get("schedules", "N/A")
     readable_schedules = {Mode._VALUES_TO_NAMES[int(k)]: v for k, v in schedules.items()}
-    print(" 🗓️ Schedules Deployed:", readable_schedules)
+    format_print(f" 🗓️ Schedules Deployed: {readable_schedules}", format=format)
 
 
 # zipline hub backfill --conf=compiled/joins/join
@@ -186,7 +207,8 @@ def submit_schedule(repo, conf, hub_url=None, use_auth=True):
 @end_ds_option
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
 @handle_compile
-def backfill(repo, conf, hub_url, use_auth, start_ds, end_ds, skip_compile):
+@jsonify_exceptions_if_json_format
+def backfill(repo, conf, hub_url, use_auth, format, force, start_ds, end_ds, skip_compile):
     """
     - Submit a backfill job to Zipline.
     Response should contain a list of confs that are different from what's on remote.
@@ -194,7 +216,7 @@ def backfill(repo, conf, hub_url, use_auth, start_ds, end_ds, skip_compile):
     - Call the actual run API with mode set to backfill.
     """
     submit_workflow(
-        repo, conf, RunMode.BACKFILL.value, start_ds, end_ds, hub_url=hub_url, use_auth=use_auth
+        repo, conf, RunMode.BACKFILL.value, start_ds, end_ds, hub_url=hub_url, use_auth=use_auth, format=format
     )
 
 
@@ -205,14 +227,15 @@ def backfill(repo, conf, hub_url, use_auth, start_ds, end_ds, skip_compile):
 @end_ds_option
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
 @handle_compile
-def run_adhoc(repo, conf, hub_url, use_auth, end_ds, skip_compile):
+@jsonify_exceptions_if_json_format
+def run_adhoc(repo, conf, hub_url, use_auth, format, force, end_ds, skip_compile):
     """
     - Submit a one-off deploy job to Zipline. This submits the various jobs to allow your conf to be tested online.
     Response should contain a list of confs that are different from what's on remote.
     - Call upload API to upload the conf contents for the list of confs that were different.
     - Call the actual run API with mode set to deploy
     """
-    submit_workflow(repo, conf, RunMode.DEPLOY.value, end_ds, end_ds, hub_url=hub_url, use_auth=use_auth)
+    submit_workflow(repo, conf, RunMode.DEPLOY.value, end_ds, end_ds, hub_url=hub_url, use_auth=use_auth, format=format)
 
 
 # zipline hub schedule --conf=compiled/joins/join
@@ -220,23 +243,28 @@ def run_adhoc(repo, conf, hub_url, use_auth, end_ds, skip_compile):
 @common_options
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
 @handle_compile
-def schedule(repo, conf, hub_url, use_auth, skip_compile):
+@jsonify_exceptions_if_json_format
+def schedule(repo, conf, hub_url, use_auth, format, force, skip_compile):
     """
     - Deploys a schedule for the specified conf to Zipline. This allows your conf to have various associated jobs run on a schedule.
     This verb will introspect your conf to determine which of its jobs need to be scheduled (or paused if turned off) based on the
     'offline_schedule' and 'online' fields.
     """
-    submit_schedule(repo, conf, hub_url=hub_url, use_auth=use_auth)
+    submit_schedule(repo, conf, hub_url=hub_url, use_auth=use_auth, format=format)
 
 @hub.command()
 @repo_option
 @hub_url_option
 @use_auth_option
 @workflow_id_option
-def cancel(repo, hub_url, use_auth, workflow_id):
-    zipline_hub = _get_zipline_hub(hub_url, get_hub_conf_from_metadata_conf(DEFAULT_TEAM_METADATA_CONF, root_dir=repo), use_auth)
-    zipline_hub.call_cancel_api(workflow_id)
-    print(f" 🟢 Workflow cancelled: {workflow_id}")
+@jsonify_exceptions_if_json_format
+def cancel(repo, hub_url, use_auth, format, force, workflow_id):
+    zipline_hub = _get_zipline_hub(hub_url, get_hub_conf_from_metadata_conf(DEFAULT_TEAM_METADATA_CONF, root_dir=repo), use_auth, format)
+    response_json = zipline_hub.call_cancel_api(workflow_id, format=format)
+    if format == Format.JSON:
+        print(json.dumps(response_json, indent=4))
+        sys.exit(0)
+    format_print(f" 🟢 Workflow cancelled: {workflow_id}", format=format)
 
 def load_json(file_path):
     with open(file_path, "r") as f:
@@ -277,7 +305,8 @@ def get_common_env_map(file_path, skip_metadata_extraction=False):
     default=None
 )
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
-def fetch(repo, conf, hub_url, use_auth, fetcher_url, schema, key_json):
+@jsonify_exceptions_if_json_format
+def fetch(repo, conf, hub_url, use_auth, format, force, fetcher_url, schema, key_json):
     """
     - Fetch data from the fetcher server.
     - If schema is True, fetch the schema of the join.
@@ -287,15 +316,19 @@ def fetch(repo, conf, hub_url, use_auth, fetcher_url, schema, key_json):
     fetcher_url = fetcher_url or hub_conf.fetcher_url
     r = requests.get(f"{fetcher_url}/ping", timeout=100)
     if r.status_code != 200:
-        print(f"Fetcher server is not running. Please start the fetcher server and try again. Url: {fetcher_url}/ping Status code: {r.status_code}")
-        sys.exit(1)
+        raise RuntimeError(f"Fetcher server is not running. Please start the fetcher server and try again. Url: {fetcher_url}/ping Status code: {r.status_code}")
     # Figure out if it's a group by or join
     conf_type = get_conf_type(conf)
     target = utils.get_metadata_name_from_conf(repo, conf)
-    endpoint = "/v1/fetch/{conf_type}".format(conf_type=conf_type[:-1])
+
+    # TODO: fix this workaround to just use conf_type directly singular
+    if conf_type == "modeltransforms":
+        endpoint = "/v1/fetch/{conf_type}".format(conf_type=conf_type)
+    else:
+        endpoint = "/v1/fetch/{conf_type}".format(conf_type=conf_type[:-1])
     if schema:
         if conf_type != "joins":
-            raise ValueError("Schema is only supported for joins")
+            raise ValueError("Schema fetch is only supported for joins")
         endpoint = f"/v1/join/{target}/schema"
     headers = {"Content-Type": "application/json"}
     try:
@@ -310,15 +343,14 @@ def fetch(repo, conf, hub_url, use_auth, fetcher_url, schema, key_json):
             raise requests.RequestException(f"Request failed: {url} with status code: {response.status_code}\nResponse: {response.text}")
         print(json.dumps(response.json(), indent=4))
     except requests.RequestException as e:
-        print(f"""
+        raise RuntimeError(f"""
         Request failed for url: {url}
         The conditions for a successful fetch are:
         - Metadata has been uploaded to the KV Store (run-adhoc command or schedule command)
         - The join needs to be online.
         Please verify the above conditions and try again.
         Error: {e}
-        """)
-        sys.exit(1)
+        """) from e
 
 # zipline hub eval --conf=compiled/joins/join
 # localSparkSession evaluation of conf
@@ -330,19 +362,46 @@ def fetch(repo, conf, hub_url, use_auth, fetcher_url, schema, key_json):
     type=str,
     default=None
 )
+@click.option(
+    "--generate-test-config",
+    help="Generate a test config for data testing",
+    is_flag=True,
+    default=None
+)
+@click.option(
+    "--test-data-path",
+    help="Path to the test data yaml file to upload and use for evaluation.",
+    type=str,
+    default=None
+)
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
 @handle_compile
-def eval(repo, conf, hub_url, use_auth, eval_url, skip_compile):
+@jsonify_exceptions_if_json_format
+def eval(repo, conf, hub_url, use_auth, format, force, eval_url, generate_test_config, test_data_path, skip_compile):
     """
     - Submit a eval job to Zipline.
     Response should contain a list of validation checks that are executed in a sparkLocalSession with Metadata access.
     - Call upload API to upload the conf contents for the list of confs that were different.
     - Call the actual eval API.
     """
+    parameters = {}
     hub_conf = get_hub_conf(conf, root_dir=repo)
-    zipline_hub = ZiplineHub(base_url=hub_url or hub_conf.hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, eval_url=eval_url or hub_conf.eval_url)
+    zipline_hub = ZiplineHub(base_url=hub_url or hub_conf.hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, eval_url=eval_url or hub_conf.eval_url, cloud_provider=hub_conf.cloud_provider, format=format)
     conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
     branch = get_current_branch()
+    if test_data_path:
+        # Upload the test data skeleton to the bucket.
+        if hub_conf.cloud_provider != "gcp":
+            raise RuntimeError(" 🔴 Test data path is only supported for GCP")
+        # import here to avoid dependency for other clouds.
+        from ai.chronon.repo.gcp import GcpRunner
+        zipline_artifact_prefix = hub_conf.artifact_prefix
+        if not zipline_artifact_prefix:
+            print(" 🔴 Zipline artifact prefix is not set")
+            sys.exit(1)
+        url = f"eval/test_data/{os.path.basename(test_data_path)}"
+        GcpRunner.upload_gcs_blob(zipline_artifact_prefix.replace("gs://", ""), test_data_path, url)
+        parameters["testDataPath"] = f"{zipline_artifact_prefix}/{url}"
 
     hub_uploader.compute_and_upload_diffs(
         branch, zipline_hub=zipline_hub, local_repo_confs=conf_name_to_hash_dict
@@ -350,18 +409,23 @@ def eval(repo, conf, hub_url, use_auth, eval_url, skip_compile):
 
     # get conf name
     conf_name = utils.get_metadata_name_from_conf(repo, conf)
-
+    if generate_test_config:
+        parameters["generateTestDataSkeleton"] = "true"
     response_json = zipline_hub.call_eval_api(
         conf_name=conf_name,
         conf_hash_map={conf.name: conf.hash for conf in conf_name_to_hash_dict.values()},
+        parameters=parameters,
     )
     if response_json.get("success"):
-        print(" 🟢 Eval job finished successfully")
-        print(response_json.get("message"))
+        format_print(" 🟢 Eval job finished successfully", format=format)
+        format_print(response_json.get("message"), format=format)
     else:
-        print(" 🔴 Eval job failed")
-        print(response_json.get("message"))
+        format_print(" 🔴 Eval job failed", format=format)
+        format_print(response_json.get("message"), format=format)
         sys.exit(1)
+    if format == Format.JSON:
+        print(json.dumps(response_json, indent=4))
+        sys.exit(0)
 
 
 def get_hub_conf(conf_path, root_dir="."):
@@ -373,11 +437,8 @@ def get_hub_conf(conf_path, root_dir="."):
     file_path = os.path.join(root_dir, conf_path)
     common_env_map = get_common_env_map(file_path)
     common_env_map.update(os.environ) # Override config with cli args
-    hub_url = common_env_map.get("HUB_URL")
-    frontend_url = common_env_map.get("FRONTEND_URL")
-    sa_name = common_env_map.get("SA_NAME")
-    eval_url = common_env_map.get("EVAL_URL")
-    return HubConfig(hub_url=hub_url, frontend_url=frontend_url, sa_name=sa_name, eval_url=eval_url)
+    kwargs = {k: common_env_map.get(k.upper()) for k in HubConfig.__dataclass_fields__.keys()}
+    return HubConfig(**kwargs)
 
 def get_hub_conf_from_metadata_conf(metadata_path, root_dir="."):
     """
@@ -411,7 +472,7 @@ def get_schedule_modes(conf_path):
     return ScheduleModes(online=online, offline_schedule=offline_schedule)
 
 
-def print_wf_url(conf, conf_name, mode, workflow_id, repo="."):
+def print_wf_url(conf, conf_name, mode, workflow_id, repo=".", format: Format = Format.TEXT):
     hub_conf = get_hub_conf(conf, root_dir=repo)
     frontend_url = hub_conf.frontend_url
     hub_conf_type = get_conf_type(conf)
@@ -426,7 +487,7 @@ def print_wf_url(conf, conf_name, mode, workflow_id, repo="."):
 
     workflow_url = f"{frontend_url.rstrip('/')}/{hub_conf_type}/{conf_name}/{_mode_string()}?workflowId={workflow_id}"
 
-    print(" 🔗 Workflow : " + workflow_url + "\n")
+    format_print(" 🔗 Workflow : " + workflow_url + "\n", format=format)
 
 if __name__ == "__main__":
     hub()

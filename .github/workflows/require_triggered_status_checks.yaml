@@ -1,6 +1,12 @@
 name: branch_protection
 on:
   push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  merge_group:
 jobs:
   enforce_triggered_workflows:
     runs-on: ubuntu-latest
@@ -11,4 +17,4 @@ jobs:
         uses: poseidon/wait-for-status-checks@v0.6.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          delay: "10s"
+          delay: "120s"

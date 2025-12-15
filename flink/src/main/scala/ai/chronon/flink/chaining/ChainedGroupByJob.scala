@@ -19,7 +19,6 @@ import ai.chronon.flink.window.{
 import ai.chronon.online.{Api, GroupByServingInfoParsed, TopicInfo}
 
 import java.util.concurrent.TimeUnit
-import scala.collection.Seq
 import org.apache.flink.streaming.api.datastream.{AsyncDataStream, DataStream, SingleOutputStreamOperator}
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
 import org.apache.flink.streaming.api.functions.async.RichAsyncFunction
@@ -91,6 +90,16 @@ class ChainedGroupByJob(eventSrc: FlinkSource[ProjectedEvent],
       case t =>
         throw new IllegalArgumentException(s"Unsupported trigger type: $t. Supported: 'always_fire', 'buffered'")
     }
+  }
+
+  /** Untiled mode is not yet implemented for ChainedGroupByJob (JoinSource GroupBys).
+    *  Use runTiledGroupByJob instead.
+    */
+  override def runGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse] = {
+    throw new NotImplementedError(
+      s"Untiled mode is not implemented for ChainedGroupByJob (JoinSource GroupBys). " +
+      s"GroupBy: $groupByName uses JoinSource and only supports tiled mode."
+    )
   }
 
   /** Build the tiled version of the Flink GroupBy job that chains features using a JoinSource.

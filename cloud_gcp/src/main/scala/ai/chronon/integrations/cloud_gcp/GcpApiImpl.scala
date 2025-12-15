@@ -1,5 +1,6 @@
 package ai.chronon.integrations.cloud_gcp
 
+import ai.chronon.api.ModelBackend
 import ai.chronon.online._
 import ai.chronon.online.serde.{AvroConversions, AvroSerDe, SerDe}
 import com.google.api.gax.core.{InstantiatingExecutorProvider, NoCredentialsProvider}
@@ -11,9 +12,10 @@ import com.google.cloud.bigtable.data.v2.{BigtableDataClient, BigtableDataSettin
 
 import java.time.Duration
 import java.util
-import java.util.concurrent.ThreadFactory
+import java.util.concurrent.{ConcurrentHashMap, ThreadFactory}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 import java.util.function.Consumer
+import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
 class GcpApiImpl(conf: Map[String, String]) extends Api(conf) {
@@ -85,6 +87,25 @@ class GcpApiImpl(conf: Map[String, String]) extends Api(conf) {
             case None =>
               val newStore = createDataQualityKvStore(tableBaseName)
               sharedDataQualityKvStore.set(newStore)
+              newStore
+          }
+        }
+    }
+  }
+
+  override def genEnhancedStatsKvStore(tableBaseName: String): KVStore = {
+    // Try to get existing shared store first
+    Option(sharedEnhancedStatsKvStore.get()) match {
+      case Some(existingStore) =>
+        existingStore
+      case None =>
+        enhancedStatsKvStoreLock.synchronized {
+          // Double check if another thread created the store while we were waiting for the lock
+          Option(sharedEnhancedStatsKvStore.get()) match {
+            case Some(existingStore) => existingStore
+            case None =>
+              val newStore = createEnhancedStatsKvStore(tableBaseName)
+              sharedEnhancedStatsKvStore.set(newStore)
               newStore
           }
         }
@@ -208,6 +229,11 @@ class GcpApiImpl(conf: Map[String, String]) extends Api(conf) {
     new BigTableMetricsKvStore(dataClient, tableBaseName, maybeAdminClient, conf)
   }
 
+  private def createEnhancedStatsKvStore(tableBaseName: String): KVStore = {
+    val (dataClient, maybeAdminClient, _) = createBigTableClients()
+    new EnhancedDatasetKVStoreImpl(dataClient, tableBaseName, maybeAdminClient, conf)
+  }
+
   // BigTable's bulk read rows by default will batch calls and wait for a delay before sending them. This is not
   // ideal from a latency perspective, so we set the batching settings to be 1 element and no delay.
   private def setBigTableBulkReadRowsSettings(dataSettingsBuilderWithProfileId: BigtableDataSettings.Builder): Unit = {
@@ -291,12 +317,40 @@ class GcpApiImpl(conf: Map[String, String]) extends Api(conf) {
 
   override def externalRegistry: ExternalSourceRegistry = registry
 
+  override def generateModelPlatformProvider: ModelPlatformProvider = {
+    // TODO - in a followup, we can extend to support multiple model platforms which need not be GCP based (e.g. OpenAI)
+    new ModelPlatformProvider {
+      override def getPlatform(modelBackend: ModelBackend, backendParams: Map[String, String]): ModelPlatform = {
+        modelBackend match {
+          case ModelBackend.VertexAI =>
+            // Get configuration once and reuse it
+            val projectId = getOrElseThrow(GcpProjectId, conf)
+            val location = getOrElseThrow(GcpLocation, conf)
+            val cacheKey = s"VertexAI:$projectId:$location"
+
+            Option(modelPlatformCache.get(cacheKey)) match {
+              case Some(existingPlatform) =>
+                existingPlatform
+              case None =>
+                val newPlatform = new VertexPlatform(projectId, location)
+
+                val existingPlatform = modelPlatformCache.putIfAbsent(cacheKey, newPlatform)
+                if (existingPlatform != null) existingPlatform else newPlatform
+            }
+          case _ =>
+            throw new UnsupportedOperationException(s"Model backend $modelBackend is not supported by GcpApiImpl")
+        }
+      }
+    }
+  }
+
   override def logResponse(resp: LoggableResponse): Unit = responseConsumer.accept(resp)
 }
 
 object GcpApiImpl {
 
   private[cloud_gcp] val GcpProjectId = "GCP_PROJECT_ID"
+  private[cloud_gcp] val GcpLocation = "GCP_LOCATION"
   private[cloud_gcp] val GcpBigTableInstanceId = "GCP_BIGTABLE_INSTANCE_ID"
   private[cloud_gcp] val GcpBigTableAppProfileId = "GCP_BIGTABLE_APP_PROFILE_ID"
   private[cloud_gcp] val EnableUploadClients = "ENABLE_UPLOAD_CLIENTS"
@@ -322,6 +376,11 @@ object GcpApiImpl {
 
   private val sharedDataQualityKvStore = new AtomicReference[KVStore]()
   private val dataQualityKvStoreLock = new Object()
+
+  private val sharedEnhancedStatsKvStore = new AtomicReference[KVStore]()
+  private val enhancedStatsKvStoreLock = new Object()
+
+  private val modelPlatformCache = new ConcurrentHashMap[String, ModelPlatform]()
 
   private[cloud_gcp] def getOptional(key: String, conf: Map[String, String]): Option[String] =
     sys.env

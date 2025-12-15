@@ -2,6 +2,7 @@ package ai.chronon.api.planner
 
 import ai.chronon.api.Extensions.{GroupByOps, WindowUtils}
 import ai.chronon.api.Extensions._
+import ai.chronon.api.ScalaJavaConversions.IterableOps
 import ai.chronon.api.{Join, PartitionSpec, TableDependency, TableInfo}
 import ai.chronon.planner
 import ai.chronon.planner.Node
@@ -25,13 +26,13 @@ case class MonolithJoinPlanner(join: Join)(implicit outputPartitionSpec: Partiti
 
   }
 
-  def backfillNode: Node = {
+  def monolithJoinNode: Node = {
     val tableDeps = TableDependencies.fromJoin(join)
 
     val metaData =
       MetaDataUtils.layer(join.metaData,
-                          "backfill",
-                          join.metaData.name + "__backfill",
+                          "monolith_join",
+                          join.metaData.name + "__monolith_join",
                           tableDeps,
                           outputTableOverride = Some(join.metaData.outputTable))
     val node = new planner.MonolithJoinNode().setJoin(join)
@@ -42,7 +43,7 @@ case class MonolithJoinPlanner(join: Join)(implicit outputPartitionSpec: Partiti
     val stepDays = 1 // Default step days for metadata upload
 
     // Create table dependencies for all GroupBy parts (both direct GroupBy deps and upstream join deps)
-    val allDeps = Option(join.joinParts).map(_.asScala).getOrElse(Seq.empty).flatMap { joinPart =>
+    val allDeps = Option(join.joinParts).map(_.toScala).getOrElse(Seq.empty).flatMap { joinPart =>
       val groupBy = joinPart.groupBy
       val hasStreamingSource = groupBy.streamingSource.isDefined
 
@@ -77,28 +78,75 @@ case class MonolithJoinPlanner(join: Join)(implicit outputPartitionSpec: Partiti
       MetaDataUtils.layer(join.metaData,
                           "metadata_upload",
                           join.metaData.name + "__metadata_upload",
-                          allDeps,
+                          allDeps.toSeq,
                           Some(stepDays))
     val node = new planner.JoinMetadataUpload().setJoin(join)
     toNode(metaData, _.setJoinMetadataUpload(node), semanticMonolithJoin(join))
   }
 
+  def statsComputeNode: Node = {
+    val stepDays = 1 // Stats computed daily
+
+    // Stats compute depends on the monolith join output
+    val tableDep = new TableDependency()
+      .setTableInfo(
+        new TableInfo()
+          .setTable(monolithJoinNode.metaData.outputTable)
+          .setPartitionColumn(outputPartitionSpec.column)
+          .setPartitionFormat(outputPartitionSpec.format)
+          .setPartitionInterval(WindowUtils.hours(outputPartitionSpec.spanMillis))
+      )
+      .setStartOffset(WindowUtils.zero())
+      .setEndOffset(WindowUtils.zero())
+
+    val metaData =
+      MetaDataUtils.layer(join.metaData,
+                          "stats_compute",
+                          join.metaData.name + "__stats_compute",
+                          Seq(tableDep),
+                          Some(stepDays))
+
+    val node = new planner.JoinStatsComputeNode().setJoin(join)
+    toNode(metaData, _.setJoinStatsCompute(node), semanticMonolithJoin(join))
+  }
+
   override def buildPlan: planner.ConfPlan = {
     val confPlan = new planner.ConfPlan()
 
-    val backfill = backfillNode
+    val backfill = monolithJoinNode
+    val metadataUpload = metadataUploadNode
+
+    // Check if stats compute is enabled via ExecutionInfo feature flag
+    val enableStatsCompute = Option(join.metaData.executionInfo)
+      .flatMap(ei => Option(ei.enableStatsCompute))
+      .exists(_.booleanValue())
+
     val sensorNodes = ExternalSourceSensorUtil
       .sensorNodes(backfill.metaData)
       .map((es) =>
         toNode(es.metaData, _.setExternalSourceSensor(es), ExternalSourceSensorUtil.semanticExternalSourceSensor(es)))
 
-    val terminalNodeNames = Map(
-      planner.Mode.BACKFILL -> backfill.metaData.name,
-      planner.Mode.DEPLOY -> metadataUploadNode.metaData.name
-    )
+    val (allNodes, terminalNodeNames) = if (enableStatsCompute) {
+      val statsCompute = statsComputeNode
+
+      // When stats are enabled, stats upload becomes the terminal node for BACKFILL
+      // This ensures the dependency chain: backfill -> statsCompute
+      val terminals = Map(
+        planner.Mode.BACKFILL -> statsCompute.metaData.name,
+        planner.Mode.DEPLOY -> metadataUpload.metaData.name
+      )
+
+      (List(backfill, statsCompute, metadataUpload) ++ sensorNodes, terminals)
+    } else {
+      val terminals = Map(
+        planner.Mode.BACKFILL -> backfill.metaData.name,
+        planner.Mode.DEPLOY -> metadataUpload.metaData.name
+      )
+      (List(backfill, metadataUpload) ++ sensorNodes, terminals)
+    }
 
     confPlan
-      .setNodes((List(backfill, metadataUploadNode) ++ sensorNodes).asJava)
+      .setNodes(allNodes.asJava)
       .setTerminalNodeNames(terminalNodeNames.asJava)
   }
 }

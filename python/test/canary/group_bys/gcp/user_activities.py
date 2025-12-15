@@ -22,7 +22,7 @@ source = Source(
                 listing_id="listing_id",
                 # Create binary flags for each event type
                 view_event="IF(event_type = 'view', 1, 0)",
-                click_event="IF(event_type = 'click', 1, 0)", 
+                click_event="IF(event_type = 'click', 1, 0)",
                 purchase_event="IF(event_type = 'purchase', 1, 0)",
                 favorite_event="IF(event_type = 'favorite', 1, 0)",
                 add_to_cart_event="IF(event_type = 'add_to_cart', 1, 0)",
@@ -45,7 +45,7 @@ window_sizes = [Window(length=days, time_unit=TimeUnit.DAYS) for days in [1, 7, 
 event_columns = ["view_event", "click_event", "purchase_event", "favorite_event", "add_to_cart_event"]
 device_columns = ["is_mobile", "is_desktop", "is_tablet"]
 last_k_columns = ["user_event_struct"]
-    
+
 aggregations = []
 
 # Event type aggregations - Sum and Average over various windows
@@ -70,7 +70,7 @@ aggregations.extend([
     Aggregation(input_column=col, operation=Operation.LAST_K(128), windows=window_sizes)
     for col in last_k_columns
 ])
-    
+
 v1 = GroupBy(
     sources=[source],
     keys=["user_id"],  # Aggregate by user

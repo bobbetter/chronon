@@ -38,6 +38,8 @@ object Metrics {
     val MetaDataFetching = "metadata.fetch"
     val JoinFetching = "join.fetch"
     val JoinSchemaFetching = "join.schema.fetch"
+    val ModelTransformsFetching = "modeltransforms.fetch"
+    val ModelPredict = "model.predict"
     val GroupByFetching = "group_by.fetch"
     val GroupByUpload = "group_by.upload"
     val GroupByStreaming = "group_by.streaming"
@@ -57,6 +59,8 @@ object Metrics {
   object Tag {
     val GroupBy = "group_by"
     val Join = "join"
+    val Model = "model"
+    val ModelTransforms = "model_transforms"
     val JoinPartPrefix = "join_part_prefix"
     val StagingQuery = "staging_query"
     val Environment = "environment"
@@ -170,7 +174,9 @@ object Metrics {
                      team: String = null,
                      joinPartPrefix: String = null,
                      suffix: String = null,
-                     dataset: String = null)
+                     dataset: String = null,
+                     model: String = null,
+                     modelTransforms: String = null)
       extends Serializable {
 
     def withSuffix(suffixN: String): Context = copy(suffix = (Option(suffix) ++ Seq(suffixN)).mkString("."))
@@ -209,6 +215,8 @@ object Metrics {
       addTag(Tag.JoinPartPrefix, joinPartPrefix)
       addTag(Tag.Accuracy, if (accuracy != null) accuracy.name() else null)
       addTag(Tag.Dataset, dataset)
+      addTag(Tag.ModelTransforms, modelTransforms)
+      addTag(Tag.Model, model)
       buffer.toMap
     }
 

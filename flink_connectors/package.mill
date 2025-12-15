@@ -1,12 +1,16 @@
 package build.flink_connectors
-import mill._
+import mill.api._
 import mill.scalalib._
 
-// Flink module
-object `package` extends build.BaseModule {
+// Flink connectors module - supports both flink_connectors.test AND flink_connectors[2.13.17].test
+object `package` extends Cross[FlinkConnectorsModule](build.Constants.scalaVersions) with FlinkConnectorsModule {
+  override val crossValue = build.Constants.defaultScalaVersion
+}
+
+trait FlinkConnectorsModule extends Cross.Module[String] with build.BaseModule {
   val flinkVersion = build.Constants.flinkVersion
 
-  def moduleDeps = Seq(build.aggregator, build.api, build.online, build.flink)
+  def moduleDeps = Seq(build.aggregator(crossValue), build.api(crossValue), build.online(crossValue), build.flink(crossValue))
 
   def compileMvnDeps = build.Constants.providedFlinkDeps
 
@@ -19,10 +23,12 @@ object `package` extends build.BaseModule {
       .exclude("com.fasterxml.jackson.core" -> "jackson-databind")
       .exclude("com.fasterxml.jackson.core" -> "jackson-annotations"),
     mvn"io.netty:netty-codec-http2:4.1.124.Final",
+    mvn"org.apache.flink:flink-connector-kinesis:4.2.0-1.17",
   )
 
   object test extends build.BaseTestModule {
-    def moduleDeps = Seq(build.flink_connectors)
+    def scalaVersion = crossValue
+    def moduleDeps = Seq(build.flink_connectors(crossValue))
     def forkArgs = build.Constants.commonTestForkArgs
     def mvnDeps = super.mvnDeps() ++ super.compileMvnDeps() ++ build.Constants.testDeps ++ Seq(
       mvn"org.apache.flink:flink-test-utils:$flinkVersion"

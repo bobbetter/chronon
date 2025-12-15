@@ -43,14 +43,8 @@ object `package` extends PythonModule with RuffModule with PublishModule {
     )
   )
 
-  // used by pypi
-  // https://pypi.org/project/zipline-ai/
-  // Override publishVersion to check environment variable first, then fall back to constant
   override def publishVersion = Task {
-    Task.ctx().env.get("ZIPLINE_VERSION") match {
-      case Some(version) if version.nonEmpty => version
-      case _ => build.Constants.chrononVersion
-    }
+    sys.env.getOrElse("CHRONON_VERSION", "0.0.32")
   }
 
   def sources = super.sources() ++ generatedSources()
@@ -69,15 +63,14 @@ object `package` extends PythonModule with RuffModule with PublishModule {
 
     override def sources = Task.Sources(moduleDir)
 
-    // Override forkEnv to set PYTHONPATH
+    // Override forkEnv to set PYTHONPATH for test isolation
     override def forkEnv: T[Map[String, String]] = Task {
 
       val generatedPath = build.python.generatedSources().head.path.toString
       val sourcePath = (moduleDir / os.up / "src").toString
-      val samplePath = (moduleDir / "sample").toString
-
+      // Note: samplePath removed from global PYTHONPATH to avoid conflicts with canary/
       super.forkEnv() ++ Map(
-        "PYTHONPATH" -> s"$generatedPath:$sourcePath:$samplePath"
+        "PYTHONPATH" -> s"$generatedPath:$sourcePath",
       )
 
     }
@@ -121,6 +114,11 @@ object `package` extends PythonModule with RuffModule with PublishModule {
 
   // Install in editable mode with generated sources. Can mess ruffCheck import order (due to gen_thrift priority change)
   def installEditable() = Task.Command {
+    // Install into virtual env if it exists, otherwise use the system python
+    val repoVenvPython = moduleDir / os.up / ".venv" / "bin" / "python"
+    val pythonExec = if (os.exists(repoVenvPython)) repoVenvPython.toString else "python3"
+    println(s"Using python executable: $pythonExec")
+
     // Generate sources in Task.dest as usual
     val generatedPaths = generatedSources()
     
@@ -143,7 +141,7 @@ object `package` extends PythonModule with RuffModule with PublishModule {
     
     // Install in editable mode
     println(s"Working directory: $pythonDir")
-    os.proc("python", "-m", "pip", "install", "-e", ".").call(cwd = pythonDir)
+    os.proc(pythonExec, "-m", "pip", "install", "-e", ".").call(cwd = pythonDir)
     println("Package installed in editable mode with generated sources")
   }
 }

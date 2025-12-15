@@ -36,6 +36,10 @@ struct MonolithJoinNode {
     1: optional api.Join join
 }
 
+struct UnionJoinNode {
+    1: optional api.Join join
+}
+
 struct StagingQueryNode {
     2: optional api.StagingQuery stagingQuery
 }
@@ -60,6 +64,26 @@ struct JoinMetadataUpload {
     2: optional api.Join join
 }
 
+struct ModelTransformsUploadNode {
+    2: optional api.ModelTransforms modelTransforms
+}
+
+struct ModelTransformsBackfillNode {
+    2: optional api.ModelTransforms modelTransforms
+}
+
+struct CreateModelEndpointNode {
+    2: optional api.Model model
+}
+
+struct DeployModelNode {
+    2: optional api.Model model
+}
+
+struct TrainModelNode {
+    2: optional api.Model model
+}
+
 struct ExternalSourceSensorNode {
     1: optional api.MetaData metaData
     2: optional common.TableDependency sourceTableDependency
@@ -68,6 +92,15 @@ struct ExternalSourceSensorNode {
     // When running TriggerExpr we need to use the proper engine.
     5: optional api.EngineType engineType
 }
+
+struct JoinStatsComputeNode {
+    1: optional api.Join join
+}
+
+struct JoinStatsUploadToKVNode {
+    1: optional api.Join join
+}
+
 union NodeContent {
     // join nodes
     1: SourceWithFilterNode sourceWithFilter
@@ -77,10 +110,18 @@ union NodeContent {
     5: JoinDerivationNode joinDerivation
     7: MonolithJoinNode monolithJoin
     8: StagingQueryNode stagingQuery
+    9: UnionJoinNode unionJoin
 
     10: JoinMetadataUpload joinMetadataUpload
     11: ExternalSourceSensorNode externalSourceSensor
+    12: ModelTransformsUploadNode modelTransformsUpload
+    13: ModelTransformsBackfillNode modelTransformsBackfill
+    14: CreateModelEndpointNode createModelEndpoint
+    15: DeployModelNode deployModel
+    16: TrainModelNode trainModel
 
+    // Stats Node
+    20: JoinStatsComputeNode joinStatsCompute
 
     // groupBy nodes
     100: GroupByBackfillNode groupByBackfill

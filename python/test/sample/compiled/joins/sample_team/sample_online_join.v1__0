@@ -39,6 +39,47 @@
             "group_by_subject": "825a7008e4d55f0cc56cd0457a30ad3b"
           },
           "executionInfo": {
+            "conf": {
+              "common": {
+                "spark.chronon.partition.column": "_test_column_sample"
+              }
+            },
+            "env": {
+              "common": {
+                "CUSTOMER_ID": "canary",
+                "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
+                "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
+                "GCP_PROJECT_ID": "canary-443022",
+                "GCP_REGION": "us-central1",
+                "VERSION": "latest"
+              },
+              "modeEnvironments": {
+                "backfill": {
+                  "CUSTOMER_ID": "canary",
+                  "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
+                  "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
+                  "GCP_PROJECT_ID": "canary-443022",
+                  "GCP_REGION": "us-central1",
+                  "VERSION": "latest"
+                },
+                "streaming": {
+                  "CUSTOMER_ID": "canary",
+                  "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
+                  "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
+                  "GCP_PROJECT_ID": "canary-443022",
+                  "GCP_REGION": "us-central1",
+                  "VERSION": "latest"
+                },
+                "upload": {
+                  "CUSTOMER_ID": "canary",
+                  "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
+                  "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
+                  "GCP_PROJECT_ID": "canary-443022",
+                  "GCP_REGION": "us-central1",
+                  "VERSION": "latest"
+                }
+              }
+            },
             "historicalBackfill": 0,
             "scheduleCron": "@daily"
           },
@@ -100,6 +141,47 @@
             "group_by_subject": "396180897f5371ec0e2c4a343aff4d44"
           },
           "executionInfo": {
+            "conf": {
+              "common": {
+                "spark.chronon.partition.column": "_test_column_sample"
+              }
+            },
+            "env": {
+              "common": {
+                "CUSTOMER_ID": "canary",
+                "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
+                "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
+                "GCP_PROJECT_ID": "canary-443022",
+                "GCP_REGION": "us-central1",
+                "VERSION": "latest"
+              },
+              "modeEnvironments": {
+                "backfill": {
+                  "CUSTOMER_ID": "canary",
+                  "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
+                  "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
+                  "GCP_PROJECT_ID": "canary-443022",
+                  "GCP_REGION": "us-central1",
+                  "VERSION": "latest"
+                },
+                "streaming": {
+                  "CUSTOMER_ID": "canary",
+                  "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
+                  "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
+                  "GCP_PROJECT_ID": "canary-443022",
+                  "GCP_REGION": "us-central1",
+                  "VERSION": "latest"
+                },
+                "upload": {
+                  "CUSTOMER_ID": "canary",
+                  "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
+                  "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
+                  "GCP_PROJECT_ID": "canary-443022",
+                  "GCP_REGION": "us-central1",
+                  "VERSION": "latest"
+                }
+              }
+            },
             "historicalBackfill": 0,
             "scheduleCron": "@daily"
           },
@@ -171,6 +253,47 @@
             "group_by_subject": "ec716d5785d3d1d2787535d9c4c67af6"
           },
           "executionInfo": {
+            "conf": {
+              "common": {
+                "spark.chronon.partition.column": "_test_column_sample"
+              }
+            },
+            "env": {
+              "common": {
+                "CUSTOMER_ID": "canary",
+                "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
+                "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
+                "GCP_PROJECT_ID": "canary-443022",
+                "GCP_REGION": "us-central1",
+                "VERSION": "latest"
+              },
+              "modeEnvironments": {
+                "backfill": {
+                  "CUSTOMER_ID": "canary",
+                  "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
+                  "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
+                  "GCP_PROJECT_ID": "canary-443022",
+                  "GCP_REGION": "us-central1",
+                  "VERSION": "latest"
+                },
+                "streaming": {
+                  "CUSTOMER_ID": "canary",
+                  "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
+                  "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
+                  "GCP_PROJECT_ID": "canary-443022",
+                  "GCP_REGION": "us-central1",
+                  "VERSION": "latest"
+                },
+                "upload": {
+                  "CUSTOMER_ID": "canary",
+                  "GCP_BIGTABLE_INSTANCE_ID": "test-instance",
+                  "GCP_DATAPROC_CLUSTER_NAME": "canary-2",
+                  "GCP_PROJECT_ID": "canary-443022",
+                  "GCP_REGION": "us-central1",
+                  "VERSION": "latest"
+                }
+              }
+            },
             "historicalBackfill": 0,
             "scheduleCron": "@daily"
           },

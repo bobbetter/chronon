@@ -109,6 +109,8 @@ struct TableDependency {
     3: optional Window endOffset
     4: optional string startCutOff
     5: optional string endCutOff
+    // indicates a soft dependency at the node level that doesn't warrant a table presence check
+    6: optional bool isSoftNodeDependency
 
     /**
     * JoinParts could use data from batch backfill-s or upload tables when available
@@ -152,6 +154,7 @@ struct ExecutionInfo {
     12: optional bool historicalBackfill
     13: optional list<TableDependency> tableDependencies
     14: optional TableInfo outputTableInfo
+    15: optional bool enableStatsCompute
 
     200: optional list<KvDependency> kvDependencies
     201: optional KvInfo outputKvInfo
@@ -160,3 +163,10 @@ struct ExecutionInfo {
     # in which case we will be polling
     # in the future we will add other types of dependencies
 }
+
+// Shared constants that can be used in python and scala
+
+// Training CLI Parser keyword arguments
+const string INPUT_TABLE_KEYWORD = "--input-table"
+const string START_DS_KEYWORD = "--start-ds"
+const string END_DS_KEYWORD = "--end-ds"

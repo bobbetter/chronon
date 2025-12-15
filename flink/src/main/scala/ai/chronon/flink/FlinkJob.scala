@@ -24,7 +24,6 @@ import org.rogach.scallop.{ScallopConf, ScallopOption, Serialization}
 import org.slf4j.{Logger, LoggerFactory}
 
 import java.time.Duration
-import scala.collection.Seq
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 /** Base abstract class for all Flink streaming jobs in Chronon.
@@ -37,6 +36,11 @@ abstract class BaseFlinkJob {
   def groupByName: String
 
   def groupByServingInfoParsed: GroupByServingInfoParsed
+
+  /** Run the streaming job without tiling (direct processing).
+    * Events are processed and written directly to KV store without windowing/buffering.
+    */
+  def runGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse]
 
   /** Run the streaming job with tiling enabled (default mode).
     * This is the main execution method that should be implemented by subclasses.
@@ -224,7 +228,8 @@ object FlinkJob {
       FlinkJob.runWriteInternalManifestJob(env, jobArgs.streamingManifestPath(), maybeParentJobId.get, groupByName)
     }
 
-    val jobDatastream = flinkJob.runTiledGroupByJob(env)
+    // val jobDatastream = flinkJob.runTiledGroupByJob(env)
+    val jobDatastream = flinkJob.runGroupByJob(env)
 
     jobDatastream
       .addSink(new MetricsSink(groupByName))

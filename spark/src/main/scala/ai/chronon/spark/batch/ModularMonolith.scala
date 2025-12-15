@@ -12,14 +12,14 @@ import ai.chronon.planner.{
   JoinPartNode,
   Node,
   NodeContent,
-  SourceWithFilterNode
+  SourceWithFilterNode,
+  UnionJoinNode
 }
 import ai.chronon.spark.JoinUtils
 import ai.chronon.spark.catalog.TableUtils
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.JavaConverters._
-import scala.collection.Seq
 
 /** ModularMonolith orchestrates the join pipeline using discrete job classes from an api.Join object:
   * SourceJob -> JoinBootstrapJob -> JoinPartJob(s) -> MergeJob -> JoinDerivationJob
@@ -105,6 +105,9 @@ class ModularMonolith(join: api.Join, dateRange: DateRange)(implicit tableUtils:
       case NodeContent._Fields.JOIN_DERIVATION =>
         runDerivationJob(node.content.getJoinDerivation, metadata, nodeRange)
 
+      case NodeContent._Fields.UNION_JOIN =>
+        runUnionJoinJob(node.content.getUnionJoin, metadata, nodeRange)
+
       case NodeContent._Fields.GROUP_BY_BACKFILL =>
         logger.info(s"Skipping GroupBy backfill node (will be run separately): ${metadata.name}")
 
@@ -153,6 +156,14 @@ class ModularMonolith(join: api.Join, dateRange: DateRange)(implicit tableUtils:
       derivationJob.run()
     }
     logger.info(s"JoinDerivationJob completed, output table: ${metaData.outputTable}")
+  }
+
+  private def runUnionJoinJob(unionJoinNode: UnionJoinNode, metaData: MetaData, nodeRange: DateRange): Unit = {
+    StepRunner(nodeRange, metaData) { stepRange =>
+      val range = PartitionRange(stepRange)
+      ai.chronon.spark.join.UnionJoin.computeJoinAndSave(unionJoinNode.join, range)(tableUtils)
+    }
+    logger.info(s"UnionJoin completed, output table: ${metaData.outputTable}")
   }
 }
 

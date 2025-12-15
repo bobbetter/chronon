@@ -30,11 +30,11 @@ import java.io.PrintWriter
 import java.io.StringWriter
 import java.util
 import java.util.regex.Pattern
-import scala.collection.Seq
 import scala.collection.mutable
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
+import scala.util.matching.Regex
 
 object Extensions {
 
@@ -157,6 +157,7 @@ object Extensions {
   implicit class MetadataOps(metaData: MetaData) {
     def cleanName: String = metaData.name.sanitize
 
+    // TODO: we no longer use __v{version} - it is just __{version}, deprecate this method
     def cleanNameWithoutVersion: String = {
       val clean = metaData.name.sanitize
       clean.replaceAll("__v\\d+$", "")
@@ -219,6 +220,22 @@ object Extensions {
         case None => None
       }
     }
+
+    private val trailingVersionPattern: Regex = """^(.*)__(\d+)$""".r
+
+    private def splitTrailingVersion(s: String): (String, Option[Int]) = {
+      s match {
+        case trailingVersionPattern(prefix, num) => (prefix, Some(num.toInt))
+        case _                                   => (s, None)
+      }
+    }
+
+    def nameWithoutVersion: String = splitTrailingVersion(metaData.getName)._1
+
+    def nameWithoutTeamOrVersion: String = {
+      metaData.nameWithoutVersion.split('.').tail.mkString(".")
+    }
+
   }
 
   // one per output column - so single window
@@ -1318,5 +1335,18 @@ object Extensions {
       val end = dateRange.endDate
       new PartitionRange(start, end)
     }
+  }
+
+  implicit class ModelTransformsOps(transforms: ModelTransforms) {
+    def keyNameForKvStore: String = {
+      _keyNameForKvStore(transforms.metaData, ModelFolder)
+    }
+
+    def joinSource: Option[JoinSource] =
+      Option(transforms.sources)
+        .map(_.toScala)
+        .getOrElse(Seq.empty)
+        .find(_.isSetJoinSource)
+        .map(_.getJoinSource)
   }
 }

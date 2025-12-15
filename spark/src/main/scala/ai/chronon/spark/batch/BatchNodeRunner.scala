@@ -6,12 +6,14 @@ import ai.chronon.api.planner.{DependencyResolver, NodeRunner}
 import ai.chronon.observability.{TileStats, TileStatsType}
 import ai.chronon.online.KVStore.PutRequest
 import ai.chronon.online.{Api, KVStore}
-import ai.chronon.planner._
+import ai.chronon.planner.{JoinStatsComputeNode, JoinStatsUploadToKVNode, _}
+import ai.chronon.spark.Extensions._
 import ai.chronon.spark.batch.iceberg.IcebergPartitionStatsExtractor
+import ai.chronon.spark.batch.{StagingQuery => StagingQueryUtil}
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.join.UnionJoin
 import ai.chronon.spark.submission.SparkSessionBuilder
-import ai.chronon.spark.{GroupBy, GroupByUpload, Join}
+import ai.chronon.spark.{GroupBy, GroupByUpload, Join, ModelTransformsJob}
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -55,7 +57,7 @@ class BatchNodeRunnerArgs(args: Array[String]) extends ScallopConf(args) {
   verify()
 }
 
-class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
+class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends NodeRunner {
   @transient private lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
   def checkPartitions(conf: ExternalSourceSensorNode, range: PartitionRange): Try[Unit] = {
@@ -169,10 +171,10 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
     require(stagingQuery.isSetStagingQuery, "StagingQueryNode must have a stagingQuery set")
     logger.info(s"Running staging query for '${metaData.name}'")
     val stagingQueryConf = stagingQuery.stagingQuery
-    val sq = StagingQuery.from(stagingQueryConf, range.end, tableUtils)
+    val sq = StagingQueryUtil.from(stagingQueryConf, range.end, tableUtils)
     sq.compute(
       range,
-      Option(stagingQuery.stagingQuery.setups).map(_.asScala).getOrElse(Seq.empty),
+      Option(stagingQuery.stagingQuery.setups).map(_.asScala.toSeq).getOrElse(Seq.empty),
       Option(true)
     )
 
@@ -223,6 +225,90 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
           )
       }
     }
+  }
+
+  private def runJoinStatsCompute(metadata: MetaData,
+                                  joinStatsCompute: JoinStatsComputeNode,
+                                  range: PartitionRange): Unit = {
+    require(joinStatsCompute.isSetJoin, "JoinStatsComputeNode must have a join set")
+    val joinConf = joinStatsCompute.join
+    val joinName = metadata.name
+
+    // TODO: Support step-days > 1 for stats computation
+    //   Currently processes the entire date range [range.start, range.end] in one batch.
+    //   For large date ranges or resource-constrained environments, allow processing in steps:
+    //     - Add stepDays parameter (default = entire range)
+    //     - Iterate through range in stepDays chunks (e.g., 3 days at a time)
+    //     - Write each chunk to output table incrementally
+    //   Benefits: Better memory management, checkpointing for long-running jobs, partial progress on failures
+    logger.info(s"Running stats compute for join '$joinName' for range: [${range.start}, ${range.end}]")
+
+    // Import the necessary stats classes
+    import ai.chronon.spark.stats.EnhancedStatsCompute
+
+    // Get the join output table from dependencies - the first table dependency should be the join output
+    val joinOutputTable = Option(metadata.executionInfo)
+      .flatMap(ei => Option(ei.getTableDependencies))
+      .map(_.asScala.head.getTableInfo.table)
+      .getOrElse(
+        throw new IllegalStateException(s"Could not determine join output table for stats compute node: $joinName"))
+
+    logger.info(s"Reading join output from table: $joinOutputTable")
+
+    // Read the join output for the specified partition range
+    val joinOutputDf = tableUtils.sql(
+      s"SELECT * FROM $joinOutputTable WHERE ${tableUtils.partitionColumn} >= '${range.start}' AND ${tableUtils.partitionColumn} <= '${range.end}'"
+    )
+
+    // Extract key columns from the join configuration
+    // Use Try to handle potential NPE from keyColumns method when join parts are null
+    val keys = scala.util.Try(joinConf.keyColumns).toOption.map(_.toSeq).getOrElse(Seq.empty)
+    if (keys.nonEmpty) {
+      logger.info(s"Computing enhanced statistics with keys: ${keys.mkString(", ")}")
+    } else {
+      logger.info(s"Computing enhanced statistics without key exclusions (all columns will be analyzed)")
+    }
+
+    // Create EnhancedStatsCompute instance
+    val enhancedStats = new EnhancedStatsCompute(
+      inputDf = joinOutputDf,
+      keys = keys,
+      name = joinConf.metaData.name
+    )
+
+    // Compute daily summary statistics
+    val timedKvRdd = enhancedStats.enhancedDailySummary(
+      sample = 1.0,
+      timeBucketMinutes = 0 // Daily tiles
+    )
+
+    // Convert to Avro DataFrame format (with key_bytes, value_bytes, ts columns)
+    // This format can be uploaded directly to KV store
+    val avroDf = timedKvRdd.toAvroDf
+    val outputTable = metadata.outputTable
+    avroDf.show()
+
+    // Add partition column (ds) derived from timestamp for partitioning
+    val avroDfWithPartition = avroDf.withTimeBasedColumn(tableUtils.partitionColumn).drop("key_json").drop("value_json")
+
+    val recordCount = avroDfWithPartition.count()
+    logger.info(s"Saving $recordCount stats records to table: $outputTable")
+
+    // Write the stats in Avro format to the output table, partitioned by day
+    // Using insertPartitions which handles the table format provider (iceberg)
+    tableUtils.insertPartitions(
+      df = avroDfWithPartition,
+      tableName = outputTable,
+      saveMode = org.apache.spark.sql.SaveMode.Overwrite
+    )
+
+    // Upload to KV store using the proper EnhancedStatsStore method
+    logger.info(s"Uploading $recordCount stats records to KV store")
+    import ai.chronon.spark.stats.EnhancedStatsStore
+    val statsStore = new EnhancedStatsStore(api, Constants.EnhancedStatsDataset)(tableUtils)
+    statsStore.upload(timedKvRdd, putsPerRequest = 100)
+
+    logger.info(s"Successfully computed and saved stats for join '$joinName'")
   }
 
   private[batch] def extractAndPersistPartitionStats(metricsKvStore: KVStore, outputTable: String, confName: String)(
@@ -292,6 +378,12 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
       case NodeContent._Fields.MONOLITH_JOIN =>
         runMonolithJoin(metadata, conf.getMonolithJoin, range)
 
+      case NodeContent._Fields.UNION_JOIN =>
+        logger.info(s"Running union join for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        require(conf.getUnionJoin.isSetJoin, "UnionJoinNode must have a join set")
+        UnionJoin.computeJoinAndSave(conf.getUnionJoin.join, range)(tableUtils)
+        logger.info(s"Successfully completed union join for '${metadata.name}'")
+
       case NodeContent._Fields.SOURCE_WITH_FILTER =>
         logger.info(s"Running source with filter job for '${metadata.name}' for range: [${range.start}, ${range.end}]")
         new SourceJob(conf.getSourceWithFilter, metadata, dateRange)(tableUtils).run()
@@ -304,7 +396,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
 
       case NodeContent._Fields.JOIN_PART =>
         logger.info(s"Running join part job for '${metadata.name}' for range: [${range.start}, ${range.end}]")
-        new JoinPartJob(conf.getJoinPart, metadata, dateRange)(tableUtils).run()
+        new JoinPartJob(conf.getJoinPart, metadata, dateRange, alignOutput = true)(tableUtils).run()
         logger.info(s"Successfully completed join part job for '${metadata.name}'")
 
       case NodeContent._Fields.JOIN_MERGE =>
@@ -342,6 +434,31 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
             throw exception
         }
 
+      case NodeContent._Fields.MODEL_TRANSFORMS_BACKFILL =>
+        logger.info(
+          s"Running model transforms backfill for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        require(conf.getModelTransformsBackfill.isSetModelTransforms,
+                "ModelTransformsBackfillNode must have modelTransforms set")
+        val modelTransforms = conf.getModelTransformsBackfill.modelTransforms
+
+        val modelPlatformProvider = Option(api.generateModelPlatformProvider)
+          .getOrElse(
+            throw new IllegalStateException("Api with ModelPlatformProvider must be set for ModelTransforms backfill"))
+
+        ModelTransformsJob.computeBackfill(
+          modelTransforms,
+          range,
+          tableUtils,
+          modelPlatformProvider
+        )
+        logger.info(s"Successfully completed model transforms backfill for '${metadata.name}'")
+
+      case NodeContent._Fields.JOIN_STATS_COMPUTE =>
+        logger.info(s"Running join stats compute for '${metadata.name}' for range: [${range.start}, ${range.end}]")
+        require(conf.getJoinStatsCompute.isSetJoin, "JoinStatsComputeNode must have a join set")
+        runJoinStatsCompute(metadata, conf.getJoinStatsCompute, range)
+        logger.info(s"Successfully completed join stats compute for '${metadata.name}'")
+
       case _ =>
         throw new UnsupportedOperationException(s"Unsupported NodeContent type: ${conf.getSetField}")
     }
@@ -351,8 +468,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
                              range: PartitionRange,
                              tablePartitionsDataset: String,
                              kvStore: KVStore,
-                             tableStatsDataset: Option[String],
-                             api: Api): Unit = {
+                             tableStatsDataset: Option[String]): Unit = {
     val outputTablePartitionSpec = (for {
       meta <- Option(metadata)
       executionInfo <- Option(meta.executionInfo)
@@ -370,7 +486,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
       val missingPartitions = range.partitions.filterNot(p => allOutputTablePartitions.contains(p))
       logger.error(
         s"After job completion, output table ${metadata.executionInfo.outputTableInfo.table} is missing partitions: ${missingPartitions
-            .mkString(", ")} from the requested range: $range"
+            .mkString(", ")} from the requested range: $range. All output partitions: ${allOutputTablePartitions}"
       )
     }
 
@@ -399,7 +515,6 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
   }
 
   def runFromArgs(
-      api: Api,
       startDs: String,
       endDs: String,
       tablePartitionsDataset: String,
@@ -414,6 +529,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
       val inputTablesToRange = Option(metadata.executionInfo.getTableDependencies)
         .map(_.asScala.toArray)
         .getOrElse(Array.empty)
+        .filterNot(_.isSoftNodeDependency) // Skip table checks on soft dependencies
         .map((td) => {
           val inputPartSpec =
             Option(td.getTableInfo).map(_.partitionSpec(tableUtils.partitionSpec)).getOrElse(tableUtils.partitionSpec)
@@ -468,8 +584,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils) extends NodeRunner {
                          range = range,
                          tablePartitionsDataset = tablePartitionsDataset,
                          kvStore = kvStore,
-                         tableStatsDataset = tableStatsDataset,
-                         api = api)
+                         tableStatsDataset = tableStatsDataset)
         } catch {
           case e: Exception =>
             // Don't fail the job if post-job actions fail
@@ -495,11 +610,10 @@ object BatchNodeRunner {
     val batchArgs = new BatchNodeRunnerArgs(args)
     val node = ThriftJsonCodec.fromJsonFile[Node](batchArgs.confPath(), check = false)
     val tableUtils = TableUtils(SparkSessionBuilder.build(s"batch-node-runner-${node.metaData.name}"))
-    val runner = new BatchNodeRunner(node, tableUtils)
     val api = instantiateApi(batchArgs.onlineClass(), batchArgs.apiProps)
+    val runner = new BatchNodeRunner(node, tableUtils, api)
     val exitCode =
-      runner.runFromArgs(api,
-                         batchArgs.startDs(),
+      runner.runFromArgs(batchArgs.startDs(),
                          batchArgs.endDs(),
                          batchArgs.tablePartitionsDataset(),
                          batchArgs.tableStatsDataset.toOption)
@@ -511,7 +625,10 @@ object BatchNodeRunner {
     val cl = Thread.currentThread().getContextClassLoader
     val cls = cl.loadClass(onlineClass)
     val constructor = cls.getConstructors.apply(0)
-    val onlineImpl = constructor.newInstance(props)
+    // Convert to regular Map to ensure serializability (Scallop's LazyMap is not serializable)
+    // Force a copy by converting to HashMap and back to ensure it's not a LazyMap
+    val serializableProps: Map[String, String] = scala.collection.immutable.HashMap(props.toSeq: _*)
+    val onlineImpl = constructor.newInstance(serializableProps)
     onlineImpl.asInstanceOf[Api]
   }
 }
