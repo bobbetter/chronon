@@ -128,17 +128,3 @@ MODULE.bazel*
 
 # mill build output
 out/**
-
-# Local deployment data files
-local_deployment/app/data/
-local_deployment/app/compiled/
-local_deployment/app/group_bys/
-local_deployment/app/joins/
-local_deployment/app/teams.py
-.cursorrules
-.python-version
-
-# Exception: allow chronon-ui pyproject.toml
-!local_deployment/chronon-ui/pyproject.toml
-!local_deployment/chronon-ui/server/tests/test_data/warehouse/data.db/
-!local_deployment/chronon-ui/server/tests/test_data/warehouse/quickstart.db/

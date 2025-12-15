@@ -82,10 +82,4 @@ object `package` extends build.BaseModule {
     Task.traverse(Seq(build.flink_connectors))(_.localClasspath)().flatten
   }
 
-  override def assembly: T[PathRef] = Task {
-    val original = super.assembly()
-    val renamed = Task.dest / "chronon-flink-assembly.jar"
-    os.copy.over(original.path, renamed, createFolders = true)
-    PathRef(renamed)
-  }
 }
