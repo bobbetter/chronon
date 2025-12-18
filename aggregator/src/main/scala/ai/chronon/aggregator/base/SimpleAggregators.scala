@@ -171,8 +171,8 @@ class Average extends SimpleAggregator[Double, Array[Any], Double] {
 // Welford algo for computing variance
 // Traditional sum of squares based formula has serious numerical stability problems
 class WelfordState(ir: Array[Any]) {
-  private def count: Int = ir(0).asInstanceOf[Int]
-  private def setCount(c: Int): Unit = ir.update(0, c)
+  private def count: Long = ir(0).asInstanceOf[Long]
+  private def setCount(c: Long): Unit = ir.update(0, c)
   private def mean: Double = ir(1).asInstanceOf[Double]
   private def setMean(m: Double): Unit = ir.update(1, m)
   private def m2: Double = ir(2).asInstanceOf[Double]
@@ -215,7 +215,7 @@ class WelfordState(ir: Array[Any]) {
 }
 
 object WelfordState {
-  def init: Array[Any] = Array(0, 0.0, 0.0)
+  def init: Array[Any] = Array(0L, 0.0, 0.0)
 }
 
 class Variance extends SimpleAggregator[Double, Array[Any], Double] {
@@ -224,7 +224,7 @@ class Variance extends SimpleAggregator[Double, Array[Any], Double] {
   override def irType: DataType =
     StructType(
       "VarianceIr",
-      Array(StructField("count", IntType), StructField("mean", DoubleType), StructField("m2", DoubleType))
+      Array(StructField("count", LongType), StructField("mean", DoubleType), StructField("m2", DoubleType))
     )
 
   override def prepare(input: Double): Array[Any] = {
