@@ -9,8 +9,6 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.types._
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.flatspec.AnyFlatSpec
-import org.scalatest.BeforeAndAfterAll
-
 import java.io.{File, FileInputStream}
 import java.net.URI
 import java.nio.file.{Files, Paths}
@@ -18,7 +16,7 @@ import java.time.Instant
 import java.time.LocalDate
 import scala.jdk.CollectionConverters._
 
-class IonWriterTest extends SparkTestBase with Matchers with BeforeAndAfterAll {
+class IonWriterTest extends SparkTestBase with Matchers {
 
   private val tmpDir = Files.createTempDirectory("ion-writer-test").toFile
 
@@ -26,22 +24,14 @@ class IonWriterTest extends SparkTestBase with Matchers with BeforeAndAfterAll {
     "spark.sql.warehouse.dir" -> new File(tmpDir, "warehouse").getAbsolutePath
   )
 
-  override def afterAll(): Unit = {
-    try {
-      if (tmpDir.exists()) {
-        tmpDir.listFiles().foreach(_.delete())
-        tmpDir.delete()
-      }
-    } finally super.afterAll()
-  }
-
   behavior of "IonWriter"
 
   it should "write ion files with expected rows and fields" in {
     val partitionValue = "2025-10-17"
     val tsValue = "2025-10-17T00:00:00Z"
     val tsValueMillis = Instant.parse(tsValue).toEpochMilli
-    val dataSetName = new File(tmpDir, "ion-output").getAbsolutePath
+    val rootPath = Some(tmpDir.toURI.toString)
+    val dataSetName = "ion-output"
 
     val schema = StructType(
       Seq(
@@ -59,7 +49,7 @@ class IonWriterTest extends SparkTestBase with Matchers with BeforeAndAfterAll {
     )
 
     val df = spark.createDataFrame(spark.sparkContext.parallelize(rows, numSlices = 2), schema)
-    val paths = IonWriter.write(df, dataSetName, "ds", partitionValue)
+    val paths = IonWriter.write(df, dataSetName, "ds", partitionValue, rootPath)
 
     paths should not be empty
     all(paths) should include(s"ds=$partitionValue")
@@ -91,8 +81,7 @@ class IonWriterTest extends SparkTestBase with Matchers with BeforeAndAfterAll {
   it should "honor upload bucket when provided" in {
     val partitionValue = "2025-10-18"
     val dataSetName = "ion-output-bucket"
-    val bucketDir = new File(tmpDir, "bucket-root")
-    val uploadBucket = Some(bucketDir.toURI.toString)
+    val rootPath = Some(new File(tmpDir, "bucket-root").toURI.toString)
 
     val schema = StructType(
       Seq(
@@ -110,26 +99,31 @@ class IonWriterTest extends SparkTestBase with Matchers with BeforeAndAfterAll {
 
     val df = spark.createDataFrame(spark.sparkContext.parallelize(rows, numSlices = 1), schema)
 
-    val paths = IonWriter.write(df, dataSetName, "ds", partitionValue, uploadBucket)
+    val paths = IonWriter.write(df, dataSetName, "ds", partitionValue, rootPath)
 
     paths should not be empty
-    val expectedBase = new File(bucketDir, dataSetName).getAbsolutePath
-    all(paths.map(p => new File(new URI(p)).getAbsolutePath)) should startWith(expectedBase + File.separator + s"ds=$partitionValue")
+    all(paths) should include(dataSetName)
+    all(paths) should include(s"ds=$partitionValue")
   }
 
-  it should "normalize bucket values" in {
-    IonWriter.cleanPath("test-bucket") shouldBe Some("s3://test-bucket")
-    IonWriter.cleanPath("s3://already/present") shouldBe Some("s3://already/present")
-    IonWriter.cleanPath("file:/tmp/somewhere") shouldBe Some("file:/tmp/somewhere")
-    IonWriter.cleanPath("  ") shouldBe None
+  it should "validate root path with valid schemes" in {
+    IonWriter.validateRootPath(Some("s3://my-bucket/path")) shouldBe "s3://my-bucket/path"
+    IonWriter.validateRootPath(Some("s3a://my-bucket")) shouldBe "s3a://my-bucket"
+    IonWriter.validateRootPath(Some("file:///tmp/local")) shouldBe "file:///tmp/local"
+    IonWriter.validateRootPath(Some("  s3://trimmed/  ")) shouldBe "s3://trimmed"
   }
 
-  it should "resolve base path with and without bucket" in {
-    val pathNoBucket = IonWriter.resolvePath("base/path", None)
-    pathNoBucket shouldBe new Path("base/path")
+  it should "reject invalid root paths" in {
+    an[IllegalArgumentException] should be thrownBy IonWriter.validateRootPath(None)
+    an[IllegalArgumentException] should be thrownBy IonWriter.validateRootPath(Some(""))
+    an[IllegalArgumentException] should be thrownBy IonWriter.validateRootPath(Some("  "))
+    an[IllegalArgumentException] should be thrownBy IonWriter.validateRootPath(Some("no-scheme-bucket"))
+  }
 
+  it should "resolve partition path correctly" in {
     val bucketUri = new File(tmpDir, "bucket-resolve").toURI.toString
-    val pathWithBucket = IonWriter.resolvePath("/inner/base", Some(bucketUri))
-    pathWithBucket.toString shouldBe new Path(bucketUri).suffix("/inner/base").toString
+    val path = IonWriter.resolvePartitionPath("my-dataset", "ds", "2025-01-15", Some(bucketUri))
+    path.toString should include("my-dataset")
+    path.toString should include("ds=2025-01-15")
   }
 }

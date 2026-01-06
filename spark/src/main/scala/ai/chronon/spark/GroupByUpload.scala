@@ -271,24 +271,30 @@ object GroupByUpload {
       ))
     val metaRdd = tableUtils.sparkSession.sparkContext.parallelize(metaRows.toSeq)
     val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, kvDf.schema)
-    val uploadDf = kvDf.union(metaDf).withColumn("ds", lit(endDs))
 
     val uploadFormat =
       groupByConf
-        .commonConfValue("spark.chronon.table_write.upload.format")
+        .commonConfValue(IonPathConfig.uploadFormatKey)
         .getOrElse("parquet")
+    val partitionCol = groupByConf
+      .commonConfValue(IonPathConfig.PartitionColumnKey)
+      .getOrElse(IonPathConfig.DefaultPartitionColumn)
+    val uploadDf = kvDf.union(metaDf).withColumn(partitionCol, lit(endDs))
+
     logger.info(s"GroupBy upload with upload format: $uploadFormat")
 
     if (uploadFormat == "ion") {
       val rootPath =
         groupByConf
-          .commonConfValue("spark.chronon.table_write.upload.root_path")
-      val ionDf = uploadDf.withColumn("ds", to_date(col("ds")))
-      IonWriter.write(ionDf, groupByConf.metaData.uploadTable, "ds", endDs, rootPath)
+          .commonConfValue(IonPathConfig.UploadLocationKey)
+      val ionDf = uploadDf.withColumn(partitionCol, to_date(col(partitionCol)))
+      IonWriter.write(
+        ionDf, groupByConf.metaData.uploadTable, partitionCol, endDs, rootPath
+      )
     } else {
       uploadDf.save(groupByConf.metaData.uploadTable,
                     groupByConf.metaData.tableProps,
-                    partitionColumns = List("ds"))
+                    partitionColumns = List(partitionCol))
 
       val kvDfReloaded = tableUtils
         .loadTable(groupByConf.metaData.uploadTable)

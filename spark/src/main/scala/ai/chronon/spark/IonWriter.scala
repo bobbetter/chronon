@@ -14,6 +14,14 @@ import java.time.{LocalDate, ZoneOffset}
 import java.util.UUID
 import scala.util.control.NonFatal
 
+/** Configuration keys used for Ion upload paths. */
+object IonPathConfig {
+  val uploadFormatKey = "spark.chronon.table_write.upload.format"
+  val UploadLocationKey = "spark.chronon.table_write.upload.location"
+  val PartitionColumnKey = "spark.chronon.partition.column"
+  val DefaultPartitionColumn = "ds"
+}
+
 object IonWriter {
   private val logger = LoggerFactory.getLogger(getClass)
 
@@ -25,8 +33,7 @@ object IonWriter {
     val serializableConf = new SerializableConfiguration(df.sparkSession.sparkContext.hadoopConfiguration)
     val schema = df.schema
 
-    val resolvedPath = resolvePath(dataSetName, rootPath)
-    val partitionPath = new Path(resolvedPath, s"$partitionColumn=$partitionValue")
+    val partitionPath = resolvePartitionPath(dataSetName, partitionColumn, partitionValue, rootPath)
 
     val requiredColumns = Seq("key_bytes", "value_bytes", partitionColumn)
     val missingColumns = requiredColumns.filterNot(schema.fieldNames.contains)
@@ -100,31 +107,32 @@ object IonWriter {
     val totalKeyBytes = written.map(_._3).sum
     val totalValueBytes = written.map(_._4).sum
     logger.info(
-      s"Wrote Ion files for partition $partitionValue at ${resolvedPath.toString} rows=$totalRows key_bytes=$totalKeyBytes value_bytes=$totalValueBytes"
+      s"Wrote Ion files for partition $partitionValue at $partitionPath rows=$totalRows key_bytes=$totalKeyBytes value_bytes=$totalValueBytes"
     )
     written.map(_._1)
   }
 
-  def resolvePath(dataSetName: String, rootPath: Option[String]): Path = {
-    val cleanedDatasetName = Option(dataSetName).map(_.trim).getOrElse("").stripPrefix("/")
-    
-    rootPath.flatMap(cleanPath) match {
-      case Some(bucket) =>
-        val resolved = new Path(new Path(bucket), cleanedDatasetName)
-        logger.info(s"Ion upload resolved basePath=$cleanedDatasetName bucket=$bucket resolved=$resolved")
-        resolved
-      case None =>
-        new Path(cleanedDatasetName)
-    }
+
+  def resolvePartitionPath(dataSetName: String, 
+                           partitionColumn: String, 
+                           partitionValue: String, 
+                           rootPath: Option[String]): Path = {
+    val root = validateRootPath(rootPath)
+    new Path(new Path(root, dataSetName), s"$partitionColumn=$partitionValue")
   }
 
-  def cleanPath(rootPath: String): Option[String] = {
-    Option(rootPath)
-      .map(_.trim.stripSuffix("/"))
-      .filter(_.nonEmpty)
-      .map { value =>
-        if (value.matches("^[A-Za-z][A-Za-z0-9+.-]*:.*")) value else s"s3://$value"
-      }
+  /** Validates and normalizes rootPath. Must be s3:// or file:// format. */
+  def validateRootPath(rootPath: Option[String]): String = {
+    val trimmed = rootPath.map(_.trim.stripSuffix("/")).filter(_.nonEmpty).getOrElse {
+      throw new IllegalArgumentException(
+        s"Location path is required. Set '${IonPathConfig.UploadLocationKey}' in configuration.")
+    }
+    
+    if (!trimmed.matches("^(s3|s3a|s3n|file):/{1,3}.*")) {
+      throw new IllegalArgumentException(
+        s"Root path must start with s3:// or file:/ but got: $trimmed")
+    }
+    trimmed
   }
 
   def toMillis(value: Any): BigDecimal = {
