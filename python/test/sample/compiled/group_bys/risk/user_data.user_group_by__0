@@ -57,7 +57,7 @@
         }
       },
       "historicalBackfill": 0,
-      "scheduleCron": "@daily"
+      "offlineSchedule": "@daily"
     },
     "name": "risk.user_data.user_group_by__0",
     "outputNamespace": "risk",

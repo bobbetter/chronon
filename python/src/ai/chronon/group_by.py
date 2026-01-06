@@ -431,6 +431,7 @@ def GroupBy(
     production: bool = DEFAULT_PRODUCTION,
     # execution params
     offline_schedule: str = "@daily",
+    online_schedule: Optional[str] = None,
     conf: common.ConfigProperties = None,
     env_vars: common.EnvironmentVariables = None,
     cluster_conf: common.ClusterConfigProperties = None,
@@ -526,15 +527,24 @@ def GroupBy(
         This is used by airflow integration to pick an older hive partition to wait on.
     :type lag: int
     :param offline_schedule:
-        the offline schedule interval for batch jobs. Below is the equivalent of the cron tab commands::
+        The offline schedule interval for batch jobs. Supports standard cron expressions
+        that run at most once per day. Examples::
 
-            '@hourly': '0 * * * *',
-            '@daily': '0 0 * * *',
-            '@weekly': '0 0 * * 0',
-            '@monthly': '0 0 1 * *',
-            '@yearly': '0 0 1 1 *',
+            '@daily': Legacy format for midnight daily execution
+            '0 2 * * *': Daily at 2:00 AM
+            '30 14 * * MON-FRI': Weekdays at 2:30 PM
+            '0 9 * * 1': Mondays at 9:00 AM
+            '15 23 * * SUN': Sundays at 11:15 PM
+
+        Note: Hourly, sub-hourly, or multi-daily schedules are not supported.
 
     :type offline_schedule: str
+    :param online_schedule:
+        The online schedule interval for real-time serving jobs. Supports standard cron expressions
+        that run at most once per day. When online=True and online_schedule is not specified,
+        defaults to "@daily". Set to None to explicitly disable online scheduling even when online=True.
+        Examples follow the same format as offline_schedule.
+    :type online_schedule: Optional[str]
     :param tags:
         Additional metadata that does not directly affect feature computation, but is useful to
         track for management purposes.
@@ -614,8 +624,20 @@ def GroupBy(
     # get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
 
+    # Validate online_schedule based on online flag
+    if not online and online_schedule is not None:
+        raise ValueError(
+            "online_schedule cannot be set when online=False. "
+            "Either set online=True or remove the online_schedule parameter."
+        )
+
+    # Set default online_schedule if online is True and online_schedule is not specified
+    if online and online_schedule is None:
+        online_schedule = "@daily"
+
     exec_info = common.ExecutionInfo(
-        scheduleCron=offline_schedule,
+        offlineSchedule=offline_schedule,
+        onlineSchedule=online_schedule,
         conf=conf,
         env=env_vars,
         stepDays=step_days,
