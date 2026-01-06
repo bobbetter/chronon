@@ -40,11 +40,9 @@ object KinesisConfig {
     properties.setProperty(AWSConfigConstants.AWS_ACCESS_KEY_ID, accessKeyId)
     properties.setProperty(AWSConfigConstants.AWS_SECRET_ACCESS_KEY, secretAccessKey)
 
-
     val initialPosition = lookup.optional(Keys.InitialPosition).getOrElse(Defaults.InitialPosition)
     properties.setProperty(ConsumerConfigConstants.STREAM_INITIAL_POSITION, initialPosition)
 
-    
     val endpoint = lookup.optional(Keys.KinesisEndpoint)
     val publisherType = lookup.optional(Keys.EnableEfo).map { enabledFlag =>
       if (enabledFlag.toBoolean) ConsumerConfigConstants.RecordPublisherType.EFO.toString
@@ -74,4 +72,3 @@ object KinesisConfig {
       throw new IllegalArgumentException(s"Missing required property: $name")
   }
 }
-

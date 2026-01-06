@@ -31,8 +31,8 @@ import org.apache.flink.streaming.connectors.kinesis.FlinkKinesisConsumer
   * - initial_position: Starting position (LATEST, TRIM_HORIZON, or AT_TIMESTAMP)
   */
 class KinesisFlinkSource[T](props: Map[String, String],
-                             deserializationSchema: DeserializationSchema[T],
-                             topicInfo: TopicInfo)
+                            deserializationSchema: DeserializationSchema[T],
+                            topicInfo: TopicInfo)
     extends FlinkSource[T] {
 
   private val config = KinesisConfig.buildConsumerConfig(props, topicInfo)
@@ -46,7 +46,7 @@ class KinesisFlinkSource[T](props: Map[String, String],
     // This is needed because FlinkKinesisConsumer doesn't support DeserializationSchema
     // that uses the Collector API (which allows producing multiple records per input)
     val wrappedSchema = new KinesisDeserializationSchemaWrapper[T](deserializationSchema)
-    
+
     val kinesisConsumer = new FlinkKinesisConsumer[T](
       topicInfo.name,
       wrappedSchema,
@@ -55,7 +55,7 @@ class KinesisFlinkSource[T](props: Map[String, String],
 
     // skip watermarks at the source as we derive them post Spark expr eval
     val noWatermarks: WatermarkStrategy[T] = WatermarkStrategy.noWatermarks()
-    
+
     env
       .addSource(kinesisConsumer, s"Kinesis source: $groupByName - ${topicInfo.name}")
       .setParallelism(parallelism)

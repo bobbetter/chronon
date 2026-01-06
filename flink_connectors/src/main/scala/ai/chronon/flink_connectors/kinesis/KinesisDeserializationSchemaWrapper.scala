@@ -29,10 +29,9 @@ class KinesisDeserializationSchemaWrapper[T](deserializationSchema: Deserializat
     }
 
     deserializationSchema.deserialize(recordValue, collector)
-    
+
     if (!results.isEmpty) results.get(0) else null.asInstanceOf[T]
   }
 
   override def getProducedType: TypeInformation[T] = deserializationSchema.getProducedType
 }
-
