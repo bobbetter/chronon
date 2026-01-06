@@ -10,6 +10,7 @@
 *.logs
 *.iml
 *.db
+
 .idea/
 .ijwb/
 **/local_warehouse/
@@ -127,3 +128,4 @@ MODULE.bazel*
 
 # mill build output
 out/**
+agents.md

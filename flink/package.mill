@@ -77,4 +77,14 @@ trait FlinkModule extends Cross.Module[String] with build.BaseModule {
       mvn"com.fasterxml.jackson.core:jackson-annotations:2.15.2"
     )
   }
+
+  override def assemblyRules = super.assemblyRules ++ Seq(
+    mill.scalalib.Assembly.Rule.Relocate("org.apache.flink.kinesis.shaded.**", "shaded.@1")
+  )
+
+  override def upstreamAssemblyClasspath = Task {
+    super.upstreamAssemblyClasspath() ++ 
+    Task.traverse(Seq(build.flink_connectors))(_.localClasspath)().flatten
+  }
+
 }
