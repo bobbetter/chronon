@@ -66,7 +66,8 @@ object DynamoDBKVStoreConstants {
   val defaultWriteCapacityUnits = 10L
 }
 
-class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
+class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient, conf: Map[String, String] = Map.empty) extends KVStore {
+
   import DynamoDBKVStoreConstants._
 
   protected val metricsContext: Metrics.Context = Metrics.Context(Metrics.Environment.KVStore).withSuffix("dynamodb")
