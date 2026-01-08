@@ -749,9 +749,11 @@ object GroupBy {
                       stepDays: Option[Int] = None,
                       overrideStartPartition: Option[String] = None,
                       skipFirstHole: Boolean = true): Unit = {
-    assert(
-      groupByConf.backfillStartDate != null,
-      s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
+    if (overrideStartPartition.isEmpty) {
+      assert(
+        groupByConf.backfillStartDate != null,
+        s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
+    }
     Option(groupByConf.setups).foreach(_.foreach(tableUtils.sql))
     val overrideStart = overrideStartPartition.getOrElse(groupByConf.backfillStartDate)
     val outputTable = groupByConf.metaData.outputTable
