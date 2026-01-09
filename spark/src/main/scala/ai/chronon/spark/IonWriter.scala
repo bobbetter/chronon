@@ -35,6 +35,9 @@ object IonWriter {
 
     val partitionPath = resolvePartitionPath(dataSetName, partitionColumn, partitionValue, rootPath)
 
+    // Clean up any existing files in the partition path to ensure idempotency
+    cleanupPartitionPath(partitionPath, serializableConf)
+
     val requiredColumns = Seq("key_bytes", "value_bytes", partitionColumn)
     val missingColumns = requiredColumns.filterNot(schema.fieldNames.contains)
     if (missingColumns.nonEmpty) {
@@ -119,6 +122,29 @@ object IonWriter {
                            rootPath: Option[String]): Path = {
     val root = validateRootPath(rootPath)
     new Path(new Path(root, dataSetName), s"$partitionColumn=$partitionValue")
+  }
+
+  /** 
+   * Deletes all existing files in the partition path to ensure idempotent writes.
+   * If the path doesn't exist, this is a no-op.
+   */
+  private def cleanupPartitionPath(partitionPath: Path, serializableConf: SerializableConfiguration): Unit = {
+    val fs = FileSystem.get(partitionPath.toUri, serializableConf.value)
+    if (fs.exists(partitionPath)) {
+      val files = fs.listStatus(partitionPath)
+      val deletedCount = files.count { fileStatus =>
+        if (fileStatus.isFile) {
+          val deleted = fs.delete(fileStatus.getPath, false)
+          if (!deleted) {
+            logger.warn(s"Failed to delete file: ${fileStatus.getPath}")
+          }
+          deleted
+        } else {
+          false
+        }
+      }
+      logger.info(s"Cleaned up $deletedCount existing file(s) from $partitionPath for idempotent write")
+    }
   }
 
   /** Validates and normalizes rootPath. Must be s3:// or file:// format. */

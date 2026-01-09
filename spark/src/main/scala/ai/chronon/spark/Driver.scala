@@ -681,14 +681,19 @@ object Driver {
       val startTime = System.currentTimeMillis()
       val uploader = args.uploader()
 
+      // Merge executionInfo.conf.common with serializableProps for KVStore configuration
+      val commonConf = groupByConf.commonConf
+      val mergedProps = args.serializableProps ++ commonConf
+      val apiWithProps = args.impl(mergedProps)
+
       logger.info(
         s"Triggering bulk load for GroupBy: ${groupByName} for partition: ${args.partitionString()} " +
-          s"from table: ${offlineTable} using ${uploader}")
+          s"from table: ${offlineTable} using ${uploader}"
+        )
 
-      val kvStore = args.api.genKvStore
+      val kvStore = apiWithProps.genKvStore
 
       try {
-        // The kvStore implementation will handle different warehouse types based on the configuration
         kvStore.bulkPut(offlineTable, groupByName, args.partitionString())
       } catch {
         case e: Exception =>
