@@ -229,25 +229,26 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient, conf: Map[String, Stri
   }
 
   /** Bulk loads data from S3 Ion files into DynamoDB using the ImportTable API.
-    * 
+    *
     * The Ion files are expected to have been written by IonWriter during GroupByUpload.
     * The S3 location is determined by IonWriter.resolveS3Location using:
     *   - Root path from config: spark.chronon.table_write.upload.root_path
     *   - Dataset name: sourceOfflineTable (e.g., namespace.groupby_v1__upload)
     *   - Partition column and value: ds={partition}
-    * 
-    * Full path: s3://{bucket}/{sourceOfflineTable}/ds={partition}/
+    *
+    * Full path: s3://{spark.chronon.table_write.upload.root_path}/{sourceOfflineTable}/ds={partition}/
     */
   override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
     val rootPath = conf.get(IonPathConfig.UploadLocationKey)
     val partitionColumn = conf.getOrElse(IonPathConfig.PartitionColumnKey, IonPathConfig.DefaultPartitionColumn)
-    
+
     // Use shared IonWriter path resolution to ensure consistency between producer and consumer
     val path = IonWriter.resolvePartitionPath(sourceOfflineTable, partitionColumn, partition, rootPath)
     val s3Source = toS3BucketSource(path)
     logger.info(s"Starting DynamoDB import for table: $destinationOnlineDataSet from S3: $s3Source")
-    
-    val tableParams = TableCreationParameters.builder()
+
+    val tableParams = TableCreationParameters
+      .builder()
       .tableName(destinationOnlineDataSet)
       .keySchema(
         KeySchemaElement.builder().attributeName(partitionKeyColumn).keyType(KeyType.HASH).build()
@@ -257,24 +258,25 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient, conf: Map[String, Stri
       )
       .billingMode(BillingMode.PAY_PER_REQUEST)
       .build()
-    
-    val importRequest = ImportTableRequest.builder()
+
+    val importRequest = ImportTableRequest
+      .builder()
       .s3BucketSource(s3Source)
       .inputFormat(InputFormat.ION)
       .inputCompressionType(InputCompressionType.NONE)
       .tableCreationParameters(tableParams)
       .build()
-    
+
     try {
       val startTs = System.currentTimeMillis()
       val importResponse = dynamoDbClient.importTable(importRequest)
       val importArn = importResponse.importTableDescription().importArn()
-      
+
       logger.info(s"DynamoDB import initiated with ARN: $importArn for table: $destinationOnlineDataSet")
-      
+
       // Wait for import to complete
       waitForImportCompletion(importArn, destinationOnlineDataSet)
-      
+
       val duration = System.currentTimeMillis() - startTs
       logger.info(s"DynamoDB import completed for table: $destinationOnlineDataSet in ${duration}ms")
       metricsContext.increment("bulkPut.successes")
@@ -286,33 +288,34 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient, conf: Map[String, Stri
         throw e
     }
   }
-  
+
   /** Converts a Hadoop Path to an S3BucketSource for DynamoDB ImportTable. */
   private def toS3BucketSource(path: org.apache.hadoop.fs.Path): S3BucketSource = {
     val uri = path.toUri
-    S3BucketSource.builder()
+    S3BucketSource
+      .builder()
       .s3Bucket(uri.getHost)
       .s3KeyPrefix(uri.getPath.stripPrefix("/") + "/")
       .build()
   }
-  
+
   /** Waits for a DynamoDB import to complete by polling the import status. */
   private def waitForImportCompletion(importArn: String, tableName: String): Unit = {
     val maxWaitTimeMs = 30 * 60 * 1000L // 30 minutes
     val pollIntervalMs = 10 * 1000L // 10 seconds
     val startTime = System.currentTimeMillis()
-    
+
     var status: ImportStatus = ImportStatus.IN_PROGRESS
     while (status == ImportStatus.IN_PROGRESS && (System.currentTimeMillis() - startTime) < maxWaitTimeMs) {
       Thread.sleep(pollIntervalMs)
-      
+
       val describeRequest = DescribeImportRequest.builder().importArn(importArn).build()
       val describeResponse = dynamoDbClient.describeImport(describeRequest)
       status = describeResponse.importTableDescription().importStatus()
-      
+
       logger.info(s"DynamoDB import status for $tableName: $status")
     }
-    
+
     status match {
       case ImportStatus.COMPLETED =>
         logger.info(s"DynamoDB import completed successfully for table: $tableName")

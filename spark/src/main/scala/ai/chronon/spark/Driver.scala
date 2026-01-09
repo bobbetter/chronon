@@ -689,7 +689,7 @@ object Driver {
       logger.info(
         s"Triggering bulk load for GroupBy: ${groupByName} for partition: ${args.partitionString()} " +
           s"from table: ${offlineTable} using ${uploader}"
-        )
+      )
 
       val kvStore = apiWithProps.genKvStore
 

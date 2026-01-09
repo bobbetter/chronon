@@ -49,58 +49,59 @@ object IonWriter {
     val valueIdx = schema.fieldIndex("value_bytes")
     val tsIdx = schema.fieldIndex(partitionColumn)
 
-    val written = df.rdd.mapPartitionsWithIndex( (partitionId, iter) =>
-      if (!iter.hasNext) Iterator.empty
-      else {
-        val unique = UUID.randomUUID().toString
-        val filePath = new Path(partitionPath, s"part-$partitionId-$unique.ion")
-        val fs = FileSystem.get(filePath.toUri, serializableConf.value)
-        fs.mkdirs(partitionPath)
-        val out = fs.create(filePath, true)
-        val writer = IonBinaryWriterBuilder.standard().build(out)
+    val written = df.rdd
+      .mapPartitionsWithIndex((partitionId, iter) =>
+        if (!iter.hasNext) Iterator.empty
+        else {
+          val unique = UUID.randomUUID().toString
+          val filePath = new Path(partitionPath, s"part-$partitionId-$unique.ion")
+          val fs = FileSystem.get(filePath.toUri, serializableConf.value)
+          fs.mkdirs(partitionPath)
+          val out = fs.create(filePath, true)
+          val writer = IonBinaryWriterBuilder.standard().build(out)
 
-        var rowCount = 0L
-        var keyBytesTotal = 0L
-        var valueBytesTotal = 0L
+          var rowCount = 0L
+          var keyBytesTotal = 0L
+          var valueBytesTotal = 0L
 
-        try {
-          iter.foreach { row =>
-            writer.stepIn(IonType.STRUCT)
-            writer.setFieldName("Item")
-            writer.stepIn(IonType.STRUCT)
-            if (!row.isNullAt(keyIdx)) {
-              val bytes = row.getAs[Array[Byte]](keyIdx)
-              writer.setFieldName("keyBytes")
-              writer.writeBlob(bytes)
-              keyBytesTotal += bytes.length
+          try {
+            iter.foreach { row =>
+              writer.stepIn(IonType.STRUCT)
+              writer.setFieldName("Item")
+              writer.stepIn(IonType.STRUCT)
+              if (!row.isNullAt(keyIdx)) {
+                val bytes = row.getAs[Array[Byte]](keyIdx)
+                writer.setFieldName("keyBytes")
+                writer.writeBlob(bytes)
+                keyBytesTotal += bytes.length
+              }
+              if (!row.isNullAt(valueIdx)) {
+                val bytes = row.getAs[Array[Byte]](valueIdx)
+                writer.setFieldName("valueBytes")
+                writer.writeBlob(bytes)
+                valueBytesTotal += bytes.length
+              }
+              if (!row.isNullAt(tsIdx)) {
+                writer.setFieldName("ts")
+                val millis = toMillis(row.get(tsIdx))
+                writer.writeDecimal(millis)
+              }
+              writer.stepOut()
+              writer.stepOut()
+              rowCount += 1
             }
-            if (!row.isNullAt(valueIdx)) {
-              val bytes = row.getAs[Array[Byte]](valueIdx)
-              writer.setFieldName("valueBytes")
-              writer.writeBlob(bytes)
-              valueBytesTotal += bytes.length
-            }
-            if (!row.isNullAt(tsIdx)) {
-              writer.setFieldName("ts")
-              val millis = toMillis(row.get(tsIdx))
-              writer.writeDecimal(millis)
-            }
-            writer.stepOut()
-            writer.stepOut()
-            rowCount += 1
+            writer.finish()
+          } catch {
+            case NonFatal(e) =>
+              logger.error(s"Failed writing Ion file at $filePath", e)
+              throw e
+          } finally {
+            writer.close()
+            out.close()
           }
-          writer.finish()
-        } catch {
-          case NonFatal(e) =>
-            logger.error(s"Failed writing Ion file at $filePath", e)
-            throw e
-        } finally {
-          writer.close()
-          out.close()
-        }
-        Iterator.single((filePath.toString, rowCount, keyBytesTotal, valueBytesTotal))
-      }
-    ).collect()
+          Iterator.single((filePath.toString, rowCount, keyBytesTotal, valueBytesTotal))
+        })
+      .collect()
 
     val totalRows = written.map(_._2).sum
     if (totalRows == 0L) {
@@ -115,19 +116,14 @@ object IonWriter {
     written.map(_._1)
   }
 
-
-  def resolvePartitionPath(dataSetName: String, 
-                           partitionColumn: String, 
-                           partitionValue: String, 
+  def resolvePartitionPath(dataSetName: String,
+                           partitionColumn: String,
+                           partitionValue: String,
                            rootPath: Option[String]): Path = {
     val root = validateRootPath(rootPath)
     new Path(new Path(root, dataSetName), s"$partitionColumn=$partitionValue")
   }
 
-  /** 
-   * Deletes all existing files in the partition path to ensure idempotent writes.
-   * If the path doesn't exist, this is a no-op.
-   */
   private def cleanupPartitionPath(partitionPath: Path, serializableConf: SerializableConfiguration): Unit = {
     val fs = FileSystem.get(partitionPath.toUri, serializableConf.value)
     if (fs.exists(partitionPath)) {
@@ -143,7 +139,7 @@ object IonWriter {
           false
         }
       }
-      logger.info(s"Cleaned up $deletedCount existing file(s) from $partitionPath for idempotent write")
+      logger.info(s"Cleaned up $deletedCount existing file(s) from $partitionPath")
     }
   }
 
@@ -153,10 +149,9 @@ object IonWriter {
       throw new IllegalArgumentException(
         s"Location path is required. Set '${IonPathConfig.UploadLocationKey}' in configuration.")
     }
-    
+
     if (!trimmed.matches("^(s3|s3a|s3n|file):/{1,3}.*")) {
-      throw new IllegalArgumentException(
-        s"Root path must start with s3:// or file:/ but got: $trimmed")
+      throw new IllegalArgumentException(s"Root path must start with s3:// or file:/ but got: $trimmed")
     }
     trimmed
   }
