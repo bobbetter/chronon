@@ -686,12 +686,12 @@ object Driver {
 
       logger.info(
         s"Triggering bulk load for GroupBy: ${groupByName} for partition: ${args.partitionString()} " +
-          s"from table: ${offlineTable} using ${uploader}"
-      )
+          s"from table: ${offlineTable} using ${uploader}")
 
       val kvStore = args.api.genKvStore
 
       try {
+        // The kvStore implementation will handle different warehouse types based on the configuration
         kvStore.bulkPut(offlineTable, groupByName, args.partitionString())
       } catch {
         case e: Exception =>
