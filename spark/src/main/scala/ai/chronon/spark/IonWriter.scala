@@ -22,6 +22,12 @@ object IonPathConfig {
   val DefaultPartitionColumn = "ds"
 }
 
+case class IonWriteResult(
+    rowCount: Long,
+    keyBytes: Long,
+    valueBytes: Long
+)
+
 object IonWriter {
   private val logger = LoggerFactory.getLogger(getClass)
 
@@ -29,7 +35,7 @@ object IonWriter {
             dataSetName: String,
             partitionColumn: String,
             partitionValue: String,
-            rootPath: Option[String] = None): Seq[String] = {
+            rootPath: Option[String] = None): IonWriteResult = {
     val serializableConf = new SerializableConfiguration(df.sparkSession.sparkContext.hadoopConfiguration)
     val schema = df.schema
 
@@ -99,21 +105,21 @@ object IonWriter {
             writer.close()
             out.close()
           }
-          Iterator.single((filePath.toString, rowCount, keyBytesTotal, valueBytesTotal))
+          Iterator.single((rowCount, keyBytesTotal, valueBytesTotal))
         })
       .collect()
 
-    val totalRows = written.map(_._2).sum
+    val totalRows = written.map(_._1).sum
     if (totalRows == 0L) {
       throw new RuntimeException("Ion upload produced zero rows.")
     }
 
-    val totalKeyBytes = written.map(_._3).sum
-    val totalValueBytes = written.map(_._4).sum
+    val totalKeyBytes = written.map(_._2).sum
+    val totalValueBytes = written.map(_._3).sum
     logger.info(
       s"Wrote Ion files for partition $partitionValue at $partitionPath rows=$totalRows key_bytes=$totalKeyBytes value_bytes=$totalValueBytes"
     )
-    written.map(_._1)
+    IonWriteResult(totalRows, totalKeyBytes, totalValueBytes)
   }
 
   def resolvePartitionPath(dataSetName: String,

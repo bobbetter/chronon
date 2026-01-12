@@ -288,13 +288,16 @@ object GroupByUpload {
         groupByConf
           .commonConfValue(IonPathConfig.UploadLocationKey)
       val ionDf = uploadDf.withColumn(partitionCol, to_date(col(partitionCol)))
-      IonWriter.write(
+      val result = IonWriter.write(
         ionDf,
         groupByConf.metaData.uploadTable,
         partitionCol,
         endDs,
         rootPath
       )
+      context.gauge(Metrics.Name.KeyBytes, result.keyBytes)
+      context.gauge(Metrics.Name.ValueBytes, result.valueBytes)
+      context.gauge(Metrics.Name.RowCount, result.rowCount)
     } else {
       uploadDf.save(groupByConf.metaData.uploadTable,
                     groupByConf.metaData.tableProps,

@@ -3,15 +3,13 @@ package ai.chronon.spark.upload
 import ai.chronon.spark.IonWriter
 import ai.chronon.spark.utils.SparkTestBase
 import com.amazon.ion.system.IonSystemBuilder
-import com.amazon.ion.{IonBlob, IonDecimal, IonStruct, IonText}
-import org.apache.hadoop.fs.Path
+import com.amazon.ion.{IonBlob, IonDecimal, IonStruct}
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types._
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.flatspec.AnyFlatSpec
 import java.io.{File, FileInputStream}
-import java.net.URI
-import java.nio.file.{Files, Paths}
+import java.nio.file.Files
 import java.time.Instant
 import java.time.LocalDate
 import scala.util.Using
@@ -50,20 +48,23 @@ class IonWriterTest extends SparkTestBase with Matchers {
     )
 
     val df = spark.createDataFrame(spark.sparkContext.parallelize(rows, numSlices = 2), schema)
-    val paths = IonWriter.write(df, dataSetName, "ds", partitionValue, rootPath)
+    val result = IonWriter.write(df, dataSetName, "ds", partitionValue, rootPath)
 
-    paths should not be empty
-    all(paths) should include(s"ds=$partitionValue")
+    result.rowCount shouldBe rows.size
+    result.keyBytes should be > 0L
+    result.valueBytes should be > 0L
+
+    // Verify files were written by reading from the partition path
+    val partitionPath = IonWriter.resolvePartitionPath(dataSetName, "ds", partitionValue, rootPath)
+    val partitionDir = new File(partitionPath.toUri)
+    val ionFiles = partitionDir.listFiles().filter(_.getName.endsWith(".ion"))
+    ionFiles should not be empty
 
     val ion = IonSystemBuilder.standard().build()
 
     val parsed =
-      paths.flatMap { p =>
-        val path =
-          if (p.startsWith("file:")) Paths.get(new URI(p)) // handle fully-qualified file URIs
-          else Paths.get(p) // hadoop Path.toString() returns a filesystem path without a scheme
-        Files.exists(path) shouldBe true
-        val datagram = Using.resource(new FileInputStream(path.toFile)) { in =>
+      ionFiles.flatMap { file =>
+        val datagram = Using.resource(new FileInputStream(file)) { in =>
           ion.getLoader.load(in)
         }
         datagram.iterator().asScala.map { value =>
@@ -102,11 +103,18 @@ class IonWriterTest extends SparkTestBase with Matchers {
 
     val df = spark.createDataFrame(spark.sparkContext.parallelize(rows, numSlices = 1), schema)
 
-    val paths = IonWriter.write(df, dataSetName, "ds", partitionValue, rootPath)
+    val result = IonWriter.write(df, dataSetName, "ds", partitionValue, rootPath)
 
-    paths should not be empty
-    all(paths) should include(dataSetName)
-    all(paths) should include(s"ds=$partitionValue")
+    result.rowCount shouldBe rows.size
+    result.keyBytes should be > 0L
+    result.valueBytes should be > 0L
+
+    // Verify files were written to the correct location
+    val partitionPath = IonWriter.resolvePartitionPath(dataSetName, "ds", partitionValue, rootPath)
+    partitionPath.toString should include(dataSetName)
+    partitionPath.toString should include(s"ds=$partitionValue")
+    val partitionDir = new File(partitionPath.toUri)
+    partitionDir.listFiles().filter(_.getName.endsWith(".ion")) should not be empty
   }
 
   it should "validate root path with valid schemes" in {
