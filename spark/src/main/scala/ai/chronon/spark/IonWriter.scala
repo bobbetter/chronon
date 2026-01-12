@@ -153,7 +153,8 @@ object IonWriter {
     }
 
     if (!trimmed.matches("^(s3|s3a|s3n|file):/{1,3}.*")) {
-      throw new IllegalArgumentException(s"Root path must start with s3://, s3a://, s3n://, or file:/ for local testing but got: $trimmed")
+      throw new IllegalArgumentException(
+        s"Root path must start with s3://, s3a://, s3n://, or file:/ for local testing but got: $trimmed")
     }
     trimmed
   }
