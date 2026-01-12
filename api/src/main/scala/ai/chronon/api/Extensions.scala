@@ -602,7 +602,7 @@ object Extensions {
         execInfo <- Option(metaData.executionInfo)
         conf <- Option(execInfo.conf)
         common <- Option(conf.common)
-        value <- Option(common.get(key)).map(_.trim.toLowerCase).filter(_.nonEmpty)
+        value <- Option(common.get(key)).map(_.trim).filter(_.nonEmpty)
       } yield value
     }
 

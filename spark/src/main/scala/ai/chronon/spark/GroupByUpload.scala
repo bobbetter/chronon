@@ -274,7 +274,7 @@ object GroupByUpload {
 
     val uploadFormat =
       groupByConf
-        .commonConfValue(IonPathConfig.uploadFormatKey)
+        .commonConfValue(IonPathConfig.UploadFormatKey)
         .getOrElse("parquet")
     val partitionCol = groupByConf
       .commonConfValue(IonPathConfig.PartitionColumnKey)

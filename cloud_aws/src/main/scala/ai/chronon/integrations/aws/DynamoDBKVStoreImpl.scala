@@ -308,11 +308,15 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient, conf: Map[String, Stri
     var status: ImportStatus = ImportStatus.IN_PROGRESS
     while (status == ImportStatus.IN_PROGRESS && (System.currentTimeMillis() - startTime) < maxWaitTimeMs) {
       Thread.sleep(pollIntervalMs)
-
-      val describeRequest = DescribeImportRequest.builder().importArn(importArn).build()
-      val describeResponse = dynamoDbClient.describeImport(describeRequest)
-      status = describeResponse.importTableDescription().importStatus()
-
+      try {
+        val describeRequest = DescribeImportRequest.builder().importArn(importArn).build()
+        val describeResponse = dynamoDbClient.describeImport(describeRequest)
+        status = describeResponse.importTableDescription().importStatus()
+      } catch {
+        case e: Exception =>
+          logger.error(s"Error polling import status for $tableName", e)
+          throw e
+      }
       logger.info(s"DynamoDB import status for $tableName: $status")
     }
 

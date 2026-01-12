@@ -16,7 +16,7 @@ import scala.util.control.NonFatal
 
 /** Configuration keys used for Ion upload paths. */
 object IonPathConfig {
-  val uploadFormatKey = "spark.chronon.table_write.upload.format"
+  val UploadFormatKey = "spark.chronon.table_write.upload.format"
   val UploadLocationKey = "spark.chronon.table_write.upload.location"
   val PartitionColumnKey = "spark.chronon.partition.column"
   val DefaultPartitionColumn = "ds"
@@ -129,15 +129,11 @@ object IonWriter {
     if (fs.exists(partitionPath)) {
       val files = fs.listStatus(partitionPath)
       val deletedCount = files.count { fileStatus =>
-        if (fileStatus.isFile) {
-          val deleted = fs.delete(fileStatus.getPath, false)
-          if (!deleted) {
-            logger.warn(s"Failed to delete file: ${fileStatus.getPath}")
-          }
-          deleted
-        } else {
-          false
+        val deleted = fs.delete(fileStatus.getPath, fileStatus.isDirectory)
+        if (!deleted) {
+          logger.warn(s"Failed to delete: ${fileStatus.getPath}")
         }
+        deleted
       }
       logger.info(s"Cleaned up $deletedCount existing file(s) from $partitionPath")
     }
@@ -151,7 +147,7 @@ object IonWriter {
     }
 
     if (!trimmed.matches("^(s3|s3a|s3n|file):/{1,3}.*")) {
-      throw new IllegalArgumentException(s"Root path must start with s3:// or file:/ but got: $trimmed")
+      throw new IllegalArgumentException(s"Root path must start with s3://, s3a://, s3n://, or file:/ for local testing but got: $trimmed")
     }
     trimmed
   }

@@ -14,6 +14,7 @@ import java.net.URI
 import java.nio.file.{Files, Paths}
 import java.time.Instant
 import java.time.LocalDate
+import scala.util.Using
 import scala.jdk.CollectionConverters._
 
 class IonWriterTest extends SparkTestBase with Matchers {
@@ -62,7 +63,9 @@ class IonWriterTest extends SparkTestBase with Matchers {
           if (p.startsWith("file:")) Paths.get(new URI(p)) // handle fully-qualified file URIs
           else Paths.get(p) // hadoop Path.toString() returns a filesystem path without a scheme
         Files.exists(path) shouldBe true
-        val datagram = ion.getLoader.load(new FileInputStream(path.toFile))
+        val datagram = Using.resource(new FileInputStream(path.toFile)) { in =>
+          ion.getLoader.load(in)
+        }
         datagram.iterator().asScala.map { value =>
           val struct = value.asInstanceOf[IonStruct].get("Item").asInstanceOf[IonStruct]
           val keyBytes = Option(struct.get("keyBytes")).map(_.asInstanceOf[IonBlob].getBytes)
