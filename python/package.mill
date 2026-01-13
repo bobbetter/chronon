@@ -6,6 +6,30 @@ import mill.pythonlib.*
 // Python API module
 object `package` extends PythonModule with RuffModule with PublishModule {
 
+  /**
+   * Detect the best Python executable to use.
+   * Priority: 1) activated venv (VIRTUAL_ENV), 2) repo .venv, 3) system python3
+   */
+  private def detectPythonExecutable(baseDir: os.Path): String = {
+    sys.env.get("VIRTUAL_ENV") match {
+      case Some(venvPath) =>
+        val venvPython = os.Path(venvPath) / "bin" / "python"
+        if (os.exists(venvPython)) venvPython.toString
+        else "python3"
+      case None =>
+        val repoVenvPython = baseDir / ".venv" / "bin" / "python"
+        if (os.exists(repoVenvPython)) repoVenvPython.toString
+        else "python3"
+    }
+  }
+
+  // Override the Python interpreter used by Mill to create its venv
+  override def hostPythonCommand: T[String] = Task {
+    val pythonCmd = detectPythonExecutable(moduleDir / os.up)
+    println(s"Using Python: $pythonCmd")
+    pythonCmd
+  }
+
   def pythonRequirementFiles = Task.Sources("requirements/base.txt")
 
   // TODO: doing this because we want the whl to have Requires-Dist metadata.
@@ -97,17 +121,18 @@ object `package` extends PythonModule with RuffModule with PublishModule {
   // Build wheel and install normally
   def installWheel = Task {
     val wheelPath = wheel().path
-    println(s"Installing wheel from: $wheelPath")
+    val pythonExec = detectPythonExecutable(moduleDir / os.up)
+    println(s"Installing wheel from: $wheelPath using: $pythonExec")
     
     // Uninstall existing version first
     try {
-      os.proc("pip", "uninstall", "-y", "zipline-ai").call()
+      os.proc(pythonExec, "-m", "pip", "uninstall", "-y", "zipline-ai").call()
     } catch {
       case _: Exception => println("No existing zipline-ai package to uninstall")
     }
     
     // Install the built wheel
-    os.proc("pip", "install", wheelPath.toString).call()
+    os.proc(pythonExec, "-m", "pip", "install", wheelPath.toString).call()
     
     println(s"Wheel installed successfully from: $wheelPath")
   }
@@ -134,9 +159,13 @@ object `package` extends PythonModule with RuffModule with PublishModule {
       }
     }
     
+    // Use unified Python detection
+    val pythonExec = detectPythonExecutable(moduleDir / os.up)
+    println(s"Using python executable: $pythonExec")
+    
     // Install in editable mode
     println(s"Working directory: $pythonDir")
-    os.proc("python", "-m", "pip", "install", "-e", ".").call(cwd = pythonDir)
+    os.proc(pythonExec, "-m", "pip", "install", "-e", ".").call(cwd = pythonDir)
     println("Package installed in editable mode with generated sources")
   }
 }
