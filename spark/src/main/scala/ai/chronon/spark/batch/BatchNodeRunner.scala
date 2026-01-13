@@ -417,9 +417,9 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
         logger.info(s"Running groupBy backfill for '${metadata.name}' for range: [${range.start}, ${range.end}]")
         GroupBy.computeBackfill(
           conf.getGroupByBackfill.groupBy,
+          range.start,
           range.end,
-          tableUtils,
-          overrideStartPartition = Option(range.start)
+          tableUtils
         )
         logger.info(s"Successfully completed groupBy backfill for '${metadata.name}'")
 

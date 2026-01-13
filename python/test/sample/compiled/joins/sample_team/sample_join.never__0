@@ -68,7 +68,6 @@
               }
             },
             "historicalBackfill": 0,
-            "offlineSchedule": "@daily",
             "onlineSchedule": "@daily"
           },
           "name": "sample_team.sample_group_by.v1__0",

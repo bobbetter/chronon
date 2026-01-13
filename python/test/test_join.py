@@ -44,7 +44,6 @@ def right_part(source):
             keyColumns=["subject"],
             aggregations=[],
             accuracy=api.Accuracy.SNAPSHOT,
-            backfillStartDate="2020-04-09",
         ),
     )
 

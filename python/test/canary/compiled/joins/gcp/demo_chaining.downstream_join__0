@@ -87,7 +87,6 @@
               }
             },
             "historicalBackfill": 0,
-            "offlineSchedule": "@daily",
             "onlineSchedule": "@daily"
           },
           "name": "gcp.user_activities_chained.chained_user_gb__0",
@@ -109,7 +108,6 @@
                       "metaData": {
                         "executionInfo": {
                           "historicalBackfill": 0,
-                          "offlineSchedule": "@daily",
                           "onlineSchedule": "@daily"
                         },
                         "name": "gcp.dim_listings.v1__0",

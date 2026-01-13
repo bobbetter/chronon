@@ -87,7 +87,6 @@
               }
             },
             "historicalBackfill": 0,
-            "offlineSchedule": "@daily",
             "onlineSchedule": "@daily"
           },
           "name": "sample_team.event_with_derivations.v1__0",
@@ -198,7 +197,6 @@
               }
             },
             "historicalBackfill": 0,
-            "offlineSchedule": "@daily",
             "onlineSchedule": "@daily"
           },
           "name": "sample_team.event_with_derivations.v2__0",

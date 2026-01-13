@@ -60,8 +60,7 @@
                 }
               }
             },
-            "historicalBackfill": 0,
-            "offlineSchedule": "@daily"
+            "historicalBackfill": 0
           },
           "name": "sample_team.mutation_sample_group_by.v0__0",
           "outputNamespace": "test",

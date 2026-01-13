@@ -71,7 +71,6 @@
               }
             },
             "historicalBackfill": 0,
-            "offlineSchedule": "@daily",
             "onlineSchedule": "@daily"
           },
           "name": "aws.user_activities_chained.chained_user_gb__0",
@@ -93,7 +92,6 @@
                       "metaData": {
                         "executionInfo": {
                           "historicalBackfill": 0,
-                          "offlineSchedule": "@daily",
                           "onlineSchedule": "@daily"
                         },
                         "name": "aws.dim_listings.v1__0",
