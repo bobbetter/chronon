@@ -91,7 +91,6 @@
               }
             },
             "historicalBackfill": 0,
-            "offlineSchedule": "@daily",
             "onlineSchedule": "@daily"
           },
           "name": "sample_team.event_sample_group_by.v1__0",
@@ -194,7 +193,6 @@
               }
             },
             "historicalBackfill": 0,
-            "offlineSchedule": "@daily",
             "onlineSchedule": "@daily"
           },
           "name": "sample_team.entity_sample_group_by_from_module.v1__0",

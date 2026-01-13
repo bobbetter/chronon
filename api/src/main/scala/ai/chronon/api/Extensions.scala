@@ -546,7 +546,6 @@ object Extensions {
     def semanticHash: String = {
       val newGroupBy = groupBy.deepCopy()
       newGroupBy.unsetMetaData()
-      newGroupBy.unsetBackfillStartDate()
       ThriftJsonCodec.md5Digest(newGroupBy)
     }
 

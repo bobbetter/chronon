@@ -17,7 +17,7 @@ import gc
 import importlib
 import logging
 from collections import Counter
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 import gen_thrift.api.ttypes as api
 import gen_thrift.common.ttypes as common
@@ -287,8 +287,8 @@ def BootstrapPart(
 def Join(
     left: api.Source,
     right_parts: List[api.JoinPart],
-    version: int,
     row_ids: Union[str, List[str]],
+    version: Optional[int] = None,
     online_external_parts: List[api.ExternalPart] = None,
     bootstrap_parts: List[api.BootstrapPart] = None,
     bootstrap_from_log: bool = False,
@@ -417,8 +417,8 @@ def Join(
     if isinstance(row_ids, str):
         row_ids = [row_ids]
 
-    assert isinstance(version, int), (
-        f"Version must be an integer, but found {type(version).__name__}"
+    assert version is None or isinstance(version, int), (
+        f"Version must be an integer or None, but found {type(version).__name__}"
     )
 
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
@@ -488,7 +488,7 @@ def Join(
         consistencyCheck=check_consistency,
         consistencySamplePercent=consistency_sample_percent,
         executionInfo=exec_info,
-        version=str(version),
+        version=str(version) if version is not None else None,
     )
 
     join = api.Join(

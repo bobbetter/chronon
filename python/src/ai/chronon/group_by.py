@@ -363,17 +363,13 @@ Keys {unselected_keys}, are unselected in source
             if agg.windows:
                 assert not (
                     # Snapshot accuracy.
-                    (
-                        (group_by.accuracy and group_by.accuracy == Accuracy.SNAPSHOT)
-                        or group_by.backfillStartDate
-                    )
+                    (group_by.accuracy and group_by.accuracy == Accuracy.SNAPSHOT)
                     and
                     # Hourly aggregation.
                     any([window.timeUnit == TimeUnit.HOURS for window in agg.windows])
                 ), (
                     "Detected a snapshot accuracy group by with an hourly aggregation. Resolution with snapshot "
-                    "accuracy is not fine enough to allow hourly group bys. Consider removing the `backfill start "
-                    "date` param if set or adjusting the aggregation window. "
+                    "accuracy is not fine enough to allow hourly group bys. Consider adjusting the aggregation window. "
                     f"input_column: {agg.inputColumn}, windows: {agg.windows}"
                 )
 
@@ -417,20 +413,19 @@ def get_output_col_names(aggregation):
 
 
 def GroupBy(
-    version: int,
     sources: Union[List[utils.ANY_SOURCE_TYPE], utils.ANY_SOURCE_TYPE],
     keys: List[str],
     aggregations: Optional[List[ttypes.Aggregation]],
+    version: Optional[int] = None,
     derivations: List[ttypes.Derivation] = None,
     accuracy: ttypes.Accuracy = None,
-    backfill_start_date: str = None,
     output_namespace: str = None,
     table_properties: Dict[str, str] = None,
     tags: Dict[str, str] = None,
     online: bool = DEFAULT_ONLINE,
     production: bool = DEFAULT_PRODUCTION,
     # execution params
-    offline_schedule: str = "@daily",
+    offline_schedule: str = None,
     online_schedule: Optional[str] = None,
     conf: common.ConfigProperties = None,
     env_vars: common.EnvironmentVariables = None,
@@ -488,10 +483,6 @@ def GroupBy(
         This when set can be integrated to trigger alerts. You will have to integrate this flag into your alerting
         system yourself.
     :type production: bool
-    :param backfill_start_date:
-        Start date from which GroupBy data should be computed. This will determine how back of a time that Chronon would
-        goto to compute the resultant table and its aggregations.
-    :type backfill_start_date: str
     :param env:
         This is a dictionary of "mode name" to dictionary of "env var name" to "env var value"::
 
@@ -582,8 +573,8 @@ def GroupBy(
     """
     assert sources, "Sources are not specified"
 
-    assert isinstance(version, int), (
-        f"Version must be an integer, but found {type(version).__name__}"
+    assert version is None or isinstance(version, int), (
+        f"Version must be an integer or None, but found {type(version).__name__}"
     )
 
     agg_inputs = []
@@ -661,7 +652,7 @@ def GroupBy(
         executionInfo=exec_info,
         tags=tags if tags else None,
         columnTags=column_tags if column_tags else None,
-        version=str(version),
+        version=str(version) if version is not None else None,
     )
 
     group_by = ttypes.GroupBy(
@@ -669,7 +660,6 @@ def GroupBy(
         keyColumns=keys,
         aggregations=aggregations,
         metaData=metadata,
-        backfillStartDate=backfill_start_date,
         accuracy=accuracy,
         derivations=derivations,
     )
