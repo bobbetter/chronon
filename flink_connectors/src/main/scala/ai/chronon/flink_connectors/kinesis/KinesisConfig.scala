@@ -23,7 +23,7 @@ object KinesisConfig {
   }
 
   object Defaults {
-    val Parallelism = 1
+    val Parallelism = 10
     val InitialPosition: String = ConsumerConfigConstants.InitialPosition.LATEST.toString
   }
 
