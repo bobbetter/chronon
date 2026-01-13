@@ -4,6 +4,7 @@ import ai.chronon.api.Constants
 import ai.chronon.api.Constants.{ContinuationKey, ListLimit}
 import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.online.KVStore
+import ai.chronon.spark.{IonPathConfig, IonWriter}
 import ai.chronon.online.KVStore.GetResponse
 import ai.chronon.online.KVStore.ListRequest
 import ai.chronon.online.KVStore.ListResponse
@@ -29,6 +30,14 @@ import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException
 import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest
 import software.amazon.awssdk.services.dynamodb.model.ScanResponse
+import software.amazon.awssdk.services.dynamodb.model.ImportTableRequest
+import software.amazon.awssdk.services.dynamodb.model.InputFormat
+import software.amazon.awssdk.services.dynamodb.model.InputCompressionType
+import software.amazon.awssdk.services.dynamodb.model.S3BucketSource
+import software.amazon.awssdk.services.dynamodb.model.TableCreationParameters
+import software.amazon.awssdk.services.dynamodb.model.BillingMode
+import software.amazon.awssdk.services.dynamodb.model.DescribeImportRequest
+import software.amazon.awssdk.services.dynamodb.model.ImportStatus
 
 import java.time.Instant
 import java.util
@@ -57,7 +66,8 @@ object DynamoDBKVStoreConstants {
   val defaultWriteCapacityUnits = 10L
 }
 
-class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
+class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient, conf: Map[String, String] = Map.empty) extends KVStore {
+
   import DynamoDBKVStoreConstants._
 
   protected val metricsContext: Metrics.Context = Metrics.Context(Metrics.Environment.KVStore).withSuffix("dynamodb")
@@ -218,10 +228,109 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
     Future.sequence(futureResponses)
   }
 
-  /** Implementation of bulkPut is currently a TODO for the DynamoDB store. This involves transforming the underlying
-    * Parquet data to Amazon's Ion format + swapping out old table for new (as bulkLoad only writes to new tables)
+  /** Bulk loads data from S3 Ion files into DynamoDB using the ImportTable API.
+    *
+    * The Ion files are expected to have been written by IonWriter during GroupByUpload.
+    * The S3 location is determined by IonWriter.resolveS3Location using:
+    *   - Root path from config: spark.chronon.table_write.upload.root_path
+    *   - Dataset name: sourceOfflineTable (e.g., namespace.groupby_v1__upload)
+    *   - Partition column and value: ds={partition}
+    *
+    * Full path: s3://{spark.chronon.table_write.upload.root_path}/{sourceOfflineTable}/ds={partition}/
     */
-  override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = ???
+  override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
+    val rootPath = conf.get(IonPathConfig.UploadLocationKey)
+    val partitionColumn = conf.getOrElse(IonPathConfig.PartitionColumnKey, IonPathConfig.DefaultPartitionColumn)
+
+    // Use shared IonWriter path resolution to ensure consistency between producer and consumer
+    val path = IonWriter.resolvePartitionPath(sourceOfflineTable, partitionColumn, partition, rootPath)
+    val s3Source = toS3BucketSource(path)
+    logger.info(s"Starting DynamoDB import for table: $destinationOnlineDataSet from S3: $s3Source")
+
+    val tableParams = TableCreationParameters
+      .builder()
+      .tableName(destinationOnlineDataSet)
+      .keySchema(
+        KeySchemaElement.builder().attributeName(partitionKeyColumn).keyType(KeyType.HASH).build()
+      )
+      .attributeDefinitions(
+        AttributeDefinition.builder().attributeName(partitionKeyColumn).attributeType(ScalarAttributeType.B).build()
+      )
+      .billingMode(BillingMode.PAY_PER_REQUEST)
+      .build()
+
+    val importRequest = ImportTableRequest
+      .builder()
+      .s3BucketSource(s3Source)
+      .inputFormat(InputFormat.ION)
+      .inputCompressionType(InputCompressionType.NONE)
+      .tableCreationParameters(tableParams)
+      .build()
+
+    try {
+      val startTs = System.currentTimeMillis()
+      val importResponse = dynamoDbClient.importTable(importRequest)
+      val importArn = importResponse.importTableDescription().importArn()
+
+      logger.info(s"DynamoDB import initiated with ARN: $importArn for table: $destinationOnlineDataSet")
+
+      // Wait for import to complete
+      waitForImportCompletion(importArn, destinationOnlineDataSet)
+
+      val duration = System.currentTimeMillis() - startTs
+      logger.info(s"DynamoDB import completed for table: $destinationOnlineDataSet in ${duration}ms")
+      metricsContext.increment("bulkPut.successes")
+      metricsContext.distribution("bulkPut.latency", duration)
+    } catch {
+      case e: Exception =>
+        logger.error(s"Failed to import data to DynamoDB table: $destinationOnlineDataSet", e)
+        metricsContext.increment("bulkPut.failures")
+        throw e
+    }
+  }
+
+  /** Converts a Hadoop Path to an S3BucketSource for DynamoDB ImportTable. */
+  private def toS3BucketSource(path: org.apache.hadoop.fs.Path): S3BucketSource = {
+    val uri = path.toUri
+    S3BucketSource
+      .builder()
+      .s3Bucket(uri.getHost)
+      .s3KeyPrefix(uri.getPath.stripPrefix("/") + "/")
+      .build()
+  }
+
+  /** Waits for a DynamoDB import to complete by polling the import status. */
+  private def waitForImportCompletion(importArn: String, tableName: String): Unit = {
+    val maxWaitTimeMs = 30 * 60 * 1000L // 30 minutes
+    val pollIntervalMs = 10 * 1000L // 10 seconds
+    val startTime = System.currentTimeMillis()
+
+    var status: ImportStatus = ImportStatus.IN_PROGRESS
+    while (status == ImportStatus.IN_PROGRESS && (System.currentTimeMillis() - startTime) < maxWaitTimeMs) {
+      Thread.sleep(pollIntervalMs)
+      try {
+        val describeRequest = DescribeImportRequest.builder().importArn(importArn).build()
+        val describeResponse = dynamoDbClient.describeImport(describeRequest)
+        status = describeResponse.importTableDescription().importStatus()
+      } catch {
+        case e: Exception =>
+          logger.error(s"Error polling import status for $tableName", e)
+          throw e
+      }
+      logger.info(s"DynamoDB import status for $tableName: $status")
+    }
+
+    status match {
+      case ImportStatus.COMPLETED =>
+        logger.info(s"DynamoDB import completed successfully for table: $tableName")
+      case ImportStatus.FAILED | ImportStatus.CANCELLED =>
+        throw new RuntimeException(s"DynamoDB import failed with status: $status for table: $tableName")
+      case ImportStatus.IN_PROGRESS =>
+        throw new RuntimeException(s"DynamoDB import timed out after ${maxWaitTimeMs}ms for table: $tableName")
+      case _ =>
+        logger.warn(s"Unknown import status: $status for table: $tableName")
+    }
+  }
 
   private def getCapacityUnits(props: Map[String, Any], key: String, defaultValue: Long): Long = {
     props.get(key) match {

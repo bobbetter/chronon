@@ -662,6 +662,9 @@ object Driver {
       // Expectation that run.py only sets confPath
       val confPath: ScallopOption[String] = opt[String](required = false, descr = "path to groupBy conf")
 
+      // Use _root_ to disambiguate from the `api` member in OnlineSubcommand trait
+      lazy val groupByConf: _root_.ai.chronon.api.GroupBy = parseConf[_root_.ai.chronon.api.GroupBy](confPath())
+
       def partitionString(): String = endDateInternal.getOrElse(throw new Exception("partition date is not provided!"))
 
       val uploader: ScallopOption[String] =
@@ -669,13 +672,13 @@ object Driver {
                     default = Some("bigquery"),
                     descr = "uploader to use when load data to kv store, default is bigquery")
 
-      // Override to add warehouse type to props
+      // Override to add warehouse type and commonConf to props
       override def serializableProps: Map[String, String] =
-        super.serializableProps + ("UPLOADER" -> uploader().toLowerCase)
+        super.serializableProps + ("UPLOADER" -> uploader().toLowerCase) ++ groupByConf.commonConf
     }
 
     def run(args: Args): Unit = {
-      val groupByConf = parseConf[api.GroupBy](args.confPath())
+      val groupByConf = args.groupByConf
       val offlineTable = groupByConf.metaData.uploadTable
       val groupByName = groupByConf.metaData.name
       val startTime = System.currentTimeMillis()
