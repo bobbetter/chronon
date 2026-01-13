@@ -40,17 +40,6 @@ trait FlinkModule extends Cross.Module[String] with build.BaseModule {
 
   def prependShellScript = ""
 
-  // Relocate Kinesis shaded classes to avoid conflicts with Flink cluster's AWS libraries
-  override def assemblyRules = super.assemblyRules ++ Seq(
-    mill.scalalib.Assembly.Rule.Relocate("org.apache.flink.kinesis.shaded.**", "shaded.@1")
-  )
-
-  // Include flink_connectors in assembly so KinesisFlinkSource can be loaded via reflection
-  override def upstreamAssemblyClasspath = Task {
-    super.upstreamAssemblyClasspath() ++
-    Task.traverse(Seq(build.flink_connectors))(_.localClasspath)().flatten
-  }
-
   object test extends build.BaseTestModule {
     def scalaVersion = crossValue
     def moduleDeps = Seq(build.flink(crossValue))
