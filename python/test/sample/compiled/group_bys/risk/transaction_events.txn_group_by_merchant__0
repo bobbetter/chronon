@@ -86,7 +86,6 @@
         }
       },
       "historicalBackfill": 0,
-      "offlineSchedule": "@daily",
       "onlineSchedule": "@daily"
     },
     "name": "risk.transaction_events.txn_group_by_merchant__0",

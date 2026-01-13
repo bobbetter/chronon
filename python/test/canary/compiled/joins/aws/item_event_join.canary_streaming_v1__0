@@ -105,7 +105,6 @@
               }
             },
             "historicalBackfill": 0,
-            "offlineSchedule": "@daily",
             "onlineSchedule": "@daily"
           },
           "name": "aws.item_event_canary.actions_v1__0",

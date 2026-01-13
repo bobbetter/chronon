@@ -51,7 +51,7 @@ class TableDependency:
 
 def Import(
     query: str,
-    version: int,
+    version: Optional[int] = None,
     output_namespace: Optional[str] = None,
     engine_type: Optional[EngineType] = None,
     dependencies: Optional[List[Union[TableDependency, Dict]]] = None,
@@ -80,7 +80,7 @@ def Import(
 
 def StagingQuery(
     query: str,
-    version: int,
+    version: Optional[int] = None,
     output_namespace: Optional[str] = None,
     table_properties: Optional[Dict[str, str]] = None,
     setups: Optional[List[str]] = None,
@@ -156,8 +156,8 @@ def StagingQuery(
     # Get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
 
-    assert isinstance(version, int), (
-        f"Version must be an integer, but found {type(version).__name__}"
+    assert version is None or isinstance(version, int), (
+        f"Version must be an integer or None, but found {type(version).__name__}"
     )
     tables_in_query = [query_utils.normalize_table_name(t) for t in query_utils.tables_in_query(query, dialect=ttypes.EngineType._VALUES_TO_NAMES[engine_type].lower() if engine_type else "spark")]
     if tables_in_query:
@@ -219,7 +219,7 @@ def StagingQuery(
         tags=tags,
         customJson=custom_json,
         tableProperties=table_properties,
-        version=str(version),
+        version=str(version) if version is not None else None,
         additionalOutputPartitionColumns=additional_partitions,
     )
 

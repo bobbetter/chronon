@@ -105,7 +105,6 @@
               }
             },
             "historicalBackfill": 0,
-            "offlineSchedule": "@daily",
             "onlineSchedule": "@daily"
           },
           "name": "aws.item_event_canary.actions_v1__0",
@@ -206,7 +205,6 @@
             "operation": 13
           }
         ],
-        "backfillStartDate": "2023-11-01",
         "keyColumns": [
           "user_id"
         ],
@@ -270,7 +268,6 @@
               }
             },
             "historicalBackfill": 0,
-            "offlineSchedule": "@daily",
             "onlineSchedule": "@daily"
           },
           "name": "aws.purchases.v1_test__0",

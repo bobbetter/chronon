@@ -239,7 +239,7 @@ def test_snapshot_with_hour_aggregation():
                     ],
                 ),
             ),
-            backfill_start_date="2021-01-04",
+            accuracy=group_by.Accuracy.SNAPSHOT,
             version=0,
         )
 

@@ -370,8 +370,6 @@ struct GroupBy {
     // we assume the source is already grouped by keys
     4: optional list<Aggregation> aggregations
     5: optional Accuracy accuracy
-    // Optional start date for a group by backfill, if it's unset then no historical partitions will be generate
-    6: optional string backfillStartDate
     // support for offline only for now
     7: optional list<Derivation> derivations
 }
