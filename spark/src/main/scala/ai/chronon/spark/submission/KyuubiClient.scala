@@ -333,5 +333,4 @@ object KyuubiClient {
   def apply(baseUrl: String, auth: KyuubiAuth, client: WebClient): KyuubiClient = {
     new KyuubiClient(baseUrl, auth, client)
   }
-
 }
