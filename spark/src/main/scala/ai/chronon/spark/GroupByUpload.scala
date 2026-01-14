@@ -16,10 +16,13 @@
 
 package ai.chronon.spark
 
-import ai.chronon.aggregator.windowing.FinalBatchIr
-import ai.chronon.aggregator.windowing.FiveMinuteResolution
-import ai.chronon.aggregator.windowing.Resolution
-import ai.chronon.aggregator.windowing.SawtoothOnlineAggregator
+import ai.chronon.aggregator.windowing.{
+  BatchIr,
+  FinalBatchIr,
+  FiveMinuteResolution,
+  Resolution,
+  SawtoothOnlineAggregator
+}
 import ai.chronon.api
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.api.Accuracy
@@ -51,7 +54,6 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import scala.annotation.tailrec
-
 import scala.util.Try
 
 class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable {
@@ -116,14 +118,51 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
         |BatchIR Element Size: $batchIrElementSize
         |""".stripMargin)
 
-    val outputRdd = groupBy.inputDf.rdd
+    val shouldCombine = tableUtils.sparkSession.conf.get("spark.chronon.group_by.upload.combine", "true").toBoolean
+
+    val outputRddKeyed = groupBy.inputDf.rdd
       .keyBy(keyBuilder)
-      .aggregateByKey(sawtoothOnlineAggregator.init)( // shuffle point
+
+    val outputRddAggregated = if (!shouldCombine) {
+      outputRddKeyed
+        .mapValues { row =>
+          val result: Either[Row, BatchIr] = Left(row)
+          result
+        }
+        .reduceByKey { (value1: Either[Row, BatchIr], value2: Either[Row, BatchIr]) =>
+          val resultIr: BatchIr = (value1, value2) match {
+            case (Left(row1), Left(row2)) =>
+              val batchIr = sawtoothOnlineAggregator.init
+              val batchIr1 =
+                sawtoothOnlineAggregator.update(batchIr, SparkConversions.toChrononRow(row1, groupBy.tsIndex))
+              sawtoothOnlineAggregator.update(batchIr1, SparkConversions.toChrononRow(row2, groupBy.tsIndex))
+            case (Right(ir1), Left(row2)) =>
+              sawtoothOnlineAggregator.update(ir1, SparkConversions.toChrononRow(row2, groupBy.tsIndex))
+            case (Left(row1), Right(ir2)) =>
+              sawtoothOnlineAggregator.update(ir2, SparkConversions.toChrononRow(row1, groupBy.tsIndex))
+            case (Right(ir1), Right(ir2)) =>
+              sawtoothOnlineAggregator.merge(ir1, ir2)
+          }
+          Right(resultIr)
+        }
+        .mapValues { resultIr: Either[Row, BatchIr] =>
+          resultIr match {
+            case Left(row1) =>
+              val batchIr = sawtoothOnlineAggregator.init
+              sawtoothOnlineAggregator.update(batchIr, SparkConversions.toChrononRow(row1, groupBy.tsIndex))
+            case Right(batchIr) => batchIr
+          }
+        }
+    } else {
+      outputRddKeyed.aggregateByKey(sawtoothOnlineAggregator.init)( // shuffle point
         seqOp = { case (batchIr, row) =>
           sawtoothOnlineAggregator.update(batchIr, SparkConversions.toChrononRow(row, groupBy.tsIndex))
         },
         combOp = sawtoothOnlineAggregator.merge
       )
+    }
+
+    val outputRdd = outputRddAggregated
       .mapValues(sawtoothOnlineAggregator.normalizeBatchIr)
       .map { case (keyWithHash: KeyWithHash, finalBatchIr: FinalBatchIr) =>
         val irArray = new Array[Any](2)
