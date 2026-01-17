@@ -2,6 +2,8 @@ package ai.chronon.integrations.aws
 
 import ai.chronon.api.Constants
 import ai.chronon.api.Constants.{ContinuationKey, ListLimit}
+import ai.chronon.api.Extensions.GroupByOps
+import ai.chronon.api.{GroupBy, MetaData}
 import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.online.KVStore
 import ai.chronon.spark.{IonPathConfig, IonWriter}
@@ -245,11 +247,13 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient, conf: Map[String, Stri
     // Use shared IonWriter path resolution to ensure consistency between producer and consumer
     val path = IonWriter.resolvePartitionPath(sourceOfflineTable, partitionColumn, partition, rootPath)
     val s3Source = toS3BucketSource(path)
-    logger.info(s"Starting DynamoDB import for table: $destinationOnlineDataSet from S3: $s3Source")
+    val groupBy = new GroupBy().setMetaData(new MetaData().setName(destinationOnlineDataSet))
+    val tableName = groupBy.batchDataset
+    logger.info(s"Starting DynamoDB import for table: $tableName from S3: $s3Source")
 
     val tableParams = TableCreationParameters
       .builder()
-      .tableName(destinationOnlineDataSet)
+      .tableName(tableName)
       .keySchema(
         KeySchemaElement.builder().attributeName(partitionKeyColumn).keyType(KeyType.HASH).build()
       )
@@ -272,18 +276,18 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient, conf: Map[String, Stri
       val importResponse = dynamoDbClient.importTable(importRequest)
       val importArn = importResponse.importTableDescription().importArn()
 
-      logger.info(s"DynamoDB import initiated with ARN: $importArn for table: $destinationOnlineDataSet")
+      logger.info(s"DynamoDB import initiated with ARN: $importArn for table: $tableName")
 
       // Wait for import to complete
-      waitForImportCompletion(importArn, destinationOnlineDataSet)
+      waitForImportCompletion(importArn, tableName)
 
       val duration = System.currentTimeMillis() - startTs
-      logger.info(s"DynamoDB import completed for table: $destinationOnlineDataSet in ${duration}ms")
+      logger.info(s"DynamoDB import completed for table: $tableName in ${duration}ms")
       metricsContext.increment("bulkPut.successes")
       metricsContext.distribution("bulkPut.latency", duration)
     } catch {
       case e: Exception =>
-        logger.error(s"Failed to import data to DynamoDB table: $destinationOnlineDataSet", e)
+        logger.error(s"Failed to import data to DynamoDB table: $tableName", e)
         metricsContext.increment("bulkPut.failures")
         throw e
     }
