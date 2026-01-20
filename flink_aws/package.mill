@@ -1,0 +1,179 @@
+package build.flink_aws
+import mill.api._
+import mill.scalalib._
+import mill.scalalib.Assembly
+
+/**
+ * Flink AWS module - produces a single uber-JAR optimized for AWS Managed Apache Flink.
+ * 
+ * This module combines:
+ * - Chronon Flink core (ai.chronon.flink)
+ * - Flink connectors (ai.chronon.flink_connectors) including Kinesis
+ * - AWS integration from cloud_aws (AwsApiImpl, DynamoDBKVStoreImpl)
+ * - AWS Flink wrapper for property-based configuration
+ * 
+ * The resulting JAR is optimized to stay under AWS Managed Flink's 512MB limit by:
+ * - Marking Flink runtime as provided (AWS Managed Flink provides it)
+ * - Using assembly exclusion rules to strip out Spark, Hudi, Hadoop, unused AWS SDK services
+ * 
+ * Usage:
+ *   ./mill flink_aws.assembly
+ * 
+ * The JAR will be at: out/flink_aws/assembly.dest/out.jar
+ */
+object `package` extends Cross[FlinkAwsModule](build.Constants.scalaVersions) with FlinkAwsModule {
+  override val crossValue = build.Constants.defaultScalaVersion
+}
+
+trait FlinkAwsModule extends Cross.Module[String] with build.BaseModule {
+  val flinkVersion = build.Constants.flinkVersion
+
+  // Depend on cloud_aws for AwsApiImpl and DynamoDBKVStoreImpl (no code duplication!)
+  // Heavy dependencies (Spark, Hudi) are excluded at assembly time via assemblyRules
+  def moduleDeps = Seq(
+    build.flink(crossValue),
+    build.flink_connectors(crossValue),
+    build.cloud_aws(crossValue)  // Reuse AWS integration classes
+  )
+
+  // Flink runtime is provided by AWS Managed Flink - don't bundle it
+  def compileMvnDeps = build.Constants.providedFlinkDeps ++ Seq(
+    // Flink Java for ParameterTool (used in wrapper, provided at runtime)
+    mvn"org.apache.flink:flink-java:$flinkVersion"
+  )
+
+  // Additional dependencies (most come transitively from cloud_aws)
+  def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingDeps ++ build.Constants.utilityDeps ++ Seq(
+    // Kinesis SDK for Flink connector
+    mvn"software.amazon.awssdk:kinesis:2.30.13",
+    mvn"software.amazon.awssdk:sts:2.30.13",
+  )
+
+  // Main class for AWS Managed Flink - uses the wrapper that reads application properties
+  def mainClass = Some("ai.chronon.flink.aws.AwsFlinkJobWrapper")
+
+  def prependShellScript = ""
+
+  // Assembly rules optimized for AWS Managed Flink's 512MB limit
+  override def assemblyRules = Seq(
+    // Merge service files (critical for Flink connectors)
+    Assembly.Rule.AppendPattern("META-INF/services/*", "\n"),
+    
+    // Exclude signature files that cause SecurityException
+    Assembly.Rule.ExcludePattern("META-INF/.*\\.SF"),
+    Assembly.Rule.ExcludePattern("META-INF/.*\\.DSA"),
+    Assembly.Rule.ExcludePattern("META-INF/.*\\.RSA"),
+    Assembly.Rule.ExcludePattern("META-INF/.*\\.sf"),
+    Assembly.Rule.ExcludePattern("META-INF/.*\\.dsa"),
+    Assembly.Rule.ExcludePattern("META-INF/.*\\.rsa"),
+    Assembly.Rule.ExcludePattern("META-INF/SIG-.*"),
+    Assembly.Rule.ExcludePattern("META-INF/license/.*"),
+    Assembly.Rule.ExcludePattern("META-INF/LICENSE.*"),
+    Assembly.Rule.ExcludePattern("META-INF/NOTICE.*"),
+    Assembly.Rule.ExcludePattern("META-INF/DEPENDENCIES"),
+    
+    // CRITICAL: Exclude Multi-Release JAR versions directory
+    // This causes ClassNotFoundException when loading classes from large JARs
+    Assembly.Rule.ExcludePattern("META-INF/versions/.*"),
+    Assembly.Rule.ExcludePattern("META-INF/INDEX\\.LIST"),
+    
+    // ========================================
+    // EXCLUSIONS TO REDUCE JAR SIZE
+    // ========================================
+    
+    // Spark - not needed for Flink (HUGE savings)
+    Assembly.Rule.ExcludePattern("org/apache/spark/.*"),
+    Assembly.Rule.ExcludePattern("org/spark_project/.*"),
+    
+    // Hudi - not needed for streaming (HUGE savings)
+    Assembly.Rule.ExcludePattern("org/apache/hudi/.*"),
+    
+    // Hadoop - provided by AWS Managed Flink runtime
+    Assembly.Rule.ExcludePattern("org/apache/hadoop/.*"),
+    
+    // Iceberg - not needed for streaming
+    Assembly.Rule.ExcludePattern("org/apache/iceberg/.*"),
+    
+    // Flink runtime classes - provided by AWS Managed Flink
+    // Be selective: exclude core runtime but keep connector-specific classes
+    Assembly.Rule.ExcludePattern("org/apache/flink/api/common/.*"),
+    Assembly.Rule.ExcludePattern("org/apache/flink/api/java/.*"),
+    Assembly.Rule.ExcludePattern("org/apache/flink/core/.*"),
+    Assembly.Rule.ExcludePattern("org/apache/flink/runtime/.*"),
+    Assembly.Rule.ExcludePattern("org/apache/flink/streaming/api/.*"),
+    Assembly.Rule.ExcludePattern("org/apache/flink/streaming/runtime/.*"),
+    Assembly.Rule.ExcludePattern("org/apache/flink/util/.*"),
+    Assembly.Rule.ExcludePattern("org/apache/flink/configuration/.*"),
+    Assembly.Rule.ExcludePattern("org/apache/flink/annotation/.*"),
+    Assembly.Rule.ExcludePattern("org/apache/flink/metrics/.*"),
+    
+    // AWS SDK services we don't need
+    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/ec2/.*"),
+    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/emr/.*"),
+    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/s3/.*"),
+    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/glue/.*"),
+    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/athena/.*"),
+    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/cloudwatch/.*"),
+    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/iam/.*"),
+    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/lambda/.*"),
+    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/secretsmanager/.*"),
+    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/sqs/.*"),
+    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/sns/.*"),
+    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/kms/.*"),
+    
+    // Parquet - not needed for streaming (data comes from Kinesis)
+    Assembly.Rule.ExcludePattern("org/apache/parquet/.*"),
+    Assembly.Rule.ExcludePattern("shaded/parquet/.*"),
+    
+    // Arrow - not needed
+    Assembly.Rule.ExcludePattern("org/apache/arrow/.*"),
+    
+    // ORC - not needed for streaming
+    Assembly.Rule.ExcludePattern("org/apache/orc/.*"),
+    
+    // Avro tools/ipc (keep core avro for schema handling)
+    Assembly.Rule.ExcludePattern("org/apache/avro/ipc/.*"),
+    Assembly.Rule.ExcludePattern("org/apache/avro/tool/.*"),
+    
+    // Ivy/Ant - build tools not needed at runtime
+    Assembly.Rule.ExcludePattern("org/apache/ivy/.*"),
+    Assembly.Rule.ExcludePattern("org/apache/tools/ant/.*"),
+    
+    // Jetty - not needed for this use case
+    Assembly.Rule.ExcludePattern("org/eclipse/jetty/.*"),
+    Assembly.Rule.ExcludePattern("org/mortbay/.*"),
+    
+    // Jersey - REST framework not needed
+    Assembly.Rule.ExcludePattern("org/glassfish/jersey/.*"),
+    Assembly.Rule.ExcludePattern("com/sun/jersey/.*"),
+    
+    // Curator - ZooKeeper client not needed
+    Assembly.Rule.ExcludePattern("org/apache/curator/.*"),
+    
+    // ZooKeeper - managed by Flink runtime
+    Assembly.Rule.ExcludePattern("org/apache/zookeeper/.*"),
+    
+    // Default rules for everything else
+    Assembly.Rule.Append("reference.conf"),
+    Assembly.Rule.Exclude("module-info.class"),
+    Assembly.Rule.ExcludePattern("module-info.class"),
+  )
+
+  // Override manifest - explicitly disable Multi-Release
+  // Multi-Release JAR versions/ directory causes ClassNotFoundException in large JARs
+  override def manifest = Task {
+    super.manifest()
+    // Note: Not adding Multi-Release: true since we exclude META-INF/versions/
+  }
+
+  object test extends build.BaseTestModule {
+    def scalaVersion = crossValue
+    def moduleDeps = Seq(build.flink_aws(crossValue))
+    def forkArgs = build.Constants.commonTestForkArgs
+    def mvnDeps = super.mvnDeps() ++ super.compileMvnDeps() ++ build.Constants.testDeps ++ Seq(
+      mvn"org.apache.flink:flink-test-utils:$flinkVersion"
+        .exclude("org.apache.logging.log4j" -> "log4j-slf4j-impl")
+        .exclude("log4j" -> "log4j"),
+    )
+  }
+}
