@@ -24,7 +24,50 @@ class KinesisConfigSpec extends AnyFlatSpec with Matchers {
     }
   }
 
-  it should "default optional values when not provided" in {
+  it should "use AUTO credentials provider when no explicit credentials are provided (IAM role auth)" in {
+    val props = Map(
+      Keys.AwsRegion -> "us-east-2"
+    )
+
+    val topicInfo = TopicInfo("test-stream", "kinesis", Map.empty)
+
+    val kinesisConfig = KinesisConfig.buildConsumerConfig(props, topicInfo)
+
+    kinesisConfig.properties.getProperty(AWSConfigConstants.AWS_CREDENTIALS_PROVIDER) shouldBe "AUTO"
+    kinesisConfig.properties.getProperty(AWSConfigConstants.AWS_REGION) shouldBe "us-east-2"
+    kinesisConfig.properties.containsKey(AWSConfigConstants.AWS_ACCESS_KEY_ID) shouldBe false
+    kinesisConfig.properties.containsKey(AWSConfigConstants.AWS_SECRET_ACCESS_KEY) shouldBe false
+  }
+
+  it should "throw error when only access key is provided without secret key" in {
+    val props = Map(
+      Keys.AwsRegion -> "us-west-2",
+      Keys.AwsAccessKeyId -> "access"
+    )
+
+    val topicInfo = TopicInfo("test-stream", "kinesis", Map.empty)
+
+    val ex = the[IllegalArgumentException] thrownBy {
+      KinesisConfig.buildConsumerConfig(props, topicInfo)
+    }
+    ex.getMessage should include("must be provided together")
+  }
+
+  it should "throw error when only secret key is provided without access key" in {
+    val props = Map(
+      Keys.AwsRegion -> "us-west-2",
+      Keys.AwsSecretAccessKey -> "secret"
+    )
+
+    val topicInfo = TopicInfo("test-stream", "kinesis", Map.empty)
+
+    val ex = the[IllegalArgumentException] thrownBy {
+      KinesisConfig.buildConsumerConfig(props, topicInfo)
+    }
+    ex.getMessage should include("must be provided together")
+  }
+
+  it should "use BASIC credentials provider when explicit credentials are provided" in {
     val props = Map(
       Keys.AwsRegion -> "us-west-2",
       Keys.AwsAccessKeyId -> "access",
@@ -34,11 +77,12 @@ class KinesisConfigSpec extends AnyFlatSpec with Matchers {
     val topicInfo = TopicInfo("test-stream", "kinesis", Map.empty)
 
     val kinesisConfig = KinesisConfig.buildConsumerConfig(props, topicInfo)
-    
 
     kinesisConfig.parallelism shouldBe Defaults.Parallelism
     kinesisConfig.properties.getProperty(AWSConfigConstants.AWS_REGION) shouldBe "us-west-2"
     kinesisConfig.properties.getProperty(AWSConfigConstants.AWS_CREDENTIALS_PROVIDER) shouldBe "BASIC"
+    kinesisConfig.properties.getProperty(AWSConfigConstants.AWS_ACCESS_KEY_ID) shouldBe "access"
+    kinesisConfig.properties.getProperty(AWSConfigConstants.AWS_SECRET_ACCESS_KEY) shouldBe "secret"
     kinesisConfig.properties.getProperty(ConsumerConfigConstants.STREAM_INITIAL_POSITION) shouldBe Defaults.InitialPosition
     kinesisConfig.properties.containsKey(AWSConfigConstants.AWS_ENDPOINT) shouldBe false
     kinesisConfig.properties.containsKey(ConsumerConfigConstants.RECORD_PUBLISHER_TYPE) shouldBe false

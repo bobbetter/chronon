@@ -32,13 +32,23 @@ object KinesisConfig {
     val properties = new Properties()
 
     val region = lookup.requiredOneOf(Keys.AwsRegion, Keys.AwsDefaultRegion)
-    val accessKeyId = lookup.required(Keys.AwsAccessKeyId)
-    val secretAccessKey = lookup.required(Keys.AwsSecretAccessKey)
+    val maybeAccessKeyId = lookup.optional(Keys.AwsAccessKeyId)
+    val maybeSecretAccessKey = lookup.optional(Keys.AwsSecretAccessKey)
 
     properties.setProperty(AWSConfigConstants.AWS_REGION, region)
-    properties.setProperty(AWSConfigConstants.AWS_CREDENTIALS_PROVIDER, "BASIC")
-    properties.setProperty(AWSConfigConstants.AWS_ACCESS_KEY_ID, accessKeyId)
-    properties.setProperty(AWSConfigConstants.AWS_SECRET_ACCESS_KEY, secretAccessKey)
+
+    (maybeAccessKeyId, maybeSecretAccessKey) match {
+      case (Some(accessKeyId), Some(secretAccessKey)) =>
+        properties.setProperty(AWSConfigConstants.AWS_CREDENTIALS_PROVIDER, "BASIC")
+        properties.setProperty(AWSConfigConstants.AWS_ACCESS_KEY_ID, accessKeyId)
+        properties.setProperty(AWSConfigConstants.AWS_SECRET_ACCESS_KEY, secretAccessKey)
+      case (None, None) =>
+        properties.setProperty(AWSConfigConstants.AWS_CREDENTIALS_PROVIDER, "AUTO")
+      case _ =>
+        throw new IllegalArgumentException(
+          s"Both ${Keys.AwsAccessKeyId} and ${Keys.AwsSecretAccessKey} must be provided together, or neither for IAM role-based auth"
+        )
+    }
 
     val initialPosition = lookup.optional(Keys.InitialPosition).getOrElse(Defaults.InitialPosition)
     properties.setProperty(ConsumerConfigConstants.STREAM_INITIAL_POSITION, initialPosition)
