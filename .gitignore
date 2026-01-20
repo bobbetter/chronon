@@ -127,3 +127,4 @@ MODULE.bazel*
 
 # mill build output
 out/**
+application_context
