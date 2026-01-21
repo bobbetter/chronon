@@ -47,6 +47,7 @@ trait FlinkAwsModule extends Cross.Module[String] with build.BaseModule {
     // Kinesis SDK for Flink connector
     mvn"software.amazon.awssdk:kinesis:2.30.13",
     mvn"software.amazon.awssdk:sts:2.30.13",
+    mvn"software.amazon.awssdk:glue:2.30.13",
   )
 
   // Main class for AWS Managed Flink - uses the wrapper that reads application properties
@@ -113,7 +114,6 @@ trait FlinkAwsModule extends Cross.Module[String] with build.BaseModule {
     Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/ec2/.*"),
     Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/emr/.*"),
     Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/s3/.*"),
-    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/glue/.*"),
     Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/athena/.*"),
     Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/cloudwatch/.*"),
     Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/iam/.*"),
