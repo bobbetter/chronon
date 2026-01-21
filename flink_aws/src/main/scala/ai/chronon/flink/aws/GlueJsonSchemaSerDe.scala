@@ -21,22 +21,18 @@ import software.amazon.awssdk.services.glue.model.{GetSchemaVersionRequest, Sche
 
 import scala.util.Try
 
-/**
- * SerDe implementation that fetches JSON Schema from AWS Glue Schema Registry
- * and deserializes JSON-encoded messages.
- *
- * This allows schema definitions to be managed centrally in Glue Schema Registry
- * rather than hardcoded in SerDe classes.
- *
- * Configure via topic string:
- *   kinesis://stream-name/serde=glue_json/glue_registry=chronon-registry/glue_schema=logins_event/region=us-east-2
- *
- * Parameters:
- *   - serde: Must be "glue_json" to use this SerDe
- *   - glue_registry: Name of the Glue Schema Registry
- *   - glue_schema: Name of the schema in the registry
- *   - region: AWS region (defaults to us-east-2)
- */
+/** SerDe implementation that fetches JSON Schema from AWS Glue Schema Registry
+  * and deserializes JSON-encoded messages.
+  *
+  * Configure via topic string:
+  *   kinesis://stream-name/serde=glue_json/glue_registry=chronon-registry/glue_schema=logins_event/region=us-east-2
+  *
+  * Parameters:
+  *   - serde: Must be "glue_json" to use this SerDe
+  *   - glue_registry: Name of the Glue Schema Registry
+  *   - glue_schema: Name of the schema in the registry
+  *   - region: AWS region (defaults to us-east-2)
+  */
 class GlueJsonSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
   import GlueJsonSchemaSerDe._
 
@@ -54,21 +50,26 @@ class GlueJsonSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
   private def fetchAndParseSchema(): (String, StructType) = {
     logger.info(s"Fetching schema from Glue: registry=$registryName, schema=$schemaName, region=$regionName")
 
-    val glueClient = GlueClient.builder()
+    val glueClient = GlueClient
+      .builder()
       .region(Region.of(regionName))
       .build()
 
     try {
-      val schemaId = SchemaId.builder()
+      val schemaId = SchemaId
+        .builder()
         .registryName(registryName)
         .schemaName(schemaName)
         .build()
 
-      val request = GetSchemaVersionRequest.builder()
+      val request = GetSchemaVersionRequest
+        .builder()
         .schemaId(schemaId)
-        .schemaVersionNumber(software.amazon.awssdk.services.glue.model.SchemaVersionNumber.builder()
-          .latestVersion(true)
-          .build())
+        .schemaVersionNumber(
+          software.amazon.awssdk.services.glue.model.SchemaVersionNumber
+            .builder()
+            .latestVersion(true)
+            .build())
         .build()
 
       val response = glueClient.getSchemaVersion(request)
@@ -83,17 +84,16 @@ class GlueJsonSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
     }
   }
 
-  /**
-   * Parse a JSON Schema definition into a Chronon StructType.
-   * 
-   * Supports JSON Schema draft-07 with basic types:
-   *   - integer -> LongType (to handle large timestamps)
-   *   - number -> DoubleType
-   *   - string -> StringType
-   *   - boolean -> BooleanType
-   *   - array -> ListType
-   *   - object -> StructType (nested) or MapType
-   */
+  /** Parse a JSON Schema definition into a Chronon StructType.
+    *
+    * Supports JSON Schema draft-07 with basic types:
+    *   - integer -> LongType (to handle large timestamps)
+    *   - number -> DoubleType
+    *   - string -> StringType
+    *   - boolean -> BooleanType
+    *   - array -> ListType
+    *   - object -> StructType (nested) or MapType
+    */
   private def parseJsonSchemaToChronon(schemaJson: String): StructType = {
     val parsed = parseJson(schemaJson)
     val title = parsed.getOrElse("title", schemaName).asInstanceOf[String]
@@ -109,9 +109,8 @@ class GlueJsonSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
     StructType(title, fields)
   }
 
-  /**
-   * Convert JSON Schema type to Chronon DataType.
-   */
+  /** Convert JSON Schema type to Chronon DataType.
+    */
   private def jsonTypeToChronon(fieldDef: Map[String, Any]): ai.chronon.api.DataType = {
     val jsonType = fieldDef.getOrElse("type", "string").asInstanceOf[String]
 
@@ -128,7 +127,7 @@ class GlueJsonSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
         if (fieldDef.contains("additionalProperties")) {
           val valueType = fieldDef.get("additionalProperties") match {
             case Some(props: Map[_, _]) => jsonTypeToChronon(props.asInstanceOf[Map[String, Any]])
-            case _ => StringType
+            case _                      => StringType
           }
           MapType(StringType, valueType)
         } else if (fieldDef.contains("properties")) {
@@ -142,9 +141,8 @@ class GlueJsonSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
 
   override def schema: StructType = chrononSchema
 
-  /**
-   * Deserialize a JSON-encoded message using the schema fetched from Glue.
-   */
+  /** Deserialize a JSON-encoded message using the schema fetched from Glue.
+    */
   override def fromBytes(bytes: Array[Byte]): Mutation = {
     val json = new String(bytes, java.nio.charset.StandardCharsets.UTF_8).trim
     val parsed = parseJson(json)
@@ -158,9 +156,8 @@ class GlueJsonSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
     Mutation(schema, null, row)
   }
 
-  /**
-   * Convert a parsed JSON value to the expected Chronon type.
-   */
+  /** Convert a parsed JSON value to the expected Chronon type.
+    */
   private def convertValue(value: Any, targetType: ai.chronon.api.DataType): Any = {
     if (value == null) return null
 
@@ -201,9 +198,9 @@ class GlueJsonSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
         }
       case StringType =>
         value match {
-          case s: String            => s
-          case n: java.lang.Number  => String.valueOf(n)
-          case other                => String.valueOf(other)
+          case s: String           => s
+          case n: java.lang.Number => String.valueOf(n)
+          case other               => String.valueOf(other)
         }
       case BooleanType =>
         value match {
@@ -243,10 +240,9 @@ class GlueJsonSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
   // Simple JSON Parser (no external dependencies)
   // ============================================
 
-  /**
-   * Minimal JSON parser for flat and nested objects.
-   * Handles: strings, numbers, booleans, null, arrays, nested objects.
-   */
+  /** Minimal JSON parser for flat and nested objects.
+    * Handles: strings, numbers, booleans, null, arrays, nested objects.
+    */
   private def parseJson(input: String): Map[String, Any] = {
     val trimmed = input.trim
     if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
