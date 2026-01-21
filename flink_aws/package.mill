@@ -47,6 +47,7 @@ trait FlinkAwsModule extends Cross.Module[String] with build.BaseModule {
     // Kinesis SDK for Flink connector
     mvn"software.amazon.awssdk:kinesis:2.30.13",
     mvn"software.amazon.awssdk:sts:2.30.13",
+    mvn"software.amazon.awssdk:glue:2.30.13",
   )
 
   // Main class for AWS Managed Flink - uses the wrapper that reads application properties
@@ -81,15 +82,17 @@ trait FlinkAwsModule extends Cross.Module[String] with build.BaseModule {
     // EXCLUSIONS TO REDUCE JAR SIZE
     // ========================================
     
-    // Spark - not needed for Flink (HUGE savings)
-    Assembly.Rule.ExcludePattern("org/apache/spark/.*"),
+    // NOTE: Spark SQL is deeply needed by Flink deserialization code via Encoders.row()
+    // Spark Catalyst depends on many Spark internals (network, util, etc.)
+    // We CANNOT exclude Spark without breaking the application
+    // Only exclude spark_project shaded deps
     Assembly.Rule.ExcludePattern("org/spark_project/.*"),
     
     // Hudi - not needed for streaming (HUGE savings)
     Assembly.Rule.ExcludePattern("org/apache/hudi/.*"),
     
-    // Hadoop - provided by AWS Managed Flink runtime
-    Assembly.Rule.ExcludePattern("org/apache/hadoop/.*"),
+    // NOTE: Hadoop is required by Spark Catalyst (used by Encoders.row())
+    // We cannot exclude it without breaking the deserialization schema
     
     // Iceberg - not needed for streaming
     Assembly.Rule.ExcludePattern("org/apache/iceberg/.*"),
@@ -111,7 +114,6 @@ trait FlinkAwsModule extends Cross.Module[String] with build.BaseModule {
     Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/ec2/.*"),
     Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/emr/.*"),
     Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/s3/.*"),
-    Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/glue/.*"),
     Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/athena/.*"),
     Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/cloudwatch/.*"),
     Assembly.Rule.ExcludePattern("software/amazon/awssdk/services/iam/.*"),
