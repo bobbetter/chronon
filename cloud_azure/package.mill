@@ -24,6 +24,12 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
     mvn"com.azure:azure-storage-blob:12.29.0",
     // Azure Identity for authentication
     mvn"com.azure:azure-identity:1.14.2",
+    // Azure Key Vault for secret management (e.g., Snowflake private keys)
+    mvn"com.azure:azure-security-keyvault-secrets:4.10.4",
+    mvn"net.snowflake:snowflake-jdbc:3.14.4",
+    // BouncyCastle for parsing PEM private keys (required by Snowflake JDBC for key pair auth)
+    mvn"org.bouncycastle:bcprov-jdk18on:1.80",
+    mvn"org.bouncycastle:bcpkix-jdk18on:1.80",
     // Hadoop Azure FileSystem connector (for abfss:// support)
     mvn"org.apache.hadoop:hadoop-azure:3.3.6",
     mvn"com.microsoft.azure:azure-storage:7.0.1",
