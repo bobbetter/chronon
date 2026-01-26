@@ -72,6 +72,11 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
 
   protected val tableToContext = new TrieMap[String, Metrics.Context]()
 
+  private def detectDatasetType(dataset: String, keyBytes: Array[Byte]): DatasetType = {
+    // TODO: Add detection for MetricsDataset and EnhancedStatsDataset in future PRs
+    FeaturesDataset
+  }
+
   override def create(dataset: String): Unit = create(dataset, Map.empty)
 
   override def create(dataset: String, props: Map[String, Any]): Unit = {
@@ -107,6 +112,20 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
   override def multiGet(requests: Seq[KVStore.GetRequest]): Future[Seq[KVStore.GetResponse]] = {
     logger.debug(s"Performing multi-get for ${requests.size} requests")
 
+    val requestsByType = requests.groupBy { req =>
+      detectDatasetType(req.dataset, req.keyBytes)
+    }
+
+    val futures = requestsByType.map { case (FeaturesDataset, reqs) =>
+      multiGetFeatures(reqs)
+    // TODO: Add case (MetricsDataset, reqs) => multiGetMetrics(reqs)
+    // TODO: Add case (EnhancedStatsDataset, reqs) => multiGetEnhancedStats(reqs)
+    }.toSeq
+
+    Future.sequence(futures).map(_.flatten)
+  }
+
+  private def multiGetFeatures(requests: Seq[KVStore.GetRequest]): Future[Seq[KVStore.GetResponse]] = {
     // Group requests by dataset and time range to avoid filter conflicts
     // For time-series data, we need separate queries for different time ranges
     val requestGroups = requests.groupBy { req =>
@@ -336,6 +355,21 @@ class BigTableKVStoreImpl(dataClient: BigtableDataClient,
   // our callers expect.
   override def multiPut(requests: Seq[KVStore.PutRequest]): Future[Seq[Boolean]] = {
     logger.debug(s"Performing multi-put for ${requests.size} requests")
+
+    val requestsByType = requests.groupBy { req =>
+      detectDatasetType(req.dataset, req.keyBytes)
+    }
+
+    val futures = requestsByType.map { case (FeaturesDataset, reqs) =>
+      multiPutFeatures(reqs)
+    // TODO: Add case (MetricsDataset, reqs) => multiPutMetrics(reqs)
+    // TODO: Add case (EnhancedStatsDataset, reqs) => multiPutEnhancedStats(reqs)
+    }.toSeq
+
+    Future.sequence(futures).map(_.flatten)
+  }
+
+  private def multiPutFeatures(requests: Seq[KVStore.PutRequest]): Future[Seq[Boolean]] = {
     val resultFutures = {
       requests.map { request =>
         val tableId = mapDatasetToTable(request.dataset)
@@ -619,6 +653,18 @@ object BigTableKVStore {
   sealed trait TableType
   case object BatchTable extends TableType
   case object StreamingTable extends TableType
+
+  sealed trait DatasetType {
+    def ttl: Duration
+    def maxCellVersions: Int
+    def columnFamilies: Seq[String]
+  }
+
+  case object FeaturesDataset extends DatasetType {
+    val ttl: Duration = Duration.ofDays(5)
+    val maxCellVersions: Int = 10000
+    val columnFamilies: Seq[String] = Seq("cf")
+  }
 
   /** row key (with tiling) convention:
     * <dataset>#<entity-key>#<start_date>#<tile_size>
