@@ -31,6 +31,7 @@ class HubConfig:
     fetcher_url: Optional[str] = None
     cloud_provider: Optional[str] = None
     artifact_prefix: Optional[str] = None
+    customer_id: Optional[str] = None
 
 
 @dataclass
@@ -122,10 +123,13 @@ def end_ds_option(func):
     )(func)
 
 def _get_zipline_hub(hub_url: Optional[str], hub_conf: Optional[HubConfig], use_auth: bool, format: Format = Format.TEXT):
+    scope = ""
+    if hub_conf.cloud_provider == "azure" and hub_conf.customer_id is not None:
+        scope = f"api://{hub_conf.customer_id}-zipline-auth"
     if hub_url is not None:
-        zipline_hub = ZiplineHub(base_url=hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, cloud_provider=hub_conf.cloud_provider, format=format)
+        zipline_hub = ZiplineHub(base_url=hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, cloud_provider=hub_conf.cloud_provider, scope=scope, format=format)
     else:
-        zipline_hub = ZiplineHub(base_url=hub_conf.hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, cloud_provider=hub_conf.cloud_provider, format=format)
+        zipline_hub = ZiplineHub(base_url=hub_conf.hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, cloud_provider=hub_conf.cloud_provider, scope=scope, format=format)
     return zipline_hub
 
 def submit_workflow(repo, conf, mode, start_ds, end_ds, hub_url=None, use_auth=True, format: Format = Format.TEXT):
@@ -387,7 +391,10 @@ def eval(repo, conf, hub_url, use_auth, format, force, eval_url, generate_test_c
     """
     parameters = {}
     hub_conf = get_hub_conf(conf, root_dir=repo)
-    zipline_hub = ZiplineHub(base_url=hub_url or hub_conf.hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, eval_url=eval_url or hub_conf.eval_url, cloud_provider=hub_conf.cloud_provider, format=format)
+    scope = ""
+    if hub_conf.cloud_provider == "azure" and hub_conf.customer_id is not None:
+        scope = f"api://{hub_conf.customer_id}-zipline-auth"
+    zipline_hub = ZiplineHub(base_url=hub_url or hub_conf.hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, eval_url=eval_url or hub_conf.eval_url, cloud_provider=hub_conf.cloud_provider, scope=scope, format=format)
     conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
     branch = get_current_branch()
     if test_data_path:
