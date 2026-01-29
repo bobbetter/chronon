@@ -589,6 +589,10 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
       }
   }
 
+  private[batch] def isSensorNode: Boolean = {
+    node.metaData.name.toLowerCase.contains("sensor")
+  }
+
   def runFromArgs(
       startDs: String,
       endDs: String,
@@ -622,7 +626,10 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
       val incomingSemanticHash = node.semanticHash
 
       val su = new SemanticUtils(tableUtils)
-      su.checkSemanticHashAndArchive(outputTable, incomingSemanticHash)
+
+      if (!isSensorNode) {
+        su.checkSemanticHashAndArchive(outputTable, incomingSemanticHash)
+      }
 
       val inputTableToMissingPartitions = inputTablePartitionStatuses
         .filter(_.missingPartitions.nonEmpty)
@@ -649,7 +656,9 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
                          kvStore = kvStore,
                          tableStatsDataset = tableStatsDataset)
 
-          su.setSemanticHash(outputTable, incomingSemanticHash)
+          if (!isSensorNode) {
+            su.setSemanticHash(outputTable, incomingSemanticHash)
+          }
         } catch {
           case e: Exception =>
             // Don't fail the job if post-job actions fail

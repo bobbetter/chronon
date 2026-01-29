@@ -799,6 +799,80 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     }
   }
 
+  "BatchNodeRunner.isSensorNode" should "identify nodes with 'sensor' in name (case-insensitive)" in {
+    // Test with lowercase "sensor"
+    val metadata1 = createTestMetadata("test_db.input_table", "test_db.output_table")
+    val baseMetadata1 = new MetaData().setOutputNamespace("test_db").setTeam("test_team")
+    val sensorMetadata1 = MetaDataUtils.layer(
+      baseMetadata = baseMetadata1,
+      modeName = "test_mode",
+      nodeName = "external_source_sensor_test",
+      tableDependencies = Seq.empty,
+      stepDays = Some(1),
+      outputTableOverride = Some("test_db.output_table")
+    )(tableUtils.partitionSpec)
+
+    val node1 = new Node()
+    node1.setMetaData(sensorMetadata1)
+    node1.setContent(createTestNodeContent())
+    val runner1 = new BatchNodeRunner(node1, tableUtils, mockApi)
+
+    assertTrue("Should identify node with 'sensor' in name", runner1.isSensorNode)
+
+    // Test with uppercase "SENSOR"
+    val sensorMetadata2 = MetaDataUtils.layer(
+      baseMetadata = new MetaData().setOutputNamespace("test_db").setTeam("test_team"),
+      modeName = "test_mode",
+      nodeName = "EXTERNAL_SOURCE_SENSOR_TEST",
+      tableDependencies = Seq.empty,
+      stepDays = Some(1),
+      outputTableOverride = Some("test_db.output_table")
+    )(tableUtils.partitionSpec)
+
+    val node2 = new Node()
+    node2.setMetaData(sensorMetadata2)
+    node2.setContent(createTestNodeContent())
+    val runner2 = new BatchNodeRunner(node2, tableUtils, mockApi)
+
+    assertTrue("Should identify node with 'SENSOR' (uppercase) in name", runner2.isSensorNode)
+
+    // Test with mixed case "SenSor"
+    val sensorMetadata3 = MetaDataUtils.layer(
+      baseMetadata = new MetaData().setOutputNamespace("test_db").setTeam("test_team"),
+      modeName = "test_mode",
+      nodeName = "external_SenSor_node",
+      tableDependencies = Seq.empty,
+      stepDays = Some(1),
+      outputTableOverride = Some("test_db.output_table")
+    )(tableUtils.partitionSpec)
+
+    val node3 = new Node()
+    node3.setMetaData(sensorMetadata3)
+    node3.setContent(createTestNodeContent())
+    val runner3 = new BatchNodeRunner(node3, tableUtils, mockApi)
+
+    assertTrue("Should identify node with 'SenSor' (mixed case) in name", runner3.isSensorNode)
+  }
+
+  it should "not identify regular nodes as sensor nodes" in {
+    val metadata = createTestMetadata("test_db.input_table", "test_db.output_table")
+    val regularMetadata = MetaDataUtils.layer(
+      baseMetadata = new MetaData().setOutputNamespace("test_db").setTeam("test_team"),
+      modeName = "test_mode",
+      nodeName = "regular_batch_node",
+      tableDependencies = Seq.empty,
+      stepDays = Some(1),
+      outputTableOverride = Some("test_db.output_table")
+    )(tableUtils.partitionSpec)
+
+    val node = new Node()
+    node.setMetaData(regularMetadata)
+    node.setContent(createTestNodeContent())
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
+
+    assertFalse("Should NOT identify regular node as sensor node", runner.isSensorNode)
+  }
+
   override def afterAll(): Unit = {
     spark.sql("DROP DATABASE IF EXISTS test_db CASCADE")
     spark.stop()
