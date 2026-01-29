@@ -15,9 +15,12 @@ import scala.util.{Failure, Success, Try}
   *
   * Required environment variables:
   * - SNOWFLAKE_JDBC_URL: JDBC URL (e.g., jdbc:snowflake://account.snowflakecomputing.com/?user=x&db=y&schema=z&warehouse=w)
-  * - SNOWFLAKE_VAULT_URI: Full Azure Key Vault secret URI (e.g., https://<vault-name>.vault.azure.net/secrets/<secret-name>)
-  *   - The secret should contain a PEM-encoded private key (PKCS#8 format)
   * - SNOWFLAKE_STORAGE_INTEGRATION: Name of the Snowflake storage integration for Azure (e.g., AZURE_ICEBERG_INT)
+  *
+  * Optional environment variables:
+  * - SNOWFLAKE_VAULT_URI: Full Azure Key Vault secret URI (e.g., https://<vault-name>.vault.azure.net/secrets/<secret-name>)
+  *   - If set, retrieves a PEM-encoded private key (PKCS#8 format) from the vault for key pair authentication
+  *   - If not set, the JDBC URL is assumed to contain all required credentials (e.g., password in URL or other auth method)
   *
   * The spark.sql.catalog.<catalog>.warehouse config should be set to an azure:// URL that is within
   * the storage integration's allowed locations (e.g., azure://account.blob.core.windows.net/container/path)
@@ -63,16 +66,14 @@ class SnowflakeImport(stagingQueryConf: api.StagingQuery, endPartition: String, 
   private[cloud_azure] lazy val snowflakeConnectionProperties: Properties = {
     val props = new Properties()
 
-    val vaultUri = envVars.getOrElse(
-      "SNOWFLAKE_VAULT_URI",
-      throw new IllegalStateException(
-        "SNOWFLAKE_VAULT_URI not set in metaData.executionInfo.env. " +
-          "Expected format: https://<vault-name>.vault.azure.net/secrets/<secret-name>")
-    )
-
-    logger.info(s"Using key pair authentication with private key from Azure Key Vault: $vaultUri")
-    val privateKey = AzureKeyVaultHelper.getPrivateKeyFromUri(vaultUri)
-    props.put("privateKey", privateKey)
+    envVars.get("SNOWFLAKE_VAULT_URI") match {
+      case Some(vaultUri) =>
+        logger.info(s"Using key pair authentication with private key from Azure Key Vault: $vaultUri")
+        val privateKey = AzureKeyVaultHelper.getPrivateKeyFromUri(vaultUri)
+        props.put("privateKey", privateKey)
+      case None =>
+        logger.info("SNOWFLAKE_VAULT_URI not set, assuming JDBC URL contains all required credentials")
+    }
 
     props
   }
