@@ -37,6 +37,10 @@ object KinesisConfig {
 
     properties.setProperty(AWSConfigConstants.AWS_REGION, region)
 
+    // Credential provider selection:
+    // - BASIC: When explicit credentials provided via -Z flags
+    // - AUTO: When no -Z credentials provided. 
+    //         Uses AWS credential chain (env vars → system props → web identity → IAM roles)
     (maybeAccessKeyId, maybeSecretAccessKey) match {
       case (Some(accessKeyId), Some(secretAccessKey)) =>
         properties.setProperty(AWSConfigConstants.AWS_CREDENTIALS_PROVIDER, "BASIC")
