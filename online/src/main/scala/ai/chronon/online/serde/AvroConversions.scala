@@ -29,8 +29,10 @@ import scala.collection.JavaConverters._
 import scala.collection.{AbstractIterator, mutable}
 import com.linkedin.avro.fastserde.{primitive => fastavro}
 import com.linkedin.avro.fastserde.BufferBackedPrimitiveFloatList
+import org.slf4j.{Logger, LoggerFactory}
 
 object AvroConversions {
+  private val logger: Logger = LoggerFactory.getLogger(getClass)
 
   @tailrec
   def toAvroValue(value: AnyRef, schema: Schema): Object =
@@ -127,6 +129,10 @@ object AvroConversions {
       case DateType =>
         LogicalTypes.date().addToSchema(Schema.create(Schema.Type.INT))
       case _ =>
+        logger.error(
+          s"fromChrononSchema: unsupported Chronon type for Avro conversion " +
+            s"dataType=$dataType fieldPath=$fieldPath nameSetSize=${nameSet.size}"
+        )
         throw new UnsupportedOperationException(
           s"Cannot convert chronon type $dataType to avro type. Cast it to string please")
     }
