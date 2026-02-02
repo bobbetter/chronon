@@ -21,13 +21,27 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
 
   def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingApiDeps ++ build.Constants.utilityDeps ++ build.Constants.sparkDeps ++ Seq(
     // Azure Blob Storage SDK
+    // TODO - look into either downgrading these or building a separate jar bundling these deps for batch jobs
     mvn"com.azure:azure-storage-blob:12.29.0",
     // Azure Identity for authentication
     mvn"com.azure:azure-identity:1.14.2",
+    // Azure Key Vault for secret management (e.g., Snowflake private keys)
+    mvn"com.azure:azure-security-keyvault-secrets:4.10.4",
+    mvn"net.snowflake:snowflake-jdbc:3.14.4",
+    // BouncyCastle for parsing PEM private keys (required by Snowflake JDBC for key pair auth)
+    mvn"org.bouncycastle:bcprov-jdk18on:1.80",
+    mvn"org.bouncycastle:bcpkix-jdk18on:1.80",
     // Hadoop Azure FileSystem connector (for abfss:// support)
     mvn"org.apache.hadoop:hadoop-azure:3.3.6",
     mvn"com.microsoft.azure:azure-storage:7.0.1",
-    mvn"org.apache.iceberg:iceberg-azure-bundle:1.10.0",
+//    mvn"org.apache.iceberg:iceberg-azure-bundle:1.10.0",
+    
+    // Azure Cosmos DB SDK
+    mvn"com.azure:azure-cosmos:4.76.0",
+    // Azure Cosmos DB Spark Connector
+    mvn"com.azure.cosmos.spark:azure-cosmos-spark_3-5_2-12:4.42.0",
+    // CLI argument parsing for Spark loader
+    mvn"org.rogach::scallop:5.0.0",
   ).map(excludeJackson) ++ Seq(
     mvn"com.fasterxml.jackson.core:jackson-core:2.15.2",
     mvn"com.fasterxml.jackson.core:jackson-databind:2.15.2",
@@ -39,7 +53,7 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
   object test extends build.BaseTestModule {
     def scalaVersion = crossValue
 
-    def moduleDeps = Seq(build.cloud_azure(crossValue), build.spark(crossValue).test, build.redis(crossValue).test)
+    def moduleDeps = Seq(build.cloud_azure(crossValue), build.api(crossValue), build.online(crossValue), build.spark(crossValue).test, build.redis(crossValue).test)
     def mvnDeps = super.mvnDeps() ++ Seq(
       mvn"org.testcontainers:testcontainers:1.19.3",
       mvn"org.testcontainers:junit-jupiter:1.19.3"
