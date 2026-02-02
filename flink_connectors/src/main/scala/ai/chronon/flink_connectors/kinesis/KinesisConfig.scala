@@ -23,7 +23,7 @@ object KinesisConfig {
   }
 
   object Defaults {
-    val Parallelism = 10
+    val Parallelism = 1
     val InitialPosition: String = ConsumerConfigConstants.InitialPosition.LATEST.toString
   }
 
@@ -39,7 +39,7 @@ object KinesisConfig {
 
     // Credential provider selection:
     // - BASIC: When explicit credentials provided via -Z flags
-    // - AUTO: When no -Z credentials provided. 
+    // - AUTO: When no -Z credentials provided.
     //         Uses AWS credential chain (env vars → system props → web identity → IAM roles)
     (maybeAccessKeyId, maybeSecretAccessKey) match {
       case (Some(accessKeyId), Some(secretAccessKey)) =>
