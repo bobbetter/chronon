@@ -42,7 +42,9 @@ class AzureApiImpl(conf: Map[String, String]) extends Api(conf) {
                 val newStore = kvStoreType.toLowerCase match {
                   case "cosmos" =>
                     logger.info("Initializing Cosmos DB KV store")
-                    CosmosKVStoreFactory.create(conf)
+                    val store = CosmosKVStoreFactory.create(conf)
+                    logger.info("Successfully created Cosmos DB KV store")
+                    store
                   case "redis" =>
                     logger.info("Initializing Redis KV store")
                     RedisKVStoreFactory.create(conf)
@@ -57,7 +59,12 @@ class AzureApiImpl(conf: Map[String, String]) extends Api(conf) {
           }
       }
     } catch {
-      case _: IllegalArgumentException => null
+      case e: IllegalArgumentException =>
+        logger.error(s"Failed to initialize KV store due to configuration error: ${e.getMessage}", e)
+        throw e
+      case e: Exception =>
+        logger.error(s"Failed to initialize KV store: ${e.getMessage}", e)
+        throw e
     }
   }
 

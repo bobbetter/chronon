@@ -71,21 +71,25 @@ object CosmosKVStoreFactory {
         .setMaxConnectionsPerEndpoint(130) // Per region endpoint
         .setConnectTimeout(Duration.ofSeconds(10))
       clientBuilder.directMode(directMode)
+
       val preferredRegions = parsePreferredRegions(conf)
+      // Proactive container init requires preferredRegions to be set
       if (!preferredRegions.isEmpty) {
         clientBuilder.preferredRegions(preferredRegions)
-      }
 
-      // Set up proactive connections for the shared containers
-      val containerIdentityList = List(
-        new CosmosContainerIdentity(databaseName, CosmosKVStoreConstants.GroupByBatchContainer),
-        new CosmosContainerIdentity(databaseName, CosmosKVStoreConstants.GroupByStreamingContainer)
-      ).asJava
-      val proactiveInitCfg =
-        new CosmosContainerProactiveInitConfigBuilder(containerIdentityList)
-          .setAggressiveWarmupDuration(Duration.ofSeconds(10))
-          .build()
-      clientBuilder.openConnectionsAndInitCaches(proactiveInitCfg)
+        // Set up proactive connections for the shared containers
+        val containerIdentityList = List(
+          new CosmosContainerIdentity(databaseName, CosmosKVStoreConstants.GroupByBatchContainer),
+          new CosmosContainerIdentity(databaseName, CosmosKVStoreConstants.GroupByStreamingContainer)
+        ).asJava
+        val proactiveInitCfg =
+          new CosmosContainerProactiveInitConfigBuilder(containerIdentityList)
+            .setAggressiveWarmupDuration(Duration.ofSeconds(10))
+            .build()
+        clientBuilder.openConnectionsAndInitCaches(proactiveInitCfg)
+      } else {
+        logger.info("Preferred regions not configured - skipping proactive container initialization")
+      }
     }
 
     clientBuilder.buildAsyncClient()
@@ -95,7 +99,7 @@ object CosmosKVStoreFactory {
     conf
       .get(PropCosmosPreferredRegions)
       .orElse(sys.env.get(EnvCosmosPreferredRegions))
-      .map(_.split(",").map(_.trim).toList.asJava)
+      .map(_.split(",").map(_.trim).filter(_.nonEmpty).toList.asJava)
       .getOrElse(java.util.Collections.emptyList[String]())
   }
 
