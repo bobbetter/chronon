@@ -18,7 +18,7 @@ object CosmosKVStoreConstants {
 
   // Container names for shared containers
   val GroupByBatchContainer: String = "groupby_batch"
-  val GroupByStreamingContainer: String = "groupby_stream"
+  val GroupByStreamingContainer: String = "groupby_streaming"
 
   // Configuration property keys
   val PropTTLSeconds: String = "ttl-seconds"
