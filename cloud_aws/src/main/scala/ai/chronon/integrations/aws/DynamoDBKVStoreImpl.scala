@@ -151,22 +151,10 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
       (req, GetItemRequest.builder.key(keyAttributeMap.toJava).tableName(req.dataset).build)
     }
 
-    val queryRequestPairs = queryLookups.map { req =>
-      // For streaming tables, extract the Avro entity key from the TileKey wrapper
-      // and include tileSizeMs in the partition key to support tile layering
-      val partitionKeyBytes = if (isStreamingTable(req.dataset)) {
-        val tileComponents = extractTileKeyComponents(req.keyBytes)
-        buildKeyWithTileSize(tileComponents.baseKeyBytes, tileComponents.tileSizeMillis)
-      } else {
-        req.keyBytes
-      }
-      val queryRequest = buildTimeRangeQuery(req.dataset, partitionKeyBytes, req.startTsMillis.get, req.endTsMillis)
-      (req, queryRequest)
-    }
-
     // timestamp to use for all get responses when the underlying tables don't have a ts field
     val defaultTimestamp = Instant.now().toEpochMilli
 
+    // get item results, requests where we're missing timestamps and only have key lookup
     val getItemResults = getItemRequestPairs.map { case (req, getItemReq) =>
       Future {
         val item: Try[util.Map[String, AttributeValue]] =
@@ -178,6 +166,20 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
         val resultValue: Try[Seq[TimedValue]] = extractTimedValues(response, defaultTimestamp)
         GetResponse(req, resultValue)
       }
+    }
+
+    // query requests, requests where we want to query a range based on afterTsMillis -> endTsMillis or now()
+    val queryRequestPairs = queryLookups.map { req =>
+      // For streaming tables, extract the Avro entity key from the TileKey wrapper
+      // and include tileSizeMs in the partition key to support tile layering
+      val partitionKeyBytes = if (isStreamingTable(req.dataset)) {
+        val tileComponents = extractTileKeyComponents(req.keyBytes)
+        buildKeyWithTileSize(tileComponents.baseKeyBytes, tileComponents.tileSizeMillis)
+      } else {
+        req.keyBytes
+      }
+      val queryRequest = buildTimeRangeQuery(req.dataset, partitionKeyBytes, req.startTsMillis.get, req.endTsMillis)
+      (req, queryRequest)
     }
 
     val queryResults = queryRequestPairs.map { case (req, queryRequest) =>
