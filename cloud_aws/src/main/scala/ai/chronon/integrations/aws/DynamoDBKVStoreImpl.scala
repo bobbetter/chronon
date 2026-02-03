@@ -32,6 +32,7 @@ import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest
 import software.amazon.awssdk.services.dynamodb.model.ScanResponse
 
+import java.nio.charset.Charset
 import java.time.Instant
 import java.util
 import scala.concurrent.Future
@@ -78,6 +79,13 @@ object DynamoDBKVStoreConstants {
     val tileSizeMs = tileKey.tileSizeMillis
     val tileStartTs = if (tileKey.isSetTileStartTimestampMillis) Some(tileKey.tileStartTimestampMillis) else None
     TileKeyComponents(baseKeyBytes, tileSizeMs, tileStartTs)
+  }
+
+  /** Builds a key with tileSizeMs to support tile layering.
+    * Key format: baseKeyBytes + "#" + tileSizeMs
+    */
+  def buildKeyWithTileSize(baseKeyBytes: Array[Byte], tileSizeMs: Long): Array[Byte] = {
+    baseKeyBytes ++ s"#$tileSizeMs".getBytes(Charset.forName("UTF-8"))
   }
 }
 
@@ -147,8 +155,10 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
 
     val queryRequestPairs = queryLookups.map { req =>
       // For streaming tables, extract the Avro entity key from the TileKey wrapper
+      // and include tileSizeMs in the partition key to support tile layering
       val partitionKeyBytes = if (isStreamingTable(req.dataset)) {
-        extractTileKeyComponents(req.keyBytes).baseKeyBytes
+        val tileComponents = extractTileKeyComponents(req.keyBytes)
+        buildKeyWithTileSize(tileComponents.baseKeyBytes, tileComponents.tileSizeMillis)
       } else {
         req.keyBytes
       }
@@ -229,11 +239,13 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
   override def multiPut(keyValueDatasets: Seq[KVStore.PutRequest]): Future[Seq[Boolean]] = {
     logger.info(s"Triggering multiput for ${keyValueDatasets.size}: rows")
     val datasetToWriteRequests = keyValueDatasets.map { req =>
-      // For streaming tables, unwrap TileKey to use entity key as partition key and tileStartTs as sort key
+      // For streaming tables, unwrap TileKey to use entity key + tileSizeMs as partition key
+      // and tileStartTs as sort key. Including tileSizeMs in the key supports tile layering.
       val (actualKeyBytes, actualTimestamp) = if (isStreamingTable(req.dataset) && req.tsMillis.isDefined) {
         val tileComponents = extractTileKeyComponents(req.keyBytes)
         val timestamp = tileComponents.tileStartTimestampMillis.getOrElse(req.tsMillis.get)
-        (tileComponents.baseKeyBytes, Some(timestamp))
+        val tiledKey = buildKeyWithTileSize(tileComponents.baseKeyBytes, tileComponents.tileSizeMillis)
+        (tiledKey, Some(timestamp))
       } else {
         (req.keyBytes, req.tsMillis)
       }
