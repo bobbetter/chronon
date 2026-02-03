@@ -1,6 +1,7 @@
 package ai.chronon.integrations.aws
 
 import ai.chronon.api.Constants.{ContinuationKey, ListLimit}
+import ai.chronon.api.TilingUtils
 import ai.chronon.online.KVStore._
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
@@ -262,6 +263,121 @@ class DynamoDBKVStoreTest extends AnyFlatSpec with BeforeAndAfterAll {
       // we just match the join name and timestamps for simplicity
       returnedTimeSeries.tileTs shouldBe ev.tileTs
       returnedTimeSeries.joinName shouldBe ev.joinName
+    }
+  }
+
+  // Test write and query of a tiled streaming dataset
+  // This simulates the Flink TiledGroupByJob writing tiles and the Fetcher reading them
+  it should "tiled streaming data round trip" in {
+    // Streaming tables end with _STREAMING suffix
+    val dataset = "MY_GROUPBY_V1_STREAMING"
+    val props = Map(isTimedSorted -> "true")
+    val kvStore = new DynamoDBKVStoreImpl(client)
+    kvStore.create(dataset, props)
+
+    val entityKeyBytes = "entity_key_123".getBytes(StandardCharsets.UTF_8)
+    val tileSizeMillis = 1.hour.toMillis
+
+    // Simulate Flink writing tiles (like TiledAvroCodecFn does)
+    // Each tile has a TileKey with tileStartTimestampMillis set
+    val tileTimestamps = Seq(1728000000000L, 1728003600000L, 1728007200000L, 1728010800000L) // 4 hours of tiles
+    val putRequests = tileTimestamps.map { tileStart =>
+      val tileKey = TilingUtils.buildTileKey(dataset, entityKeyBytes, Some(tileSizeMillis), Some(tileStart))
+      val tileKeyBytes = TilingUtils.serializeTileKey(tileKey)
+      val valueBytes = s"tile_value_at_$tileStart".getBytes(StandardCharsets.UTF_8)
+      PutRequest(tileKeyBytes, valueBytes, dataset, Some(tileStart))
+    }
+
+    val putResults = Await.result(kvStore.multiPut(putRequests), 1.minute)
+    putResults.length shouldBe tileTimestamps.length
+    putResults.foreach(r => r shouldBe true)
+
+    // Simulate Fetcher reading tiles (like GroupByFetcher does)
+    // The Fetcher builds a TileKey without tileStartTimestampMillis and queries by time range
+    val readTileKey = TilingUtils.buildTileKey(dataset, entityKeyBytes, Some(tileSizeMillis), None)
+    val readKeyBytes = TilingUtils.serializeTileKey(readTileKey)
+
+    // Query for tiles in range [tileTimestamps(1), tileTimestamps(3)]
+    val startTs = tileTimestamps(1) // 1728003600000L
+    val endTs = tileTimestamps(3) // 1728010800000L
+    val getRequest = GetRequest(readKeyBytes, dataset, Some(startTs), Some(endTs))
+
+    val getResults = Await.result(kvStore.multiGet(Seq(getRequest)), 1.minute)
+    getResults.length shouldBe 1
+
+    // Should get 3 tiles back (startTs, startTs+1hour, startTs+2hour)
+    getResults.head.values match {
+      case Success(timedValues) =>
+        timedValues.length shouldBe 3
+        // Verify the timestamps are in the expected range
+        timedValues.foreach { tv =>
+          (tv.millis >= startTs) shouldBe true
+          (tv.millis <= endTs) shouldBe true
+        }
+      case Failure(ex) =>
+        fail(s"Failed to read tiled streaming data: $ex")
+    }
+  }
+
+  // Test that writes multiple tiles for different entity keys
+  it should "handle multiple entity keys with tiled streaming data" in {
+    val dataset = "MULTI_ENTITY_V1_STREAMING"
+    val props = Map(isTimedSorted -> "true")
+    val kvStore = new DynamoDBKVStoreImpl(client)
+    kvStore.create(dataset, props)
+
+    val tileSizeMillis = 1.hour.toMillis
+    val tileStart = 1728000000000L
+
+    // Write tiles for two different entity keys
+    val entityKey1 = "entity_key_1".getBytes(StandardCharsets.UTF_8)
+    val entityKey2 = "entity_key_2".getBytes(StandardCharsets.UTF_8)
+
+    val tileKey1 = TilingUtils.buildTileKey(dataset, entityKey1, Some(tileSizeMillis), Some(tileStart))
+    val tileKey2 = TilingUtils.buildTileKey(dataset, entityKey2, Some(tileSizeMillis), Some(tileStart))
+
+    val putReq1 = PutRequest(
+      TilingUtils.serializeTileKey(tileKey1),
+      "value_for_entity_1".getBytes(StandardCharsets.UTF_8),
+      dataset,
+      Some(tileStart)
+    )
+    val putReq2 = PutRequest(
+      TilingUtils.serializeTileKey(tileKey2),
+      "value_for_entity_2".getBytes(StandardCharsets.UTF_8),
+      dataset,
+      Some(tileStart)
+    )
+
+    val putResults = Await.result(kvStore.multiPut(Seq(putReq1, putReq2)), 1.minute)
+    putResults shouldBe Seq(true, true)
+
+    // Read back entity 1 only
+    val readTileKey1 = TilingUtils.buildTileKey(dataset, entityKey1, Some(tileSizeMillis), None)
+    val getRequest1 = GetRequest(TilingUtils.serializeTileKey(readTileKey1), dataset, Some(tileStart), Some(tileStart))
+    val getResults1 = Await.result(kvStore.multiGet(Seq(getRequest1)), 1.minute)
+
+    getResults1.length shouldBe 1
+    getResults1.head.values match {
+      case Success(timedValues) =>
+        timedValues.length shouldBe 1
+        new String(timedValues.head.bytes, StandardCharsets.UTF_8) shouldBe "value_for_entity_1"
+      case Failure(ex) =>
+        fail(s"Failed to read entity 1: $ex")
+    }
+
+    // Read back entity 2 only
+    val readTileKey2 = TilingUtils.buildTileKey(dataset, entityKey2, Some(tileSizeMillis), None)
+    val getRequest2 = GetRequest(TilingUtils.serializeTileKey(readTileKey2), dataset, Some(tileStart), Some(tileStart))
+    val getResults2 = Await.result(kvStore.multiGet(Seq(getRequest2)), 1.minute)
+
+    getResults2.length shouldBe 1
+    getResults2.head.values match {
+      case Success(timedValues) =>
+        timedValues.length shouldBe 1
+        new String(timedValues.head.bytes, StandardCharsets.UTF_8) shouldBe "value_for_entity_2"
+      case Failure(ex) =>
+        fail(s"Failed to read entity 2: $ex")
     }
   }
 }

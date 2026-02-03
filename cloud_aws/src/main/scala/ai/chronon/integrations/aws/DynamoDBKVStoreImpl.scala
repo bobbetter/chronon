@@ -2,6 +2,8 @@ package ai.chronon.integrations.aws
 
 import ai.chronon.api.Constants
 import ai.chronon.api.Constants.{ContinuationKey, ListLimit}
+import ai.chronon.api.Extensions.GroupByOps
+import ai.chronon.api.{GroupBy, MetaData, TilingUtils}
 import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.online.KVStore
 import ai.chronon.online.KVStore.GetResponse
@@ -55,6 +57,29 @@ object DynamoDBKVStoreConstants {
   // TODO: tune these
   val defaultReadCapacityUnits = 10L
   val defaultWriteCapacityUnits = 10L
+
+
+  /** Streaming tables (suffix _STREAMING) use TileKey wrapping for tiled data. */
+  def isStreamingTable(dataset: String): Boolean = dataset.endsWith("_STREAMING")
+
+  case class TileKeyComponents(baseKeyBytes: Array[Byte], tileSizeMillis: Long, tileStartTimestampMillis: Option[Long])
+
+  /** Unwraps a TileKey to extract the entity key for use as DynamoDB partition key.
+    *
+    * Streaming tables have two serialization layers:
+    *   - Outer: Thrift (TileKey struct with dataset, keyBytes, tileSizeMs, tileStartTs)
+    *   - Inner: Avro (entity key, e.g. customer_id, stored in TileKey.keyBytes)
+    *
+    * This method deserializes only the Thrift layer. The returned baseKeyBytes
+    * remain Avro-encoded and are used directly as the DynamoDB partition key.
+    */
+  def extractTileKeyComponents(keyBytes: Array[Byte]): TileKeyComponents = {
+    val tileKey = TilingUtils.deserializeTileKey(keyBytes)
+    val baseKeyBytes = tileKey.keyBytes.toScala.map(_.toByte).toArray
+    val tileSizeMs = tileKey.tileSizeMillis
+    val tileStartTs = if (tileKey.isSetTileStartTimestampMillis) Some(tileKey.tileStartTimestampMillis) else None
+    TileKeyComponents(baseKeyBytes, tileSizeMs, tileStartTs)
+  }
 }
 
 class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
@@ -122,7 +147,13 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
     }
 
     val queryRequestPairs = queryLookups.map { req =>
-      val queryRequest: QueryRequest = buildQueryRequest(req)
+      // For streaming tables, extract the Avro entity key from the TileKey wrapper
+      val partitionKeyBytes = if (isStreamingTable(req.dataset)) {
+        extractTileKeyComponents(req.keyBytes).baseKeyBytes
+      } else {
+        req.keyBytes
+      }
+      val queryRequest = buildTimeRangeQuery(req.dataset, partitionKeyBytes, req.startTsMillis.get, req.endTsMillis)
       (req, queryRequest)
     }
 
@@ -199,9 +230,18 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
   override def multiPut(keyValueDatasets: Seq[KVStore.PutRequest]): Future[Seq[Boolean]] = {
     logger.info(s"Triggering multiput for ${keyValueDatasets.size}: rows")
     val datasetToWriteRequests = keyValueDatasets.map { req =>
-      val attributeMap: Map[String, AttributeValue] = buildAttributeMap(req.keyBytes, req.valueBytes)
+      // For streaming tables, unwrap TileKey to use entity key as partition key and tileStartTs as sort key
+      val (actualKeyBytes, actualTimestamp) = if (isStreamingTable(req.dataset) && req.tsMillis.isDefined) {
+        val tileComponents = extractTileKeyComponents(req.keyBytes)
+        val timestamp = tileComponents.tileStartTimestampMillis.getOrElse(req.tsMillis.get)
+        (tileComponents.baseKeyBytes, Some(timestamp))
+      } else {
+        (req.keyBytes, req.tsMillis)
+      }
+
+      val attributeMap: Map[String, AttributeValue] = buildAttributeMap(actualKeyBytes, req.valueBytes)
       val tsMap =
-        req.tsMillis.map(ts => Map(sortKeyColumn -> AttributeValue.builder.n(ts.toString).build)).getOrElse(Map.empty)
+        actualTimestamp.map(ts => Map(sortKeyColumn -> AttributeValue.builder.n(ts.toString).build)).getOrElse(Map.empty)
 
       val putItemReq =
         PutItemRequest.builder.tableName(req.dataset).item((attributeMap ++ tsMap).toJava).build()
@@ -301,22 +341,23 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
       )
   }
 
-  private def buildQueryRequest(request: KVStore.GetRequest): QueryRequest = {
-    // Set up an alias for the partition key name in case it's a reserved word.
+  /** Builds a DynamoDB query for a partition key with a time range on the sort key. */
+  private def buildTimeRangeQuery(dataset: String,
+                                  partitionKeyBytes: Array[Byte],
+                                  startTs: Long,
+                                  endTs: Option[Long]): QueryRequest = {
     val partitionAlias = "#pk"
     val timeAlias = "#ts"
     val attrNameAliasMap = Map(partitionAlias -> partitionKeyColumn, timeAlias -> sortKeyColumn)
-    val startTs = request.startTsMillis.get
-    val endTs = request.endTsMillis.getOrElse(System.currentTimeMillis())
-    val attrValuesMap =
-      Map(
-        ":partitionKeyValue" -> AttributeValue.builder.b(SdkBytes.fromByteArray(request.keyBytes)).build,
-        ":start" -> AttributeValue.builder.n(startTs.toString).build,
-        ":end" -> AttributeValue.builder.n(endTs.toString).build
-      )
+    val endTsResolved = endTs.getOrElse(System.currentTimeMillis())
+    val attrValuesMap = Map(
+      ":partitionKeyValue" -> AttributeValue.builder.b(SdkBytes.fromByteArray(partitionKeyBytes)).build,
+      ":start" -> AttributeValue.builder.n(startTs.toString).build,
+      ":end" -> AttributeValue.builder.n(endTsResolved.toString).build
+    )
 
     QueryRequest.builder
-      .tableName(request.dataset)
+      .tableName(dataset)
       .keyConditionExpression(s"$partitionAlias = :partitionKeyValue AND $timeAlias BETWEEN :start AND :end")
       .expressionAttributeNames(attrNameAliasMap.toJava)
       .expressionAttributeValues(attrValuesMap.toJava)
