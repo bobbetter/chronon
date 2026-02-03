@@ -144,6 +144,7 @@ object JobSubmitterConstants {
   val JarURI = "jarUri"
   val FlinkMainJarURI = "flinkMainJarUri"
   val FlinkPubSubConnectorJarURI = "flinkPubSubConnectorJarUri"
+  val FlinkJarsUri = "flinkJarsUri"
   val AdditionalJars = "additionalJars"
   val SavepointUri = "savepointUri"
   val FlinkStateUri = "flinkStateUri"
@@ -173,6 +174,7 @@ object JobSubmitterConstants {
   val MainClassKeyword = "--main-class"
   val FlinkMainJarUriArgKeyword = "--flink-main-jar-uri"
   val FlinkPubSubJarUriArgKeyword = "--flink-pubsub-jar-uri"
+  val FlinkJarsUriArgKeyword = "--flink-jars-uri"
   val AdditionalJarsUriArgKeyword = "--additional-jars"
   val FlinkGroupByNameArgKeyword = "--groupby-name"
   val FilesArgKeyword = "--files"
@@ -203,6 +205,7 @@ object JobSubmitterConstants {
     MainClassKeyword,
     FlinkMainJarUriArgKeyword,
     FlinkPubSubJarUriArgKeyword,
+    FlinkJarsUriArgKeyword,
     AdditionalJarsUriArgKeyword,
     LocalConfPathArgKeyword,
     OriginalModeArgKeyword,
