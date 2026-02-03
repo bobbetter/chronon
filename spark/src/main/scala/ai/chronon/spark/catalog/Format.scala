@@ -99,13 +99,15 @@ object Format {
       .toList
   }
 
-  def getCatalog(tableName: String)(implicit sparkSession: SparkSession): String = {
-    val parsed = sparkSession.sessionState.sqlParser.parseMultipartIdentifier(tableName)
+  def getCatalog(inputTableName: String)(implicit sparkSession: SparkSession): String = {
+    val parsed = sparkSession.sessionState.sqlParser.parseMultipartIdentifier(inputTableName)
+    // Use config directly to avoid triggering catalog initialization (which may require auth)
+    def defaultCatalog: String = sparkSession.conf.get("spark.sql.defaultCatalog", "spark_catalog")
     val parsedCatalog = parsed.toList match {
       case catalog :: namespace :: tableName :: Nil => catalog
-      case namespace :: tableName :: Nil            => sparkSession.catalog.currentCatalog()
-      case tableName :: Nil                         => sparkSession.catalog.currentCatalog()
-      case _ => throw new IllegalStateException(s"Invalid table naming convention specified: ${tableName}")
+      case namespace :: tableName :: Nil            => defaultCatalog
+      case tableName :: Nil                         => defaultCatalog
+      case _ => throw new IllegalStateException(s"Invalid table naming convention specified: ${inputTableName}")
     }
     parsedCatalog
   }
