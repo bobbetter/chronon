@@ -58,7 +58,6 @@ object DynamoDBKVStoreConstants {
   val defaultReadCapacityUnits = 10L
   val defaultWriteCapacityUnits = 10L
 
-
   /** Streaming tables (suffix _STREAMING) use TileKey wrapping for tiled data. */
   def isStreamingTable(dataset: String): Boolean = dataset.endsWith("_STREAMING")
 
@@ -241,7 +240,9 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
 
       val attributeMap: Map[String, AttributeValue] = buildAttributeMap(actualKeyBytes, req.valueBytes)
       val tsMap =
-        actualTimestamp.map(ts => Map(sortKeyColumn -> AttributeValue.builder.n(ts.toString).build)).getOrElse(Map.empty)
+        actualTimestamp
+          .map(ts => Map(sortKeyColumn -> AttributeValue.builder.n(ts.toString).build))
+          .getOrElse(Map.empty)
 
       val putItemReq =
         PutItemRequest.builder.tableName(req.dataset).item((attributeMap ++ tsMap).toJava).build()
