@@ -81,9 +81,7 @@ object DynamoDBKVStoreConstants {
     TileKeyComponents(baseKeyBytes, tileSizeMs, tileStartTs)
   }
 
-  /** Builds a key with tileSizeMs to support tile layering.
-    * Key format: baseKeyBytes + "#" + tileSizeMs
-    */
+  // Builds key with tileSizeMs to support tile layering
   def buildKeyWithTileSize(baseKeyBytes: Array[Byte], tileSizeMs: Long): Array[Byte] = {
     baseKeyBytes ++ s"#$tileSizeMs".getBytes(Charset.forName("UTF-8"))
   }
