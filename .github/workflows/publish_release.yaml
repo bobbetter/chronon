@@ -459,6 +459,7 @@ jobs:
 
   build_and_publish_docker:
     runs-on: ubuntu-latest
+    environment: main
     needs: [ check_if_latest ]
     permissions:
       contents: read
