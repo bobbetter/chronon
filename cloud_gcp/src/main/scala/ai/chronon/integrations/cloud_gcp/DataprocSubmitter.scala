@@ -151,6 +151,7 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
           submissionProperties.getOrElse(FlinkCheckpointUri,
                                          throw new RuntimeException(s"Missing expected $FlinkCheckpointUri"))
         val maybeSavepointUri = submissionProperties.get(SavepointUri)
+        val maybeFlinkJarsBasePath = submissionProperties.get(FlinkJarsUri)
         val maybePubSubConnectorJarUri = submissionProperties.get(FlinkPubSubConnectorJarURI)
         val jarUris = Array(jarUri) ++ maybePubSubConnectorJarUri.toList ++ additionalJars
         buildFlinkJob(mainClass,
@@ -158,6 +159,7 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
                       jarUris,
                       flinkCheckpointPath,
                       maybeSavepointUri,
+                      maybeFlinkJarsBasePath,
                       jobProperties,
                       (args :+ "--parent-job-id" :+ jobId): _*)
     }
@@ -202,12 +204,11 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
                             files: List[String],
                             jobProperties: Map[String, String],
                             args: String*): Job.Builder = {
-    val jarFileUris = jarUris ++ DataprocAdditionalJars.additionalSparkJobJars
     val sparkJob = SparkJob
       .newBuilder()
       .putAllProperties(jobProperties.asJava)
       .setMainClass(mainClass)
-      .addAllJarFileUris(jarFileUris.toIterable.asJava)
+      .addAllJarFileUris(jarUris.toIterable.asJava)
       .addAllFileUris(files.asJava)
       .addAllArgs(args.toIterable.asJava)
       .build()
@@ -219,6 +220,7 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
                                        jarUris: Array[String],
                                        flinkCheckpointUri: String,
                                        maybeSavePointUri: Option[String],
+                                       maybeFlinkJarsBasePath: Option[String],
                                        jobProperties: Map[String, String],
                                        args: String*): Job.Builder = {
 
@@ -267,7 +269,7 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
         "state.checkpoints.num-retained" -> MaxRetainedCheckpoints
       )
 
-    val updatedJarUris = jarUris ++ DataprocAdditionalJars.additionalFlinkJobJars
+    val updatedJarUris = jarUris ++ DataprocAdditionalJars.additionalFlinkJobJars(maybeFlinkJarsBasePath)
 
     val flinkJobBuilder = FlinkJob
       .newBuilder()
@@ -405,6 +407,9 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
         // pull the pubsub connector uri if it has been passed
         val maybePubSubJarUri = JobSubmitter
           .getArgValue(args, FlinkPubSubJarUriArgKeyword)
+        // pull the flink jars base path if it has been passed
+        val maybeFlinkJarsUri = JobSubmitter
+          .getArgValue(args, FlinkJarsUriArgKeyword)
 
         val groupByName = JobSubmitter
           .getArgValue(args, GroupByNameArgKeyword)
@@ -417,7 +422,9 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
           FlinkCheckpointUri -> flinkCheckpointUri,
           MetadataName -> groupByName,
           JobId -> jobId
-        ) ++ (maybePubSubJarUri.map(FlinkPubSubConnectorJarURI -> _) ++ additionalJarsProps)
+        ) ++ (maybePubSubJarUri.map(FlinkPubSubConnectorJarURI -> _) ++
+          maybeFlinkJarsUri.map(FlinkJarsUri -> _) ++
+          additionalJarsProps)
 
         val userPassedSavepoint = JobSubmitter
           .getArgValue(args, StreamingCustomSavepointArgKeyword)
