@@ -4,7 +4,8 @@ from ai.chronon.staging_query import EngineType, StagingQuery, TableDependency
 def get_select_star_export(table: str, partition_column: str = "ds"):
     snowflake_export_sql = f"""
     SELECT
-        *
+      * EXCLUDE ({partition_column}),
+       DATE_TRUNC('DAY', {partition_column})::DATE as ds
     FROM {table}
     WHERE
     DATE_TRUNC('DAY', {partition_column}) BETWEEN {{{{ start_date }}}} AND {{{{ end_date }}}}
@@ -25,7 +26,7 @@ def get_native_partition_export(table: str, partition_column: str):
     snowflake_partition_sql = f"""
     SELECT
         *,
-        DATE_TRUNC('DAY', {partition_column}) as ds
+        DATE_TRUNC('DAY', {partition_column})::DATE as ds
     FROM {table}
     WHERE
     {partition_column} BETWEEN {{{{ start_date }}}} AND {{{{ end_date }}}}

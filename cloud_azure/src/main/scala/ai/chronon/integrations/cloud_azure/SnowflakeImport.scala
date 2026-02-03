@@ -7,20 +7,24 @@ import ai.chronon.api.ScalaJavaConversions.{IterableOps, MapOps}
 import ai.chronon.spark.batch.StagingQuery
 import ai.chronon.spark.catalog.{Format, TableUtils}
 
+import java.net.URI
 import java.sql.{Connection, DriverManager, Statement}
 import java.util.{Properties, UUID}
 import scala.util.{Failure, Success, Try}
 
-/** Snowflake staging query implementation with Azure Key Vault support for key pair authentication.
+/** Snowflake staging query implementation with key pair authentication.
   *
   * Required environment variables:
   * - SNOWFLAKE_JDBC_URL: JDBC URL (e.g., jdbc:snowflake://account.snowflakecomputing.com/?user=x&db=y&schema=z&warehouse=w)
   * - SNOWFLAKE_STORAGE_INTEGRATION: Name of the Snowflake storage integration for Azure (e.g., AZURE_ICEBERG_INT)
   *
-  * Optional environment variables:
-  * - SNOWFLAKE_VAULT_URI: Full Azure Key Vault secret URI (e.g., https://<vault-name>.vault.azure.net/secrets/<secret-name>)
-  *   - If set, retrieves a PEM-encoded private key (PKCS#8 format) from the vault for key pair authentication
-  *   - If not set, the JDBC URL is assumed to contain all required credentials (e.g., password in URL or other auth method)
+  * Private key authentication (required, uses tiered lookup):
+  * 1. SNOWFLAKE_PRIVATE_KEY: System environment variable with PEM-encoded private key content (PKCS#8 format)
+  *    - Can be set via spark-submit: --conf spark.driverEnv.SNOWFLAKE_PRIVATE_KEY="$(cat key.pem)"
+  * 2. SNOWFLAKE_VAULT_URI: Azure Key Vault secret URI in staging query configuration (metaData.executionInfo.env.common)
+  *    - Format: https://<vault-name>.vault.azure.net/secrets/<secret-name>
+  *    - If SNOWFLAKE_PRIVATE_KEY is not set, retrieves the private key from Azure Key Vault
+  * 3. If neither is set, an exception is thrown with instructions
   *
   * The spark.sql.catalog.<catalog>.warehouse config should be set to an azure:// URL that is within
   * the storage integration's allowed locations (e.g., azure://account.blob.core.windows.net/container/path)
@@ -61,20 +65,44 @@ class SnowflakeImport(stagingQueryConf: api.StagingQuery, endPartition: String, 
     }
   }
 
+  /** Fetches the PEM-encoded private key content using tiered lookup:
+    * 1. SNOWFLAKE_PRIVATE_KEY from system environment (can be set via spark.driverEnv/executorEnv)
+    * 2. SNOWFLAKE_VAULT_URI from staging query configuration (Azure Key Vault)
+    * 3. Throws exception with helpful message if neither is found
+    *
+    * @return The PEM-encoded private key string
+    */
+  private[cloud_azure] def getPrivateKeyPem(): String = {
+    // Try system environment first (from spark.driverEnv/executorEnv)
+    Option(System.getenv("SNOWFLAKE_PRIVATE_KEY")) match {
+      case Some(privateKey) =>
+        logger.info("Using private key from SNOWFLAKE_PRIVATE_KEY system environment variable")
+        privateKey
+      case None =>
+        // Fall back to vault URI from staging query configuration
+        envVars.get("SNOWFLAKE_VAULT_URI") match {
+          case Some(vaultUri) =>
+            logger.info(s"Using private key from Azure Key Vault: $vaultUri")
+            val (vaultUrl, secretName) = AzureKeyVaultHelper.parseSecretUri(vaultUri)
+            AzureKeyVaultHelper.getSecret(vaultUrl, secretName)
+          case None =>
+            throw new IllegalStateException(
+              "Snowflake private key not found. Please provide one of the following:\n" +
+                "  1. SNOWFLAKE_PRIVATE_KEY system environment variable (via --conf spark.driverEnv.SNOWFLAKE_PRIVATE_KEY), or\n" +
+                "  2. SNOWFLAKE_VAULT_URI in staging query configuration (metaData.executionInfo.env.common) " +
+                "with Azure Key Vault URI (e.g., https://<vault-name>.vault.azure.net/secrets/<secret-name>)"
+            )
+        }
+    }
+  }
+
   // Connection properties with authentication configured
   // See: https://docs.snowflake.com/en/developer-guide/jdbc/jdbc-configure#using-key-pair-authentication-and-key-rotation
   private[cloud_azure] lazy val snowflakeConnectionProperties: Properties = {
     val props = new Properties()
-
-    envVars.get("SNOWFLAKE_VAULT_URI") match {
-      case Some(vaultUri) =>
-        logger.info(s"Using key pair authentication with private key from Azure Key Vault: $vaultUri")
-        val privateKey = AzureKeyVaultHelper.getPrivateKeyFromUri(vaultUri)
-        props.put("privateKey", privateKey)
-      case None =>
-        logger.info("SNOWFLAKE_VAULT_URI not set, assuming JDBC URL contains all required credentials")
-    }
-
+    val pemContent = getPrivateKeyPem()
+    val privateKey = AzureKeyVaultHelper.parsePemPrivateKey(pemContent)
+    props.put("privateKey", privateKey)
     props
   }
 
@@ -192,7 +220,8 @@ class SnowflakeImport(stagingQueryConf: api.StagingQuery, endPartition: String, 
     multiStatementQuery
   }
 
-  override def compute(range: PartitionRange, setups: Seq[String], enableAutoExpand: Option[Boolean]): Unit = {
+  // Avoiding this temporarily due to permissions and configuration gaps (catalog vs catalog location)
+  def compute_with_export(range: PartitionRange, setups: Seq[String], enableAutoExpand: Option[Boolean]): Unit = {
     // Step 1: Export data for the full range to a temp location
     val renderedQuery =
       StagingQuery.substitute(
@@ -292,4 +321,63 @@ class SnowflakeImport(stagingQueryConf: api.StagingQuery, endPartition: String, 
     }
   }
 
+  override def compute(range: PartitionRange, setups: Seq[String], enableAutoExpand: Option[Boolean]): Unit = {
+    val renderedQuery =
+      StagingQuery.substitute(
+        tableUtils,
+        stagingQueryConf.query,
+        range.start,
+        range.end,
+        endPartition
+      )
+    val jdbcParams: Map[String, String] = {
+      val queryString = new URI(snowflakeJdbcUrl.replace("jdbc:snowflake://", "http://")).getQuery
+      queryString.split("&").map(_.split("=")).map(kv => kv(0) -> kv(1)).toMap
+    }
+    // Get the PEM Base64 content for Snowflake connector (without headers)
+    val pemContent = getPrivateKeyPem()
+    // Extract Base64 content by removing PEM headers and whitespace
+    val pemBase64 = pemContent
+      .replaceAll("-----BEGIN.*-----", "")
+      .replaceAll("-----END.*-----", "")
+      .replaceAll("\\s", "")
+
+    val sfOptions = Map(
+      "sfURL" -> snowflakeJdbcUrl.split("\\?").head.replace("jdbc:snowflake://", ""),
+      "pem_private_key" -> pemBase64,
+      "sfUser" -> jdbcParams.getOrElse("user", throw new Exception("User missing in JDBC URL")),
+      "sfDatabase" -> jdbcParams.getOrElse("db", throw new Exception("DB missing in JDBC URL")),
+      "sfSchema" -> jdbcParams.getOrElse("schema", throw new Exception("Schema missing in JDBC URL")),
+      "sfWarehouse" -> jdbcParams.getOrElse("warehouse", throw new Exception("Warehouse missing in JDBC URL"))
+    )
+    // 2. Read from Snowflake Native Table
+    val snowflakeDF = tableUtils.sparkSession.read
+      .format("net.snowflake.spark.snowflake")
+      .options(sfOptions)
+      .option("query", renderedQuery)
+      .load()
+
+    val df = snowflakeDF.toDF(snowflakeDF.columns.map(_.toLowerCase): _*)
+
+    val tableProps = Option(stagingQueryConf.metaData.tableProperties)
+      .map(_.toScala.toMap)
+      .getOrElse(Map.empty[String, String])
+
+    val partitionCols: Seq[String] =
+      Seq(range.partitionSpec.column) ++
+        (Option(stagingQueryConf.metaData.additionalOutputPartitionColumns)
+          .map(_.toScala)
+          .getOrElse(Seq.empty))
+
+    // Ensure the outputTable name is fully qualified for the Iceberg Catalog
+    // e.g., "open_catalog.my_schema.my_iceberg_table"
+    df.printSchema()
+    tableUtils.insertPartitions(
+      df = df,
+      tableName = outputTable, // Must use the catalog-prefixed name
+      tableProperties = tableProps ++ Map("format-version" -> "2"),
+      partitionColumns = partitionCols.toList,
+      autoExpand = enableAutoExpand.getOrElse(false)
+    )
+  }
 }
