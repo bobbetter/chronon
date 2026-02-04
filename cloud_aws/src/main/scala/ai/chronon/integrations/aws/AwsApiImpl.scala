@@ -6,11 +6,25 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import ai.chronon.online.serde._
 
 import java.net.URI
+import java.util
 
 /** Implementation of Chronon's API interface for AWS. This is a work in progress and currently just covers the
   * DynamoDB based KV store implementation.
   */
 class AwsApiImpl(conf: Map[String, String]) extends Api(conf) {
+
+  // For now similar to GcpApiImpl, we have a flag store that relies on some hardcoded values.
+  val tilingEnabledFlagStore: FlagStore = (flagName: String, _: util.Map[String, String]) => {
+    if (flagName == FlagStoreConstants.TILING_ENABLED) {
+      true
+    } else {
+      false
+    }
+  }
+
+  // We set the flag store to always return true for tiling enabled
+  setFlagStore(tilingEnabledFlagStore)
+
   @transient lazy val ddbClient: DynamoDbClient = {
     var builder = DynamoDbClient
       .builder()
