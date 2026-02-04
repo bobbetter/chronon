@@ -7,6 +7,7 @@ import org.apache.flink.api.common.serialization.DeserializationSchema
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
 import org.apache.flink.streaming.connectors.kinesis.FlinkKinesisConsumer
+import org.apache.flink.util.Collector
 
 /** Chronon Flink source that reads events from AWS Kinesis. Can be configured on the topic as:
   * kinesis://stream-name/tasks=20/<other-params>
@@ -47,12 +48,13 @@ class KinesisFlinkSource[T](props: Map[String, String],
   override def getDataStream(topic: String, groupByName: String)(env: StreamExecutionEnvironment,
                                                                  parallelism: Int): SingleOutputStreamOperator[T] = {
 
-    // Wrap the deserialization schema to handle Collector-based deserialization
-    // This is needed because FlinkKinesisConsumer doesn't support DeserializationSchema
-    // that uses the Collector API (which allows producing multiple records per input)
+    // The wrapper emits Array[T] because Chronon schemas can produce multiple records per message
+    // (e.g. before+after rows, or multiple rows via explode). Additionally, the Kinesis deser schema only
+    // allows for returning a single type, so we wrap the user-provided schema to emit Array[T].
+    // We flatMap the array back into individual records immediately after the source.
     val wrappedSchema = new KinesisDeserializationSchemaWrapper[T](deserializationSchema)
 
-    val kinesisConsumer = new FlinkKinesisConsumer[T](
+    val kinesisConsumer = new FlinkKinesisConsumer[Array[T]](
       topicInfo.name,
       wrappedSchema,
       config.properties
@@ -65,6 +67,9 @@ class KinesisFlinkSource[T](props: Map[String, String],
       .addSource(kinesisConsumer, s"Kinesis source: $groupByName - ${topicInfo.name}")
       .setParallelism(parallelism)
       .uid(s"kinesis-source-$groupByName")
+      .flatMap[T]((arr: Array[T], out: Collector[T]) => arr.foreach(out.collect),
+        deserializationSchema.getProducedType)
+      .uid(s"kinesis-source-flatmap-$groupByName")
       .assignTimestampsAndWatermarks(noWatermarks)
   }
 }
