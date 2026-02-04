@@ -1,0 +1,27 @@
+package build.flink_connectors.kinesis
+import mill.api._
+import mill.scalalib._
+
+object `package` extends Cross[KinesisConnectorModule](build.Constants.scalaVersions) with KinesisConnectorModule {
+  override val crossValue = build.Constants.defaultScalaVersion
+}
+
+trait KinesisConnectorModule extends Cross.Module[String] with build.BaseModule {
+  val flinkVersion = build.Constants.flinkVersion
+
+  def moduleDeps = Seq(build.aggregator(crossValue), build.api(crossValue), build.online(crossValue), build.flink(crossValue))
+
+  def compileMvnDeps = build.Constants.providedFlinkDeps
+
+  // Kinesis-specific deps to be added by follow-up PR - #1367
+  def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingApiDeps ++ build.Constants.utilityDeps ++ Seq(
+    mvn"io.dropwizard.metrics:metrics-core:4.2.19",
+  )
+
+  object test extends build.BaseTestModule {
+    def scalaVersion = crossValue
+    def moduleDeps = Seq(build.flink_connectors.kinesis(crossValue))
+    def forkArgs = build.Constants.commonTestForkArgs
+    def mvnDeps = super.mvnDeps() ++ super.compileMvnDeps() ++ build.Constants.testDeps
+  }
+}

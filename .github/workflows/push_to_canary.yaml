@@ -86,7 +86,7 @@ jobs:
           ./mill cloud_aws\[${{ env.SCALA_VERSION }}\].assembly
           ./mill cloud_azure\[${{ env.SCALA_VERSION }}\].assembly
           ./mill service\[${{ env.SCALA_VERSION }}\].assembly
-          ./mill flink_connectors\[${{ env.SCALA_VERSION }}\].assembly
+          ./mill flink_connectors.pubsub\[${{ env.SCALA_VERSION }}\].assembly
 
       - name: Upload Flink Assembly Jar
         uses: actions/upload-artifact@v4
@@ -122,7 +122,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pubsub-jar
-          path: out/flink_connectors/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
+          path: out/flink_connectors/pubsub/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
     outputs:
       wheel_file: ${{ steps.build-wheel.outputs.wheel_file }}
       wheel_name: ${{ steps.build-wheel.outputs.wheel_name }}

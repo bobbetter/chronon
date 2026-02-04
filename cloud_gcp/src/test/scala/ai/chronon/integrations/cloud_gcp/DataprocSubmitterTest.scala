@@ -37,6 +37,7 @@ class DataprocSubmitterTest extends AnyFlatSpec with MockitoSugar {
       mainJarUri = "gs://zipline-jars/flink-assembly-0.1.0-SNAPSHOT.jar",
       flinkCheckpointUri = "gs://zl-warehouse/flink-state",
       maybeSavePointUri = Option("gs://zipline-warehouse/flink-state/groupby-name/chk-1"),
+      maybeFlinkJarsBasePath = None,
       jobProperties = Map("key" -> "value"),
       args = List("args1", "args2"): _*
     )
@@ -99,6 +100,7 @@ class DataprocSubmitterTest extends AnyFlatSpec with MockitoSugar {
       mainJarUri = "gs://zipline-jars/flink-assembly-0.1.0-SNAPSHOT.jar",
       flinkCheckpointUri = "gs://zl-warehouse/flink-state",
       maybeSavePointUri = None,
+      maybeFlinkJarsBasePath = None,
       jobProperties = Map("key" -> "value"),
       args = List("args1", "args2"): _*
     )
@@ -118,6 +120,7 @@ class DataprocSubmitterTest extends AnyFlatSpec with MockitoSugar {
       mainJarUri = "gs://zipline-jars/flink-assembly-0.1.0-SNAPSHOT.jar",
       flinkCheckpointUri = "gs://zl-warehouse/flink-state",
       maybeSavePointUri = None,
+      maybeFlinkJarsBasePath = None,
       jobProperties = Map("key" -> "value"),
       args = List("args1", "args2"): _*
     )

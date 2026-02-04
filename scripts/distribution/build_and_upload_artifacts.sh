@@ -167,9 +167,9 @@ if [ "$BUILD_AWS" = true ]; then
 fi
 if [ "$BUILD_GCP" = true ]; then
     ./mill cloud_gcp.assembly
-    ./mill flink_connectors.assembly
+    ./mill flink_connectors.pubsub.assembly
 
-    SRC_FLINK_PUBSUB_JAR="$CHRONON_ROOT_DIR/out/flink_connectors/assembly.dest/out.jar"
+    SRC_FLINK_PUBSUB_JAR="$CHRONON_ROOT_DIR/out/flink_connectors/pubsub/assembly.dest/out.jar"
     SRC_CLOUD_GCP_JAR="$CHRONON_ROOT_DIR/out/cloud_gcp/assembly.dest/out.jar"
 
     if [ ! -f "$SRC_CLOUD_GCP_JAR" ]; then
@@ -262,30 +262,38 @@ function upload_to_aws() {
 
 AZURE_STORAGE_ACCOUNT="ziplineai2"
 AZURE_CONTAINER="dev-zipline-artifacts"
+TENANT_ID="48e0cf82-8462-48fe-b995-5accce3156d0"
 
-# Uploads to Azure Data Lake Storage Gen2
+# Uploads to Azure Data Lake Storage Gen2 using azcopy
 function upload_to_azure() {
+  azcopy login --tenant-id=${TENANT_ID}
   echo "Are you sure you want to upload to Azure (${AZURE_STORAGE_ACCOUNT}/${AZURE_CONTAINER})?"
   select yn in "Yes" "No"; do
       case $yn in
           Yes )
               set -euxo pipefail
-              AZURE_JAR_PATH="release/$CHRONON_VERSION/jars"
-              AZURE_WHEEL_PATH="release/$CHRONON_VERSION/wheels"
 
-              az storage fs file upload --source "$SRC_CLOUD_AZURE_JAR" --path "$AZURE_JAR_PATH/$CLOUD_AZURE_JAR" --file-system "$AZURE_CONTAINER" --account-name "$AZURE_STORAGE_ACCOUNT" --overwrite --auth-mode login
-              az storage fs file upload --source "$SRC_SERVICE_JAR" --path "$AZURE_JAR_PATH/$SERVICE_JAR" --file-system "$AZURE_CONTAINER" --account-name "$AZURE_STORAGE_ACCOUNT" --overwrite --auth-mode login
+              # Construct the base URL for DFS (Data Lake Gen2)
+              BASE_URL="https://${AZURE_STORAGE_ACCOUNT}.dfs.core.windows.net/${AZURE_CONTAINER}"
+              AZURE_JAR_URL="${BASE_URL}/release/${CHRONON_VERSION}/jars"
+              AZURE_WHEEL_URL="${BASE_URL}/release/${CHRONON_VERSION}/wheels"
+
+              # Perform uploads
+              azcopy copy "$SRC_CLOUD_AZURE_JAR" "${AZURE_JAR_URL}/${CLOUD_AZURE_JAR}" --overwrite=true
+              azcopy copy "$SRC_SERVICE_JAR" "${AZURE_JAR_URL}/${SERVICE_JAR}" --overwrite=true
+
               if [ "$SKIP_WHEEL" = false ]; then
-                az storage fs file upload --source "$EXPECTED_ZIPLINE_WHEEL" --path "$AZURE_WHEEL_PATH/$(basename $EXPECTED_ZIPLINE_WHEEL)" --file-system "$AZURE_CONTAINER" --account-name "$AZURE_STORAGE_ACCOUNT" --overwrite --auth-mode login
+                azcopy copy "$EXPECTED_ZIPLINE_WHEEL" "${AZURE_WHEEL_URL}/$(basename "$EXPECTED_ZIPLINE_WHEEL")" --overwrite=true
               fi
-              az storage fs file upload --source "$SRC_FLINK_JAR" --path "$AZURE_JAR_PATH/$FLINK_JAR" --file-system "$AZURE_CONTAINER" --account-name "$AZURE_STORAGE_ACCOUNT" --overwrite --auth-mode login
+
+              azcopy copy "$SRC_FLINK_JAR" "${AZURE_JAR_URL}/${FLINK_JAR}" --overwrite=true
+
               echo "Succeeded"
               break;;
           No ) break;;
       esac
   done
 }
-
 
 if [ "$BUILD_AWS" = false ] && [ "$BUILD_GCP" = false ] && [ "$BUILD_AZURE" = false ]; then
   echo "Please select an upload option (--all, --gcp, --aws, --azure). Exiting"

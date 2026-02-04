@@ -41,7 +41,7 @@ jobs:
         run: ./mill flink\[${{ env.SCALA_VERSION }}\].assembly
 
       - name: Build Flink connectors jar
-        run: ./mill flink_connectors\[${{ env.SCALA_VERSION }}\].assembly
+        run: ./mill flink_connectors.pubsub\[${{ env.SCALA_VERSION }}\].assembly
 
       - name: Prepare build artifacts
         run: |
@@ -85,7 +85,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: flink-connectors-jar
-          path: out/flink_connectors/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
+          path: out/flink_connectors/pubsub/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
 
       - name: Upload Docker image
         uses: actions/upload-artifact@v4
