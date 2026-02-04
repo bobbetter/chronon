@@ -167,9 +167,9 @@ if [ "$BUILD_AWS" = true ]; then
 fi
 if [ "$BUILD_GCP" = true ]; then
     ./mill cloud_gcp.assembly
-    ./mill flink_connectors.assembly
+    ./mill flink_connectors.pubsub.assembly
 
-    SRC_FLINK_PUBSUB_JAR="$CHRONON_ROOT_DIR/out/flink_connectors/assembly.dest/out.jar"
+    SRC_FLINK_PUBSUB_JAR="$CHRONON_ROOT_DIR/out/flink_connectors/pubsub/assembly.dest/out.jar"
     SRC_CLOUD_GCP_JAR="$CHRONON_ROOT_DIR/out/cloud_gcp/assembly.dest/out.jar"
 
     if [ ! -f "$SRC_CLOUD_GCP_JAR" ]; then
