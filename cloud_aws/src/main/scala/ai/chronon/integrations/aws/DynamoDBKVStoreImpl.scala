@@ -2,8 +2,7 @@ package ai.chronon.integrations.aws
 
 import ai.chronon.api.Constants
 import ai.chronon.api.Constants.{ContinuationKey, ListLimit}
-import ai.chronon.api.Extensions.GroupByOps
-import ai.chronon.api.{GroupBy, MetaData, TilingUtils}
+import ai.chronon.api.TilingUtils
 import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.online.KVStore
 import ai.chronon.online.KVStore.GetResponse
@@ -62,7 +61,7 @@ object DynamoDBKVStoreConstants {
   /** Streaming tables (suffix _STREAMING) use TileKey wrapping for tiled data. */
   def isStreamingTable(dataset: String): Boolean = dataset.endsWith("_STREAMING")
 
-  case class TileKeyComponents(baseKeyBytes: Array[Byte], tileSizeMillis: Long, tileStartTimestampMillis: Option[Long])
+  case class TileKeyComponents(baseKeyBytes: Array[Byte], tileSizeMillis: Long, tileStartTimestampMillis: Long)
 
   /** Unwraps a TileKey to extract the entity key for use as DynamoDB partition key.
     *
@@ -77,7 +76,7 @@ object DynamoDBKVStoreConstants {
     val tileKey = TilingUtils.deserializeTileKey(keyBytes)
     val baseKeyBytes = tileKey.keyBytes.toScala.map(_.toByte).toArray
     val tileSizeMs = tileKey.tileSizeMillis
-    val tileStartTs = if (tileKey.isSetTileStartTimestampMillis) Some(tileKey.tileStartTimestampMillis) else None
+    val tileStartTs = tileKey.tileStartTimestampMillis
     TileKeyComponents(baseKeyBytes, tileSizeMs, tileStartTs)
   }
 
@@ -241,20 +240,18 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient) extends KVStore {
     val datasetToWriteRequests = keyValueDatasets.map { req =>
       // For streaming tables, unwrap TileKey to use entity key + tileSizeMs as partition key
       // and tileStartTs as sort key. Including tileSizeMs in the key supports tile layering.
-      val (actualKeyBytes, actualTimestamp) = if (isStreamingTable(req.dataset) && req.tsMillis.isDefined) {
+      val (actualKeyBytes, actualTimestamp) = if (isStreamingTable(req.dataset)) {
         val tileComponents = extractTileKeyComponents(req.keyBytes)
-        val timestamp = tileComponents.tileStartTimestampMillis.getOrElse(req.tsMillis.get)
+        val timestamp = tileComponents.tileStartTimestampMillis
         val tiledKey = buildKeyWithTileSize(tileComponents.baseKeyBytes, tileComponents.tileSizeMillis)
-        (tiledKey, Some(timestamp))
+        (tiledKey, timestamp)
       } else {
-        (req.keyBytes, req.tsMillis)
+        val timestampInPutRequest = req.tsMillis.getOrElse(System.currentTimeMillis())
+        (req.keyBytes, timestampInPutRequest)
       }
 
       val attributeMap: Map[String, AttributeValue] = buildAttributeMap(actualKeyBytes, req.valueBytes)
-      val tsMap =
-        actualTimestamp
-          .map(ts => Map(sortKeyColumn -> AttributeValue.builder.n(ts.toString).build))
-          .getOrElse(Map.empty)
+      val tsMap = Map(sortKeyColumn -> AttributeValue.builder.n(actualTimestamp.toString).build)
 
       val putItemReq =
         PutItemRequest.builder.tableName(req.dataset).item((attributeMap ++ tsMap).toJava).build()
