@@ -50,6 +50,11 @@ object AzureKeyVaultHelper {
     getPrivateKey(vaultUrl, secretName)
   }
 
+  def getPrivateKeyStringFromUri(secretUri: String): String = {
+    val (vaultUrl, secretName) = parseSecretUri(secretUri)
+    getPrivateKeyString(vaultUrl, secretName)
+  }
+
   /** Fetches a secret value from Azure Key Vault.
     *
     * @param vaultUrl   The Key Vault URL (e.g., "https://my-vault.vault.azure.net")
@@ -68,6 +73,10 @@ object AzureKeyVaultHelper {
     val secret = client.getSecret(secretName)
     logger.info(s"Successfully fetched secret '$secretName' from Azure Key Vault")
     secret.getValue
+  }
+
+  def getPrivateKeyString(vaultUrl: String, secretName: String): String = {
+    getSecret(vaultUrl, secretName)
   }
 
   /** Fetches a PEM-encoded private key from Azure Key Vault and parses it.
