@@ -2,9 +2,9 @@ package ai.chronon.flink_connectors.kinesis
 
 import ai.chronon.flink.FlinkUtils
 import ai.chronon.online.TopicInfo
+import org.apache.flink.kinesis.shaded.com.amazonaws.services.kinesis.model.DescribeStreamSummaryRequest
 import org.apache.flink.kinesis.shaded.org.apache.flink.connector.aws.config.AWSConfigConstants
 import org.apache.flink.streaming.connectors.kinesis.config.ConsumerConfigConstants
-import org.apache.flink.kinesis.shaded.com.amazonaws.services.kinesis.model.DescribeStreamSummaryRequest
 import org.apache.flink.streaming.connectors.kinesis.util.AWSUtil
 
 import java.util.Properties
