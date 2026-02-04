@@ -35,9 +35,14 @@ class KinesisFlinkSource[T](props: Map[String, String],
                             topicInfo: TopicInfo)
     extends FlinkSource[T] {
 
-  private val config = KinesisConfig.buildConsumerConfig(props, topicInfo)
+  // we use a small scale factor as streams are often over-provisioned. We can make this configurable via topicInfo
+  val scaleFactor = 0.25
 
-  implicit val parallelism: Int = config.parallelism
+  private lazy val config = KinesisConfig.buildConsumerConfig(props, topicInfo)
+
+  implicit lazy val parallelism: Int = config.explicitParallelism.getOrElse {
+    math.ceil(KinesisConfig.getOpenShardCount(topicInfo.name, config.properties) * scaleFactor).toInt
+  }
 
   override def getDataStream(topic: String, groupByName: String)(env: StreamExecutionEnvironment,
                                                                  parallelism: Int): SingleOutputStreamOperator[T] = {
