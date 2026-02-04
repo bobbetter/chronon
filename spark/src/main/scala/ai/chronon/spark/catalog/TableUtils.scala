@@ -84,7 +84,7 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
       case Success(_) => true
       case Failure(ex) =>
         if (!ignoreFailure) {
-          logger.info(s"""Couldn't reach $tableName. Error: ${ex.getMessage.red}
+          logger.info(s"""Couldn't reach $tableName. Error: ${ex.traceString.red}
              |Call path:
              |${cleanStackTrace(ex).yellow}
              |""".stripMargin)
@@ -107,7 +107,6 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
                  subPartitionsFilter: Map[String, String] = Map.empty,
                  partitionRange: Option[PartitionRange] = None,
                  tablePartitionSpec: Option[PartitionSpec] = None): List[String] = {
-    if (!tableReachable(tableName)) return List.empty[String]
     val rangeWheres = andPredicates(partitionRange.map(_.whereClauses).getOrElse(Seq.empty))
 
     val effectivePartColumn = tablePartitionSpec.map(_.column).getOrElse(partitionSpec.column)
