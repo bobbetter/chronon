@@ -67,8 +67,7 @@ class KinesisFlinkSource[T](props: Map[String, String],
       .addSource(kinesisConsumer, s"Kinesis source: $groupByName - ${topicInfo.name}")
       .setParallelism(parallelism)
       .uid(s"kinesis-source-$groupByName")
-      .flatMap[T]((arr: Array[T], out: Collector[T]) => arr.foreach(out.collect),
-        deserializationSchema.getProducedType)
+      .flatMap[T]((arr: Array[T], out: Collector[T]) => arr.foreach(out.collect), deserializationSchema.getProducedType)
       .uid(s"kinesis-source-flatmap-$groupByName")
       .assignTimestampsAndWatermarks(noWatermarks)
   }

@@ -11,9 +11,15 @@ object FlinkSourceProvider {
       case "kafka" =>
         new KafkaFlinkSource(props, deserializationSchema, topicInfo)
       case "pubsub" =>
-        loadSourceViaReflection("ai.chronon.flink_connectors.pubsub.PubSubFlinkSource", props, deserializationSchema, topicInfo)
+        loadSourceViaReflection("ai.chronon.flink_connectors.pubsub.PubSubFlinkSource",
+                                props,
+                                deserializationSchema,
+                                topicInfo)
       case "kinesis" =>
-        loadSourceViaReflection("ai.chronon.flink_connectors.kinesis.KinesisFlinkSource", props, deserializationSchema, topicInfo)
+        loadSourceViaReflection("ai.chronon.flink_connectors.kinesis.KinesisFlinkSource",
+                                props,
+                                deserializationSchema,
+                                topicInfo)
       case _ =>
         throw new IllegalArgumentException(s"Unsupported message bus: ${topicInfo.messageBus}")
     }
