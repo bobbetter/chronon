@@ -266,7 +266,12 @@ TENANT_ID="48e0cf82-8462-48fe-b995-5accce3156d0"
 
 # Uploads to Azure Data Lake Storage Gen2 using azcopy
 function upload_to_azure() {
-  azcopy login --tenant-id=${TENANT_ID}
+  # Check if already logged in, skip login if so
+  if ! azcopy login status 2>/dev/null | grep -q "Your login session is still active"; then
+    azcopy login --tenant-id=${TENANT_ID}
+  else
+    echo "Already logged in to azcopy, skipping login"
+  fi
   echo "Are you sure you want to upload to Azure (${AZURE_STORAGE_ACCOUNT}/${AZURE_CONTAINER})?"
   select yn in "Yes" "No"; do
       case $yn in

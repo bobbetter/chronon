@@ -22,7 +22,7 @@ class DefaultFormatProvider(val sparkSession: SparkSession) extends FormatProvid
     } else { null })
   }
 
-  private def isIcebergTable(tableName: String): Boolean =
+  protected def isIcebergTable(tableName: String): Boolean =
     Try {
       sparkSession.read.format("iceberg").load(tableName)
     } match {
