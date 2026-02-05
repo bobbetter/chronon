@@ -75,9 +75,13 @@ object KinesisConfig {
 
   def getOpenShardCount(streamName: String, properties: Properties): Int = {
     val client = AWSUtil.createKinesisClient(properties)
-    val request = new DescribeStreamSummaryRequest().withStreamName(streamName)
-    val result = client.describeStreamSummary(request)
-    result.getStreamDescriptionSummary.getOpenShardCount
+    try {
+      val request = new DescribeStreamSummaryRequest().withStreamName(streamName)
+      val result = client.describeStreamSummary(request)
+      result.getStreamDescriptionSummary.getOpenShardCount
+    } finally {
+      client.shutdown()
+    }
   }
 
   private final class PropertyLookup(props: Map[String, String], topicInfo: TopicInfo) {
