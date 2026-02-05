@@ -80,7 +80,7 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
   sparkSession.sparkContext.setLogLevel("ERROR")
 
   def tableReachable(tableName: String, ignoreFailure: Boolean = false): Boolean = {
-    Try { sparkSession.catalog.getTable(tableName) } match {
+    Try { sparkSession.table(tableName) } match {
       case Success(_) => true
       case Failure(ex) =>
         if (!ignoreFailure) {
@@ -107,6 +107,10 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
                  subPartitionsFilter: Map[String, String] = Map.empty,
                  partitionRange: Option[PartitionRange] = None,
                  tablePartitionSpec: Option[PartitionSpec] = None): List[String] = {
+    if (!tableReachable(tableName)) {
+      logger.warn(s"Table $tableName is not reachable. Returning empty partition list.")
+      return List.empty
+    }
     val rangeWheres = andPredicates(partitionRange.map(_.whereClauses).getOrElse(Seq.empty))
 
     val effectivePartColumn = tablePartitionSpec.map(_.column).getOrElse(partitionSpec.column)
