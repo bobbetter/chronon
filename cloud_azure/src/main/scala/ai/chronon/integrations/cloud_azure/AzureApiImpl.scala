@@ -37,7 +37,7 @@ class AzureApiImpl(conf: Map[String, String]) extends Api(conf) {
             Option(sharedKvStore.get()) match {
               case Some(existingStore) => existingStore
               case None =>
-                val kvStoreType = conf.getOrElse("kv.store.type", sys.env.getOrElse("KV_STORE_TYPE", "redis"))
+                val kvStoreType = conf.getOrElse("kv.store.type", sys.env.getOrElse("KV_STORE_TYPE", "cosmos"))
 
                 val newStore = kvStoreType.toLowerCase match {
                   case "cosmos" =>

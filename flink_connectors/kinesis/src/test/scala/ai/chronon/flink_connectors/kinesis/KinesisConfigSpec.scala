@@ -78,7 +78,7 @@ class KinesisConfigSpec extends AnyFlatSpec with Matchers {
 
     val kinesisConfig = KinesisConfig.buildConsumerConfig(props, topicInfo)
 
-    kinesisConfig.parallelism shouldBe Defaults.Parallelism
+    kinesisConfig.explicitParallelism shouldBe None
     kinesisConfig.properties.getProperty(AWSConfigConstants.AWS_REGION) shouldBe "us-west-2"
     kinesisConfig.properties.getProperty(AWSConfigConstants.AWS_CREDENTIALS_PROVIDER) shouldBe "BASIC"
     kinesisConfig.properties.getProperty(AWSConfigConstants.AWS_ACCESS_KEY_ID) shouldBe "access"
@@ -108,7 +108,7 @@ class KinesisConfigSpec extends AnyFlatSpec with Matchers {
 
     val kinesisConfig = KinesisConfig.buildConsumerConfig(props, topicInfo)
 
-    kinesisConfig.parallelism shouldBe 7
+    kinesisConfig.explicitParallelism shouldBe Some(7)
     kinesisConfig.properties.getProperty(AWSConfigConstants.AWS_REGION) shouldBe "us-west-1"
     kinesisConfig.properties.getProperty(ConsumerConfigConstants.STREAM_INITIAL_POSITION) shouldBe ConsumerConfigConstants.InitialPosition.TRIM_HORIZON.toString
     kinesisConfig.properties.getProperty(AWSConfigConstants.AWS_ENDPOINT) shouldBe "http://localhost:4566"

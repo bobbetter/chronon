@@ -2,13 +2,15 @@ package ai.chronon.flink_connectors.kinesis
 
 import ai.chronon.flink.FlinkUtils
 import ai.chronon.online.TopicInfo
+import org.apache.flink.kinesis.shaded.com.amazonaws.services.kinesis.model.DescribeStreamSummaryRequest
 import org.apache.flink.kinesis.shaded.org.apache.flink.connector.aws.config.AWSConfigConstants
 import org.apache.flink.streaming.connectors.kinesis.config.ConsumerConfigConstants
+import org.apache.flink.streaming.connectors.kinesis.util.AWSUtil
 
 import java.util.Properties
 
 object KinesisConfig {
-  case class ConsumerConfig(properties: Properties, parallelism: Int)
+  case class ConsumerConfig(properties: Properties, explicitParallelism: Option[Int])
 
   object Keys {
     val AwsRegion = "AWS_REGION"
@@ -23,7 +25,6 @@ object KinesisConfig {
   }
 
   object Defaults {
-    val Parallelism = 1
     val InitialPosition: String = ConsumerConfigConstants.InitialPosition.LATEST.toString
   }
 
@@ -63,13 +64,24 @@ object KinesisConfig {
       else ConsumerConfigConstants.RecordPublisherType.POLLING.toString
     }
     val efoConsumerName = lookup.optional(Keys.EfoConsumerName)
-    val parallelism = lookup.optional(Keys.TaskParallelism).map(_.toInt).getOrElse(Defaults.Parallelism)
+    val explicitParallelism = lookup.optional(Keys.TaskParallelism).map(_.toInt)
 
     endpoint.foreach(properties.setProperty(AWSConfigConstants.AWS_ENDPOINT, _))
     publisherType.foreach(properties.setProperty(ConsumerConfigConstants.RECORD_PUBLISHER_TYPE, _))
     efoConsumerName.foreach(properties.setProperty(ConsumerConfigConstants.EFO_CONSUMER_NAME, _))
 
-    ConsumerConfig(properties, parallelism)
+    ConsumerConfig(properties, explicitParallelism)
+  }
+
+  def getOpenShardCount(streamName: String, properties: Properties): Int = {
+    val client = AWSUtil.createKinesisClient(properties)
+    try {
+      val request = new DescribeStreamSummaryRequest().withStreamName(streamName)
+      val result = client.describeStreamSummary(request)
+      result.getStreamDescriptionSummary.getOpenShardCount
+    } finally {
+      client.shutdown()
+    }
   }
 
   private final class PropertyLookup(props: Map[String, String], topicInfo: TopicInfo) {
