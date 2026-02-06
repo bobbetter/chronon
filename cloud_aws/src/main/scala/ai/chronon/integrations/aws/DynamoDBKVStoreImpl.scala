@@ -4,6 +4,8 @@ import ai.chronon.api.Constants
 import ai.chronon.api.Constants.{ContinuationKey, ListLimit}
 import ai.chronon.api.TilingUtils
 import ai.chronon.api.ScalaJavaConversions._
+import ai.chronon.api.{GroupBy, MetaData}
+import ai.chronon.api.Extensions._
 import ai.chronon.online.KVStore
 import ai.chronon.spark.{IonPathConfig, IonWriter}
 import ai.chronon.online.KVStore.GetResponse

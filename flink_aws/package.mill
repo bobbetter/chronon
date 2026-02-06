@@ -32,7 +32,7 @@ trait FlinkAwsModule extends Cross.Module[String] with build.BaseModule {
   // Heavy dependencies (Spark, Hudi) are excluded at assembly time via assemblyRules
   def moduleDeps = Seq(
     build.flink(crossValue),
-    build.flink_connectors(crossValue),
+    build.flink_connectors.kinesis(crossValue),
     build.cloud_aws(crossValue)  // Reuse AWS integration classes
   )
 
