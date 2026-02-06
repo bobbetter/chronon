@@ -194,11 +194,12 @@ azure = Team(
             "FRONTEND_URL": "http://localhost:3000",
             "HUB_URL": "http://localhost:3903",
             "SNOWFLAKE_JDBC_URL": "jdbc:snowflake://VEJLULX-AZURE.snowflakecomputing.com/?user=demo_batch_service&db=Demo&schema=public&warehouse=demo_wh",
-            "SNOWFLAKE_STORAGE_INTEGRATION": "AZURE_ICEBERG_INT", # The user indicated in the jdbc URL needs to have a role that has access to this integration eg.   `GRANT USAGE ON INTEGRATION AZURE_ICEBERG_INT TO ROLE demo_batch_writer`;
+            "SNOWFLAKE_VAULT_URI": "https://demo-service-writer-pkey.vault.azure.net/secrets/snowflake-private-key",
         },
     ),
     conf=ConfigProperties(
         common={
+            "spark.chronon.table.format_provider.class": "ai.chronon.integrations.cloud_azure.AzureFormatProvider",
             "spark.chronon.partition.format": "yyyy-MM-dd",
             "spark.chronon.partition.column": "ds",
             "spark.chronon.table_write.format": "iceberg",

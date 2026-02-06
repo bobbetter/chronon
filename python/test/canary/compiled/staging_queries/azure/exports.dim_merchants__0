@@ -8,6 +8,7 @@
           "spark.chronon.coalesce.factor": "10",
           "spark.chronon.partition.column": "ds",
           "spark.chronon.partition.format": "yyyy-MM-dd",
+          "spark.chronon.table.format_provider.class": "ai.chronon.integrations.cloud_azure.AzureFormatProvider",
           "spark.chronon.table_write.format": "iceberg",
           "spark.default.parallelism": "10",
           "spark.driver.cores": "1",
@@ -37,7 +38,7 @@
           "PARTITION_COLUMN": "ds",
           "PARTITION_FORMAT": "yyyy-MM-dd",
           "SNOWFLAKE_JDBC_URL": "jdbc:snowflake://VEJLULX-AZURE.snowflakecomputing.com/?user=demo_batch_service&db=Demo&schema=public&warehouse=demo_wh",
-          "SNOWFLAKE_STORAGE_INTEGRATION": "AZURE_ICEBERG_INT",
+          "SNOWFLAKE_VAULT_URI": "https://demo-service-writer-pkey.vault.azure.net/secrets/snowflake-private-key",
           "SPARK_CLUSTER_NAME": "kyuubi-dev.westus2.cloudapp.azure.com:10099",
           "VERSION": "latest"
         }

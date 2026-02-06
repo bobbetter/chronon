@@ -243,6 +243,7 @@ def _merge_mode_maps(
 
             if current_modes is None:
                 current_modes = {}
+                setattr(result, env_or_config_attribute, current_modes)
 
             current_modes[mode] = new_mode
 

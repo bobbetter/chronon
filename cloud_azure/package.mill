@@ -17,6 +17,8 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
       .exclude("com.fasterxml.jackson.core" -> "jackson-databind")
       .exclude("com.fasterxml.jackson.core" -> "jackson-annotations")
       .exclude("com.fasterxml.jackson.datatype" -> "jackson-datatype-jsr310")
+      .exclude("com.fasterxml.jackson.module" -> "jackson-module-scala_2.12")
+      .exclude("com.fasterxml.jackson.module" -> "jackson-module-scala_2.13")
   }
 
   def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingApiDeps ++ build.Constants.utilityDeps ++ build.Constants.sparkDeps ++ Seq(
@@ -30,7 +32,7 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
     mvn"org.bouncycastle:bcprov-jdk18on:1.80",
     mvn"org.bouncycastle:bcpkix-jdk18on:1.80",
     // Hadoop Azure FileSystem connector (for abfss:// support)
-    mvn"org.apache.iceberg:iceberg-azure-bundle:1.10.0",
+    mvn"org.apache.iceberg:iceberg-azure:1.10.0",
 
     // Azure Cosmos DB SDK
     mvn"com.azure:azure-cosmos:4.76.0",
@@ -39,22 +41,29 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
     // CLI argument parsing for Spark loader
     mvn"org.rogach::scallop:5.0.0",
   ).map(excludeJackson) ++ Seq(
-    mvn"com.fasterxml.jackson.core:jackson-core:2.15.2",
-    mvn"com.fasterxml.jackson.core:jackson-databind:2.15.2",
-    mvn"com.fasterxml.jackson.core:jackson-annotations:2.15.2",
-    mvn"com.fasterxml.jackson.module::jackson-module-scala:2.15.2",
-    mvn"com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.15.2",
+    mvn"com.fasterxml.jackson.core:jackson-core:2.17.2",
+    mvn"com.fasterxml.jackson.core:jackson-databind:2.17.2",
+    mvn"com.fasterxml.jackson.core:jackson-annotations:2.17.2",
+    mvn"com.fasterxml.jackson.module::jackson-module-scala:2.17.2",
+    mvn"com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.17.2",
     // Reactor and Netty dependencies - force versions required by azure-core-http-netty 1.16.2
     // These versions are required to avoid NoSuchMethodError with reactor-netty
     // Let reactor-netty pull in the correct Netty versions transitively
     // See: https://central.sonatype.com/artifact/com.azure/azure-core-http-netty/1.16.2
+    mvn"io.netty:netty-all:4.1.118.Final",
     mvn"io.projectreactor:reactor-core:3.6.11",
     mvn"io.projectreactor.netty:reactor-netty-core:1.2.13",
     mvn"io.projectreactor.netty:reactor-netty-http:1.2.13",
   ).map(_.forceVersion())
 
   override def assemblyRules = super.assemblyRules ++ Seq(
-    Assembly.Rule.Exclude("META-INF/versions/17/reactor/netty/resources/DefaultLoopNIO.class")
+    Assembly.Rule.Exclude("META-INF/versions/17/reactor/netty/resources/DefaultLoopNIO.class"),
+    // Shade reactor-netty and netty to avoid conflicts with Spark's bundled versions
+    // The Azure Cosmos SDK requires newer versions with methods like HttpClient.resolver()
+    Assembly.Rule.Relocate("reactor.netty.**", "shaded.reactor.netty.@1"),
+    Assembly.Rule.Relocate("io.netty.**", "shaded.io.netty.@1"),
+    Assembly.Rule.Relocate("reactor.core.**", "shaded.reactor.core.@1"),
+    Assembly.Rule.Relocate("reactor.util.**", "shaded.reactor.util.@1"),
   )
 
 
@@ -67,11 +76,18 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
       mvn"org.testcontainers:junit-jupiter:1.19.3",
       // Azure Cosmos Spark Connector - only for tests, not included in assembly
       // This is a shaded JAR so we keep it out of the main module dependencies
-      mvn"com.azure.cosmos.spark:azure-cosmos-spark_3-5_2-12:4.42.0",
+      // Exclude Jackson to avoid version conflicts with Spark's jackson-module-scala 2.15.2
+      excludeJackson(mvn"com.azure.cosmos.spark:azure-cosmos-spark_3-5_2-12:4.42.0"),
       // Force reactor-netty versions for runtime - same as main module
       mvn"io.projectreactor:reactor-core:3.6.11",
       mvn"io.projectreactor.netty:reactor-netty-core:1.2.13",
       mvn"io.projectreactor.netty:reactor-netty-http:1.2.13",
+      // Force Jackson 2.17.2 to match azure-cosmos SDK requirements
+      // Also force jackson-module-scala to 2.17.2 for compatibility
+      mvn"com.fasterxml.jackson.core:jackson-core:2.17.2",
+      mvn"com.fasterxml.jackson.core:jackson-databind:2.17.2",
+      mvn"com.fasterxml.jackson.core:jackson-annotations:2.17.2",
+      mvn"com.fasterxml.jackson.module::jackson-module-scala:2.17.2",
     ).map(_.forceVersion())
     override def testFramework = "org.scalatest.tools.Framework"
     def forkArgs = build.Constants.commonTestForkArgs ++ Seq(
