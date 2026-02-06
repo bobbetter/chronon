@@ -5,6 +5,7 @@ import org.slf4j.{Logger, LoggerFactory}
 
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import java.util.function
+import scala.util.{Failure, Success, Try}
 
 object TableCache {
   private val dfMap: ConcurrentMap[String, DataFrame] = new ConcurrentHashMap[String, DataFrame]()
@@ -58,7 +59,12 @@ trait Format {
       throw new NotImplementedError("subPartitionsFilter is not supported on this format")
     }
 
-    val partitionSeq = partitions(tableName, partitionFilters)(sparkSession)
+    val partitionSeq = Try(partitions(tableName, partitionFilters)(sparkSession)) match {
+      case Success(p) => p
+      case Failure(e) =>
+        logger.warn(s"Failed to get partitions for $tableName: ${e.getMessage}")
+        List.empty
+    }
 
     partitionSeq.flatMap { partitionMap =>
       if (

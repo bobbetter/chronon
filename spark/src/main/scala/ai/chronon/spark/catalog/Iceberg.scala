@@ -4,6 +4,8 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types.StructType
 
+import scala.util.{Failure, Success, Try}
+
 case object Iceberg extends Format {
 
   override def tableProperties: Map[String, String] = {
@@ -29,7 +31,12 @@ case object Iceberg extends Format {
       throw new NotImplementedError("subPartitionsFilter is not supported on this format")
     }
 
-    getIcebergPartitions(tableName, partitionColumn)
+    Try(getIcebergPartitions(tableName, partitionColumn)) match {
+      case Success(p) => p
+      case Failure(e) =>
+        logger.warn(s"Failed to get partitions for $tableName: ${e.getMessage}")
+        List.empty
+    }
   }
 
   override def partitions(tableName: String, partitionFilters: String)(implicit

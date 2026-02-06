@@ -23,19 +23,31 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
 
   def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingApiDeps ++ build.Constants.utilityDeps ++ build.Constants.sparkDeps ++ Seq(
     // Azure Identity for authentication
-    mvn"com.azure:azure-identity:1.14.2",
+    mvn"com.azure:azure-identity:1.14.2"
+      .exclude("com.azure" -> "azure-core-http-netty"),
     // Azure Key Vault for secret management (e.g., Snowflake private keys)
-    mvn"com.azure:azure-security-keyvault-secrets:4.10.4",
+    mvn"com.azure:azure-security-keyvault-secrets:4.10.4"
+      .exclude("com.azure" -> "azure-core-http-netty"),
     mvn"net.snowflake:snowflake-jdbc:3.16.0",
     mvn"net.snowflake:spark-snowflake_2.12:3.1.6",
     // BouncyCastle for parsing PEM private keys (required by Snowflake JDBC for key pair auth)
     mvn"org.bouncycastle:bcprov-jdk18on:1.80",
     mvn"org.bouncycastle:bcpkix-jdk18on:1.80",
     // Hadoop Azure FileSystem connector (for abfss:// support)
-    mvn"org.apache.iceberg:iceberg-azure:1.10.0",
+    // Use iceberg-azure (non-bundle) to avoid the bundle's partially-shaded reactor.netty
+    // which conflicts with Cosmos's reactor-netty. Add azure-storage-file-datalake explicitly
+    // since iceberg-azure marks it as provided/optional.
+    mvn"org.apache.iceberg:iceberg-azure:1.10.0"
+      .exclude("com.azure" -> "azure-core-http-netty"),
+    mvn"com.azure:azure-storage-file-datalake:12.22.0"
+      .exclude("com.azure" -> "azure-core-http-netty"),
 
     // Azure Cosmos DB SDK
-    mvn"com.azure:azure-cosmos:4.76.0",
+    mvn"com.azure:azure-cosmos:4.76.0"
+      .exclude("com.azure" -> "azure-core-http-netty"),
+    // Use OkHttp for the azure-core HTTP pipeline (ADLSFileIO, azure-identity, keyvault).
+    // Cosmos's internal ReactorNettyClient still uses reactor-netty/io.netty directly.
+    mvn"com.azure:azure-core-http-okhttp:1.12.7",
     // Azure Cosmos DB Spark Connector
     // mvn"com.azure.cosmos.spark:azure-cosmos-spark_3-5_2-12:4.42.0",
     // CLI argument parsing for Spark loader
@@ -46,10 +58,8 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
     mvn"com.fasterxml.jackson.core:jackson-annotations:2.17.2",
     mvn"com.fasterxml.jackson.module::jackson-module-scala:2.17.2",
     mvn"com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.17.2",
-    // Reactor and Netty dependencies - force versions required by azure-core-http-netty 1.16.2
-    // These versions are required to avoid NoSuchMethodError with reactor-netty
-    // Let reactor-netty pull in the correct Netty versions transitively
-    // See: https://central.sonatype.com/artifact/com.azure/azure-core-http-netty/1.16.2
+    // Reactor and Netty dependencies required by Cosmos SDK's internal ReactorNettyClient
+    // (used even in Gateway mode). Force versions compatible with azure-cosmos 4.76.0.
     mvn"io.netty:netty-all:4.1.118.Final",
     mvn"io.projectreactor:reactor-core:3.6.11",
     mvn"io.projectreactor.netty:reactor-netty-core:1.2.13",
@@ -58,14 +68,12 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
 
   override def assemblyRules = super.assemblyRules ++ Seq(
     Assembly.Rule.Exclude("META-INF/versions/17/reactor/netty/resources/DefaultLoopNIO.class"),
-    // Shade reactor-netty and netty to avoid conflicts with Spark's bundled versions
-    // The Azure Cosmos SDK requires newer versions with methods like HttpClient.resolver()
-    Assembly.Rule.Relocate("reactor.netty.**", "shaded.reactor.netty.@1"),
     Assembly.Rule.Relocate("io.netty.**", "shaded.io.netty.@1"),
-    Assembly.Rule.Relocate("reactor.core.**", "shaded.reactor.core.@1"),
-    Assembly.Rule.Relocate("reactor.util.**", "shaded.reactor.util.@1"),
+    // Shade OkHttp/Okio to avoid conflicts with Spark's bundled OkHttp 3.x
+    // (azure-core-http-okhttp requires OkHttp 4.x for RequestBody.create(byte[]))
+    Assembly.Rule.Relocate("okhttp3.**", "shaded.okhttp3.@1"),
+    Assembly.Rule.Relocate("okio.**", "shaded.okio.@1"),
   )
-
 
   object test extends build.BaseTestModule {
     def scalaVersion = crossValue
@@ -78,10 +86,6 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
       // This is a shaded JAR so we keep it out of the main module dependencies
       // Exclude Jackson to avoid version conflicts with Spark's jackson-module-scala 2.15.2
       excludeJackson(mvn"com.azure.cosmos.spark:azure-cosmos-spark_3-5_2-12:4.42.0"),
-      // Force reactor-netty versions for runtime - same as main module
-      mvn"io.projectreactor:reactor-core:3.6.11",
-      mvn"io.projectreactor.netty:reactor-netty-core:1.2.13",
-      mvn"io.projectreactor.netty:reactor-netty-http:1.2.13",
       // Force Jackson 2.17.2 to match azure-cosmos SDK requirements
       // Also force jackson-module-scala to 2.17.2 for compatibility
       mvn"com.fasterxml.jackson.core:jackson-core:2.17.2",

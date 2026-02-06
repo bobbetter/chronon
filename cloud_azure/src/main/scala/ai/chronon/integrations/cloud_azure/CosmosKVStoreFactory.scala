@@ -1,17 +1,9 @@
 package ai.chronon.integrations.cloud_azure
 
 import ai.chronon.integrations.cloud_azure.CosmosKVStoreConstants._
-import com.azure.cosmos.models.CosmosContainerIdentity
-import com.azure.cosmos.{
-  ConsistencyLevel,
-  CosmosAsyncClient,
-  CosmosClientBuilder,
-  CosmosContainerProactiveInitConfigBuilder,
-  DirectConnectionConfig
-}
+import com.azure.cosmos.{ConsistencyLevel, CosmosAsyncClient, CosmosClientBuilder}
 import org.slf4j.LoggerFactory
 
-import java.time.Duration
 import java.util.concurrent.atomic.AtomicReference
 import scala.jdk.CollectionConverters._
 
@@ -61,35 +53,22 @@ object CosmosKVStoreFactory {
       .key(key)
       .consistencyLevel(ConsistencyLevel.SESSION)
 
-    // Use Gateway mode for emulator (required), Direct mode for production
+    // Use Gateway mode to avoid Netty version conflicts with Spark's bundled Netty.
+    // Direct mode uses a custom TCP protocol (RNTBD) on reactor-netty, which requires
+    // Netty 4.1.118+ but Spark 3.5.3 bundles ~4.1.96. Gateway mode uses the standard
+    // azure-core HTTP pipeline instead.
+    clientBuilder.gatewayMode()
+
     val isEmulator = conf.get(PropEmulatorMode).exists(_.toBoolean) || CosmosKVStoreConstants.isEmulator(endpoint)
     if (isEmulator) {
       logger.info("Detected emulator endpoint, using Gateway mode")
-      clientBuilder.gatewayMode()
+    }
+
+    val preferredRegions = parsePreferredRegions(conf)
+    if (!preferredRegions.isEmpty) {
+      clientBuilder.preferredRegions(preferredRegions)
     } else {
-      val directMode = new DirectConnectionConfig()
-        .setMaxConnectionsPerEndpoint(130) // Per region endpoint
-        .setConnectTimeout(Duration.ofSeconds(10))
-      clientBuilder.directMode(directMode)
-
-      val preferredRegions = parsePreferredRegions(conf)
-      // Proactive container init requires preferredRegions to be set
-      if (!preferredRegions.isEmpty) {
-        clientBuilder.preferredRegions(preferredRegions)
-
-        // Set up proactive connections for the shared containers
-        val containerIdentityList = List(
-          new CosmosContainerIdentity(databaseName, CosmosKVStoreConstants.GroupByBatchContainer),
-          new CosmosContainerIdentity(databaseName, CosmosKVStoreConstants.GroupByStreamingContainer)
-        ).asJava
-        val proactiveInitCfg =
-          new CosmosContainerProactiveInitConfigBuilder(containerIdentityList)
-            .setAggressiveWarmupDuration(Duration.ofSeconds(10))
-            .build()
-        clientBuilder.openConnectionsAndInitCaches(proactiveInitCfg)
-      } else {
-        logger.info("Preferred regions not configured - skipping proactive container initialization")
-      }
+      logger.info("Preferred regions not configured")
     }
 
     clientBuilder.buildAsyncClient()

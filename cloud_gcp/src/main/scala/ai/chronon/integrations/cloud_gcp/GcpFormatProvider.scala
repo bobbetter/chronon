@@ -37,8 +37,8 @@ class GcpFormatProvider(override val sparkSession: SparkSession) extends Default
             case unsupported => throw new IllegalStateException(s"Unsupported provider type: ${unsupported}")
           }
         } match {
-          case s @ Success(_)     => s.toOption
-          case Failure(exception) => throw exception
+          case s @ Success(_) => s.toOption
+          case Failure(_)     => None
         }
       case iceberg: SparkCatalog if (iceberg.icebergCatalog().isInstanceOf[BigQueryMetastoreCatalog]) =>
         scala.Option(Iceberg)
