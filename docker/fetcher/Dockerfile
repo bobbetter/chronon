@@ -41,8 +41,7 @@ ENV CLOUD_GCP_JAR=${CLOUD_GCP_JAR:-"/srv/zipline/cloud_gcp/cloud_gcp.jar"}
 ENV FETCHER_JAR=${FETCHER_JAR:-"/srv/zipline/fetcher/service.jar"}
 ENV LOG_PATH=${LOG_PATH:-"/srv/zipline/fetcher/logs"}
 
-# Skip aws jar till we fix cves
-#COPY $CLOUD_AWS_JAR_PATH "$CLOUD_AWS_JAR"
+COPY $CLOUD_AWS_JAR_PATH "$CLOUD_AWS_JAR"
 COPY $CLOUD_GCP_JAR_PATH "$CLOUD_GCP_JAR"
 COPY $FETCHER_SVC_JAR_PATH "$FETCHER_JAR"
 COPY $FETCHER_LAUNCH_SCRIPT /srv/zipline/fetcher/start.sh
