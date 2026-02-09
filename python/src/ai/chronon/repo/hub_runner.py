@@ -61,6 +61,22 @@ def force_option(func):
     return click.option(
         "--force", help="Force compile even if there are version changes to existing confs", is_flag=True
     )(func)
+def cloud_provider_option(func):
+    return click.option(
+        "--cloud-provider",
+        help="Cloud provider for the hub and related services",
+        type=click.Choice(["aws", "gcp", "azure"], case_sensitive=False),
+        required=False,
+        default=None,
+    )(func)
+def customer_id_option(func):
+    return click.option(
+        "--customer-id",
+        help="Customer ID for additional authentication - (required if cloud provider is Azure)",
+        type=str,
+        required=False,
+        default=None,
+    )(func)
 
 
 def get_conf_type(conf):
@@ -261,11 +277,14 @@ def schedule(repo, conf, hub_url, use_auth, format, force, skip_compile):
 @repo_option
 @hub_url_option
 @use_auth_option
+@format_option
 @workflow_id_option
 @jsonify_exceptions_if_json_format
-def cancel(repo, hub_url, use_auth, format, force, workflow_id):
-    zipline_hub = _get_zipline_hub(hub_url, get_hub_conf_from_metadata_conf(DEFAULT_TEAM_METADATA_CONF, root_dir=repo), use_auth, format)
-    response_json = zipline_hub.call_cancel_api(workflow_id, format=format)
+@cloud_provider_option
+@customer_id_option
+def cancel(repo, hub_url, use_auth, format, workflow_id, cloud_provider, customer_id):
+    zipline_hub = _get_zipline_hub(hub_url, get_hub_conf_from_metadata_conf(DEFAULT_TEAM_METADATA_CONF, root_dir=repo, cloud_provider=cloud_provider, customer_id=customer_id), use_auth, format)
+    response_json = zipline_hub.call_cancel_api(workflow_id)
     if format == Format.JSON:
         print(json.dumps(response_json, indent=4))
         sys.exit(0)
@@ -448,7 +467,7 @@ def get_hub_conf(conf_path, root_dir="."):
     kwargs = {k: common_env_map.get(k.upper()) for k in HubConfig.__dataclass_fields__.keys()}
     return HubConfig(**kwargs)
 
-def get_hub_conf_from_metadata_conf(metadata_path, root_dir="."):
+def get_hub_conf_from_metadata_conf(metadata_path, root_dir=".", cloud_provider: Optional[str]=None, customer_id: Optional[str]=None):
     """
     Get the hub configuration from the config file or environment variables.
     This method is used when the args are not provided.
@@ -461,7 +480,19 @@ def get_hub_conf_from_metadata_conf(metadata_path, root_dir="."):
     frontend_url = common_env_map.get("FRONTEND_URL")
     sa_name = common_env_map.get("SA_NAME")
     eval_url = common_env_map.get("EVAL_URL")
-    return HubConfig(hub_url=hub_url, frontend_url=frontend_url, sa_name=sa_name, eval_url=eval_url)
+
+    cloud_provider = cloud_provider or common_env_map.get("CLOUD_PROVIDER")
+
+    if not cloud_provider:
+        print(" 🔴 Cloud provider is not set. Please set the cloud provider using the --cloud-provider flag of the CLI, or the CLOUD_PROVIDER environment variable in the `default` team env common block and re-compile.")
+        sys.exit(1)
+
+    customer_id = customer_id or common_env_map.get("CUSTOMER_ID")
+    if cloud_provider == "azure" and not customer_id:
+        print(" 🔴 Customer ID is not set for Azure. Please set the customer ID using the --customer-id flag of the CLI, or the CUSTOMER_ID environment variable in the `default` team env common block and re-compile.")
+        sys.exit(1)
+
+    return HubConfig(hub_url=hub_url, frontend_url=frontend_url, sa_name=sa_name, eval_url=eval_url, cloud_provider=cloud_provider, customer_id=customer_id)
 
 
 def get_schedule_modes(conf_path):
