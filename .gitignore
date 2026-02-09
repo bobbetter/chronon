@@ -128,3 +128,9 @@ MODULE.bazel*
 
 # mill build output
 out/**
+
+
+# EC2 perf testing
+*.pem
+.ec2-instance-state
+perf-test-results-ec2-*.log
