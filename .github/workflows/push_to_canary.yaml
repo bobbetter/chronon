@@ -448,6 +448,12 @@ jobs:
           name: cloud-gcp-jar
           path: cloud-gcp-jar
 
+      - name: Download Cloud AWS Lib Jar
+        uses: actions/download-artifact@v4
+        with:
+          name: cloud-aws-jar
+          path: cloud-aws-jar
+      
       - name: Copy the jars to expected paths and build
         shell: bash
         run: |
