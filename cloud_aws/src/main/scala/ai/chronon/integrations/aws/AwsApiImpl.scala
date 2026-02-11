@@ -2,16 +2,21 @@ package ai.chronon.integrations.aws
 
 import ai.chronon.online._
 import software.amazon.awssdk.regions.Region
-import software.amazon.awssdk.services.dynamodb.DynamoDbClient
+import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
 import ai.chronon.online.serde._
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration
+import software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient
 
 import java.net.URI
+import java.time.Duration
 import java.util
 
 /** Implementation of Chronon's API interface for AWS. This is a work in progress and currently just covers the
   * DynamoDB based KV store implementation.
   */
 class AwsApiImpl(conf: Map[String, String]) extends Api(conf) {
+
+  import AwsApiImpl._
 
   // For now similar to GcpApiImpl, we have a flag store that relies on some hardcoded values.
   val tilingEnabledFlagStore: FlagStore = (flagName: String, _: util.Map[String, String]) => {
@@ -25,9 +30,27 @@ class AwsApiImpl(conf: Map[String, String]) extends Api(conf) {
   // We set the flag store to always return true for tiling enabled
   setFlagStore(tilingEnabledFlagStore)
 
-  @transient lazy val ddbClient: DynamoDbClient = {
-    var builder = DynamoDbClient
+  @transient lazy val ddbClient: DynamoDbAsyncClient = {
+    val httpClient = AwsCrtAsyncHttpClient
       .builder()
+      .maxConcurrency(DefaultMaxConcurrency)
+      .connectionTimeout(DefaultConnectionTimeout)
+      .connectionHealthConfiguration(config =>
+        config
+          .minimumThroughputInBps(DefaultMinConnectionThroughputBps)
+          .minimumThroughputTimeout(DefaultMinThroughputTimeout))
+      .build()
+
+    val clientConfig = ClientOverrideConfiguration
+      .builder()
+      .apiCallTimeout(DefaultTotalTimeout)
+      .apiCallAttemptTimeout(DefaultApiTimeout)
+      .build()
+
+    var builder = DynamoDbAsyncClient
+      .builder()
+      .httpClient(httpClient)
+      .overrideConfiguration(clientConfig)
 
     sys.env.get("AWS_DEFAULT_REGION").foreach { region =>
       try {
@@ -72,4 +95,13 @@ class AwsApiImpl(conf: Map[String, String]) extends Api(conf) {
   }
 
   override def genEnhancedStatsKvStore(tableBaseName: String): KVStore = ???
+}
+
+object AwsApiImpl {
+  private val DefaultConnectionTimeout = Duration.ofMillis(1000L)
+  private val DefaultApiTimeout = Duration.ofMillis(500L)
+  private val DefaultTotalTimeout = Duration.ofMillis(3000L)
+  private val DefaultMinConnectionThroughputBps = 1L
+  private val DefaultMinThroughputTimeout = Duration.ofSeconds(30)
+  private val DefaultMaxConcurrency = 100
 }
