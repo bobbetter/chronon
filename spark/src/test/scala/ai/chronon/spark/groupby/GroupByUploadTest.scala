@@ -40,10 +40,35 @@ import scala.concurrent.duration.DurationInt
 class GroupByUploadTest extends SparkTestBase with Matchers {
   @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  private val namespace = "group_by_upload_test"
   private val tableUtils = TableUtils(spark)
+  private val createdDatabases = scala.collection.mutable.Set[String]()
+
+  // Generate unique namespace per test to avoid interference
+  private def testNamespace(suffix: String = ""): String = {
+    val uuid = java.util.UUID.randomUUID().toString.replace("-", "").take(8)
+    val ns = if (suffix.isEmpty) {
+      s"group_by_upload_test_${uuid}"
+    } else {
+      s"group_by_upload_test_${suffix}_${uuid}"
+    }
+    createdDatabases.add(ns)
+    ns
+  }
+
+  override def afterAll(): Unit = {
+    // Cleanup: drop all created databases
+    createdDatabases.foreach { db =>
+      try {
+        spark.sql(s"DROP DATABASE IF EXISTS $db CASCADE")
+      } catch {
+        case e: Exception => logger.warn(s"Failed to drop database $db", e)
+      }
+    }
+    super.afterAll()
+  }
 
   it should "temporal events last k" in {
+    val namespace = testNamespace("temporal_events_last_k")
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
     createDatabase(namespace)
@@ -72,6 +97,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
   }
 
   it should "struct support" in {
+    val namespace = testNamespace("struct_support")
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
     createDatabase(namespace)
@@ -113,6 +139,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
   }
 
   it should "multiple avg counters" in {
+    val namespace = testNamespace("multiple_avg_counters")
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
     createDatabase(namespace)
@@ -144,6 +171,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
   }
 
   it should "produce a valid nullCountMap where both collapsedIr and tailHops are null for temporal events case" in {
+    val namespace = testNamespace("nullcount_all_null")
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
     createDatabase(namespace)
@@ -174,6 +202,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
         accuracy = Accuracy.TEMPORAL
       )
     val result = GroupByUpload.generateKvRdd(groupByConf, endDs = yesterday, tableUtils = tableUtils).nullCounts
+    print(result)
 
     result.keys.size shouldBe 3 // 3 output columns. 1 agg with 1 window, 1 agg with 2 windows = 3 output columns
     result.values.foreach { count =>
@@ -182,7 +211,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
   }
 
   it should "produce a valid nullCountMap with both collapsedIr and tailHops are non null for temporal events case" in {
-
+    val namespace = testNamespace("nullcount_non_null")
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
     createDatabase(namespace)
@@ -210,11 +239,13 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
         accuracy = Accuracy.TEMPORAL
       )
     val result = GroupByUpload.generateKvRdd(groupByConf, endDs = yesterday, tableUtils = tableUtils).nullCounts
+    print(result)
 
     result.isEmpty shouldBe true // empty null count map
   }
 
   it should "produce a valid empty null nullCountMap for snapshot events case" in {
+    val namespace = testNamespace("snapshot_empty_null")
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
     createDatabase(namespace)
@@ -242,11 +273,13 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
         accuracy = Accuracy.SNAPSHOT
       )
     val result = GroupByUpload.generateKvRdd(groupByConf, endDs = yesterday, tableUtils = tableUtils).nullCounts
+    print(result)
 
     result shouldBe empty
   }
 
   it should "produce a valid non-empty nullCountMap for snapshot events case" in {
+    val namespace = testNamespace("snapshot_non_empty_null")
     val batchEndDs = "2024-08-01"
     createDatabase(namespace)
     tableUtils.sql(s"USE $namespace")
@@ -276,6 +309,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
         accuracy = Accuracy.SNAPSHOT
       )
     val result = GroupByUpload.generateKvRdd(groupByConf, endDs = batchEndDs, tableUtils = tableUtils).nullCounts
+    print(result)
 
     result.isEmpty shouldBe false
     result.keys.size shouldBe 2 // only the list_event unbounded was non-null. the other two should be null
@@ -285,21 +319,25 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
   }
 
   it should "produce a valid empty nullCountMap for snapshot entities case" in {
+    val namespace = testNamespace("entities_empty_null")
     createDatabase(namespace)
     tableUtils.sql(s"USE $namespace")
     val reviewsTable = s"${namespace}.reviews_entity_non_empty_null"
     setupReviewsTable(reviewsTable)
 
     // empty out aggregations
-    val reviewGroupBy = sampleEntitiesGroupBy(reviewsTable)
+    val reviewGroupBy = sampleEntitiesGroupBy(reviewsTable, namespace)
     reviewGroupBy.aggregations = null
     reviewGroupBy.accuracy = Accuracy.SNAPSHOT
 
     val result = GroupByUpload.generateKvRdd(reviewGroupBy, endDs = "2023-08-15", tableUtils = tableUtils).nullCounts
+    print(result)
+
     result shouldBe empty
   }
 
   it should "produce a valid non-empty nullCountMap for snapshot entities case" in {
+    val namespace = testNamespace("entities_non_empty_null")
     createDatabase(namespace)
     tableUtils.sql(s"USE $namespace")
     val reviewsTable = s"${namespace}.reviews_entity_empty_null"
@@ -311,11 +349,13 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
     ))
 
     // empty out aggregations
-    val reviewGroupBy = sampleEntitiesGroupBy(reviewsTable)
+    val reviewGroupBy = sampleEntitiesGroupBy(reviewsTable, namespace)
     reviewGroupBy.aggregations = null
     reviewGroupBy.accuracy = Accuracy.SNAPSHOT
 
     val result = GroupByUpload.generateKvRdd(reviewGroupBy, endDs = "2023-08-15", tableUtils = tableUtils).nullCounts
+    print(result)
+
     result.isEmpty shouldBe false
     result.values .foreach { count =>
       count shouldBe 1L
@@ -349,7 +389,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
     reviewsMutationsDf.save(s"${reviewsTable}_mutations")
     reviewsMutationsDf.show()
   }
-  def sampleEntitiesGroupBy(reviewsTable: String) = {
+  def sampleEntitiesGroupBy(reviewsTable: String, namespace: String) = {
     Builders.GroupBy(
       metaData = Builders.MetaData(namespace = namespace, name = "review_attrs"),
       sources = Seq(
@@ -371,6 +411,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
   //  joinPart = (review, user, listing)     [reviews]
   // groupBy = keys:[listing, category], aggs:[avg(rating)]
   it should "listing rating category join source" in {
+    val namespace = testNamespace("listing_rating")
     createDatabase(namespace)
     tableUtils.sql(s"USE $namespace")
 
@@ -417,7 +458,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
         mutationTopic = s"${ratingsTable}_mutations",
         mutationTable = s"${ratingsTable}_mutations"
       )
-    val reviewGroupBy = sampleEntitiesGroupBy(reviewsTable)
+    val reviewGroupBy = sampleEntitiesGroupBy(reviewsTable, namespace)
 
     val joinConf = Builders.Join(
       metaData = Builders.MetaData(namespace = namespace, name = "review_enrichment"),
@@ -510,6 +551,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
 
   // This test is to ensure that the GroupByUpload can handle a GroupBy with lastK struct and derivations
   it should "upload groupBy with lastK struct + derivations" in {
+    val namespace = testNamespace("lastk_struct_derivations")
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
     createDatabase(namespace)
@@ -611,6 +653,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
     )
 
   it should "produce valid batch data for temporal events case" in {
+    val namespace = testNamespace("temporal_batch_data")
     createDatabase(namespace)
     val eventsTable = "my_events_check_temporal"
     GroupByUploadTest.runAndValidateActualTemporalBatchData(namespace=namespace, sparkSession = spark, tableUtils = tableUtils, eventsTable = eventsTable)
@@ -658,6 +701,7 @@ object GroupByUploadTest {
         accuracy = Accuracy.TEMPORAL
       )
     val result = GroupByUpload.generateKvRdd(groupByConf, endDs = "2023-08-14", tableUtils = tableUtils)
+    print(result)
 
     // Check the data
     val actualData = result.data.collect()
