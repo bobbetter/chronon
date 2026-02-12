@@ -31,10 +31,35 @@ class AwsApiImpl(conf: Map[String, String]) extends Api(conf) {
   setFlagStore(tilingEnabledFlagStore)
 
   @transient lazy val ddbClient: DynamoDbAsyncClient = {
+    val maxConcurrency = getOptional(DynamoMaxConcurrency, conf)
+      .map(_.toInt)
+      .getOrElse(DefaultMaxConcurrency)
+
+    val connectionTimeout = getOptional(DynamoConnectionTimeout, conf)
+      .map(Duration.parse)
+      .getOrElse(DefaultConnectionTimeout)
+
+    val apiCallTimeout = getOptional(DynamoApiCallTimeout, conf)
+      .map(Duration.parse)
+      .getOrElse(DefaultTotalTimeout)
+
+    val apiCallAttemptTimeout = getOptional(DynamoApiCallAttemptTimeout, conf)
+      .map(Duration.parse)
+      .getOrElse(DefaultApiTimeout)
+
+    val maybeRegion = sys.env.get("AWS_DEFAULT_REGION")
+    val maybeEndpoint = sys.env.get("DYNAMO_ENDPOINT")
+
+    logger.info(
+      s"Creating DynamoDB client. " +
+        s"Params: region: ${maybeRegion.getOrElse("not set")}, endpoint: ${maybeEndpoint.getOrElse("default")}, maxConcurrency: $maxConcurrency, " +
+        s"connectionTimeout: $connectionTimeout, apiCallTimeout: $apiCallTimeout, " +
+        s"apiCallAttemptTimeout: $apiCallAttemptTimeout")
+
     val httpClient = AwsCrtAsyncHttpClient
       .builder()
-      .maxConcurrency(DefaultMaxConcurrency)
-      .connectionTimeout(DefaultConnectionTimeout)
+      .maxConcurrency(maxConcurrency)
+      .connectionTimeout(connectionTimeout)
       .connectionHealthConfiguration(config =>
         config
           .minimumThroughputInBps(DefaultMinConnectionThroughputBps)
@@ -43,8 +68,8 @@ class AwsApiImpl(conf: Map[String, String]) extends Api(conf) {
 
     val clientConfig = ClientOverrideConfiguration
       .builder()
-      .apiCallTimeout(DefaultTotalTimeout)
-      .apiCallAttemptTimeout(DefaultApiTimeout)
+      .apiCallTimeout(apiCallTimeout)
+      .apiCallAttemptTimeout(apiCallAttemptTimeout)
       .build()
 
     var builder = DynamoDbAsyncClient
@@ -52,7 +77,7 @@ class AwsApiImpl(conf: Map[String, String]) extends Api(conf) {
       .httpClient(httpClient)
       .overrideConfiguration(clientConfig)
 
-    sys.env.get("AWS_DEFAULT_REGION").foreach { region =>
+    maybeRegion.foreach { region =>
       try {
         builder.region(Region.of(region))
       } catch {
@@ -60,7 +85,7 @@ class AwsApiImpl(conf: Map[String, String]) extends Api(conf) {
           throw new IllegalArgumentException(s"Invalid AWS region format: $region", e)
       }
     }
-    sys.env.get("DYNAMO_ENDPOINT").foreach { endpoint =>
+    maybeEndpoint.foreach { endpoint =>
       try {
         builder = builder.endpointOverride(URI.create(endpoint))
       } catch {
@@ -88,7 +113,7 @@ class AwsApiImpl(conf: Map[String, String]) extends Api(conf) {
   /** The logResponse method is currently unimplemented. We'll need to implement this prior to bringing up the
     * fully functional serving stack in Aws which includes logging feature responses to a stream for OOC
     */
-  override def logResponse(resp: LoggableResponse): Unit = ???
+  override def logResponse(resp: LoggableResponse): Unit = ()
 
   override def genMetricsKvStore(tableBaseName: String): KVStore = {
     new DynamoDBKVStoreImpl(ddbClient)
@@ -104,4 +129,14 @@ object AwsApiImpl {
   private val DefaultMinConnectionThroughputBps = 1L
   private val DefaultMinThroughputTimeout = Duration.ofSeconds(30)
   private val DefaultMaxConcurrency = 100
+
+  private[aws] val DynamoMaxConcurrency = "DYNAMO_MAX_CONCURRENCY"
+  private[aws] val DynamoConnectionTimeout = "DYNAMO_CONNECTION_TIMEOUT"
+  private[aws] val DynamoApiCallTimeout = "DYNAMO_API_CALL_TIMEOUT"
+  private[aws] val DynamoApiCallAttemptTimeout = "DYNAMO_API_CALL_ATTEMPT_TIMEOUT"
+
+  private[aws] def getOptional(key: String, conf: Map[String, String]): Option[String] =
+    sys.env
+      .get(key)
+      .orElse(conf.get(key))
 }
