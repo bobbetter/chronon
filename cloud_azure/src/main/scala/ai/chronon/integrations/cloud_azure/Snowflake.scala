@@ -23,8 +23,7 @@ case object Snowflake extends Format {
 
   @transient private lazy val snowflakeLogger = LoggerFactory.getLogger(getClass)
 
-  override def table(tableName: String, partitionFilters: String, cacheDf: Boolean = false)(implicit
-      sparkSession: SparkSession): DataFrame = {
+  override def table(tableName: String, partitionFilters: String)(implicit sparkSession: SparkSession): DataFrame = {
     throw new UnsupportedOperationException(
       "Direct table reads are not supported for Snowflake format. Use a stagingQuery with EngineType.SNOWFLAKE to export the data first.")
   }

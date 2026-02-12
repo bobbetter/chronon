@@ -93,12 +93,10 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
     }
   }
 
-  def loadTable(tableName: String,
-                rangeWheres: Seq[String] = List.empty[String],
-                cacheDf: Boolean = false): DataFrame = {
+  def loadTable(tableName: String, rangeWheres: Seq[String] = List.empty[String]): DataFrame = {
     tableFormatProvider
       .readFormat(tableName)
-      .map(_.table(tableName, andPredicates(rangeWheres), cacheDf)(sparkSession))
+      .map(_.table(tableName, andPredicates(rangeWheres))(sparkSession))
       .getOrElse(
         throw new RuntimeException(s"Could not load table: ${tableName} with partition filter: ${rangeWheres}"))
   }
@@ -265,8 +263,6 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
       // so that an exception will be thrown below
       dfRearranged
     }
-
-    TableCache.remove(tableName)
 
     if (!isBenchmarkMode) {
       finalizedDf.cache()
@@ -617,8 +613,7 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
                  table: String,
                  wheres: Seq[String],
                  rangeWheres: Seq[String],
-                 fallbackSelects: Option[Map[String, String]] = None,
-                 cacheDf: Boolean = false): DataFrame = {
+                 fallbackSelects: Option[Map[String, String]] = None): DataFrame = {
 
     val selects = QueryUtils.buildSelects(selectMap, fallbackSelects)
 
@@ -632,7 +627,7 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
                    |    ${rangeWheres.mkString(",\n    ").green}
                    |""".stripMargin)
 
-    var df = loadTable(table, rangeWheres, cacheDf)
+    var df = loadTable(table, rangeWheres)
 
     if (selects.nonEmpty) df = df.selectExpr(selects: _*)
 

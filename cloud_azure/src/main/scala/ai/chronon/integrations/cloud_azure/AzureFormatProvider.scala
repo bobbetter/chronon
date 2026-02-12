@@ -16,13 +16,12 @@ import scala.util.{Success, Try}
 class AzureFormatProvider(override val sparkSession: SparkSession) extends DefaultFormatProvider(sparkSession) {
 
   override def readFormat(tableName: String): Option[Format] = {
-    val parsedCatalog = Format.getCatalog(tableName)(sparkSession)
-    val identifier = toIdentifierNoCatalog(tableName)
-    val catalog = sparkSession.sessionState.catalogManager.catalog(parsedCatalog)
+    val resolved = Format.resolveTableName(tableName)(sparkSession)
+    val catalog = sparkSession.sessionState.catalogManager.catalog(resolved.catalog)
 
     catalog match {
       case sparkCatalog: SparkCatalog =>
-        Try(sparkCatalog.loadTable(identifier)) match {
+        Try(sparkCatalog.loadTable(resolved.toIdentifier)) match {
           case Success(_: SparkTable) =>
             logger.info(s"AzureFormatProvider: Detected Iceberg table $tableName")
             Some(Iceberg)
@@ -30,7 +29,7 @@ class AzureFormatProvider(override val sparkSession: SparkSession) extends Defau
             Some(Snowflake)
         }
       case tableCatalog: TableCatalog =>
-        Try(tableCatalog.loadTable(identifier)) match {
+        Try(tableCatalog.loadTable(resolved.toIdentifier)) match {
           case Success(_: SparkTable) =>
             logger.info(s"AzureFormatProvider: Detected Iceberg table $tableName")
             Some(Iceberg)

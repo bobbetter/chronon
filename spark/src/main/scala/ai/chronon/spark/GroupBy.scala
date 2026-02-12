@@ -738,8 +738,7 @@ object GroupBy {
         if (mutations) source.getEntities.mutationTable.cleanSpec else source.table,
         Option(source.query.wheres).map(_.toScala).getOrElse(Seq.empty[String]),
         partitionConditions,
-        Some(metaColumns ++ keys.map(_ -> null)),
-        cacheDf = true
+        Some(metaColumns ++ keys.map(_ -> null))
       )
       .translatePartitionSpec(sourcePartitionSpec, tableUtils.partitionSpec)
   }

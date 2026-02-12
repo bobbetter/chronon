@@ -3,7 +3,7 @@ package ai.chronon.spark.catalog
 import org.apache.iceberg.spark.SparkCatalog
 import org.apache.iceberg.spark.source.SparkTable
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.connector.catalog.{Identifier, TableCatalog}
+import org.apache.spark.sql.connector.catalog.TableCatalog
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.util.{Success, Try}
@@ -26,13 +26,12 @@ class DefaultFormatProvider(val sparkSession: SparkSession) extends FormatProvid
   }
 
   protected def isIcebergTable(tableName: String): Boolean = {
-    val parsedCatalog = Format.getCatalog(tableName)(sparkSession)
-    val identifier = toIdentifierNoCatalog(tableName)
-    val catalog = sparkSession.sessionState.catalogManager.catalog(parsedCatalog)
+    val resolved = Format.resolveTableName(tableName)(sparkSession)
+    val catalog = sparkSession.sessionState.catalogManager.catalog(resolved.catalog)
 
     catalog match {
       case sparkCatalog: SparkCatalog =>
-        Try(sparkCatalog.loadTable(identifier)) match {
+        Try(sparkCatalog.loadTable(resolved.toIdentifier)) match {
           case Success(_: SparkTable) =>
             logger.info(s"IcebergCheck: Detected iceberg formatted table $tableName.")
             true
@@ -41,7 +40,7 @@ class DefaultFormatProvider(val sparkSession: SparkSession) extends FormatProvid
             false
         }
       case tableCatalog: TableCatalog =>
-        Try(tableCatalog.loadTable(identifier)) match {
+        Try(tableCatalog.loadTable(resolved.toIdentifier)) match {
           case Success(_: SparkTable) =>
             logger.info(s"IcebergCheck: Detected iceberg formatted table $tableName.")
             true
@@ -52,16 +51,6 @@ class DefaultFormatProvider(val sparkSession: SparkSession) extends FormatProvid
       case _ =>
         logger.info(s"IcebergCheck: Checked table $tableName is not iceberg format.")
         false
-    }
-  }
-
-  protected def toIdentifierNoCatalog(tableName: String): Identifier = {
-    val parsed = sparkSession.sessionState.sqlParser.parseMultipartIdentifier(tableName)
-    parsed.toList match {
-      case _ :: namespace :: table :: Nil => Identifier.of(Array(namespace), table)
-      case namespace :: table :: Nil      => Identifier.of(Array(namespace), table)
-      case table :: Nil                   => Identifier.of(Array.empty, table)
-      case _                              => throw new IllegalArgumentException(s"Invalid table name: $tableName")
     }
   }
 

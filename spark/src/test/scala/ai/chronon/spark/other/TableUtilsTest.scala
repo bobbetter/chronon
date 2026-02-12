@@ -20,8 +20,8 @@ import ai.chronon.api._
 import ai.chronon.spark._
 import ai.chronon.spark.catalog.{Format, IncompatibleSchemaException, TableUtils}
 import ai.chronon.spark.submission.SparkSessionBuilder
-import ai.chronon.spark.utils.TestUtils.makeDf
 import ai.chronon.spark.utils.SparkTestBase
+import ai.chronon.spark.utils.TestUtils.makeDf
 import org.apache.hadoop.hive.ql.exec.UDF
 import org.apache.spark.sql.catalyst.parser.ParseException
 import org.apache.spark.sql.functions.col
