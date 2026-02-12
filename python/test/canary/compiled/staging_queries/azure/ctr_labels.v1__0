@@ -1,6 +1,6 @@
 {
   "metaData": {
-    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_azure_demo_derivations_v1__2__derived_with_offset_0\", \"spec\": \"data.azure_demo_derivations_v1__2__derived/ds={{ macros.ds_add(ds, 0) }}\"}]}",
+    "customJson": "{\"airflowDependencies\": [{\"name\": \"wf_data_azure_demo_derivations_v2__derived_with_offset_0\", \"spec\": \"data.azure_demo_derivations_v2__derived/ds={{ macros.ds_add(ds, 0) }}\"}]}",
     "executionInfo": {
       "conf": {
         "common": {
@@ -47,7 +47,7 @@
     "team": "azure",
     "version": "0"
   },
-  "query": "\nSELECT\n    *,\n    case when rand() < 0.5 then 0 else 1 end as label\nFROM data.azure_demo_derivations_v1__2__derived\nWHERE ds BETWEEN {{ start_date }} AND {{ end_date }}\n",
+  "query": "\nSELECT\n    *,\n    case when rand() < 0.5 then 0 else 1 end as label\nFROM data.azure_demo_derivations_v2__derived\nWHERE ds BETWEEN {{ start_date }} AND {{ end_date }}\n",
   "tableDependencies": [
     {
       "endOffset": {
@@ -64,7 +64,7 @@
           "length": 1,
           "timeUnit": 1
         },
-        "table": "data.azure_demo_derivations_v1__2__derived"
+        "table": "data.azure_demo_derivations_v2__derived"
       }
     }
   ]

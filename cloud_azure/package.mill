@@ -146,8 +146,7 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
 
     def moduleDeps = Seq(build.cloud_azure(crossValue), build.api(crossValue), build.online(crossValue), build.spark(crossValue).test, build.redis(crossValue).test)
     def mvnDeps = super.mvnDeps() ++ Seq(
-      mvn"org.testcontainers:testcontainers:1.19.3",
-      mvn"org.testcontainers:junit-jupiter:1.19.3",
+      mvn"org.testcontainers:testcontainers:2.0.2",
       // Azure Cosmos Spark Connector - only for tests, not included in assembly
       // This is a shaded JAR so we keep it out of the main module dependencies
       // Exclude Jackson to avoid version conflicts with Spark's jackson-module-scala 2.15.2
