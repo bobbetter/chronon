@@ -17,11 +17,12 @@
 package ai.chronon.spark.other
 
 import ai.chronon.api.{Constants, Operation}
+import ai.chronon.spark.AvroKvEncoder
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.{EnhancedStatsCompute, EnhancedStatsStore}
 import ai.chronon.online.InMemoryKvStore
 import ai.chronon.spark.utils.{MockApi, OnlineUtils, SparkTestBase}
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.LongType
 import org.slf4j.{Logger, LoggerFactory}
@@ -146,13 +147,10 @@ class EnhancedStatsComputeTest extends SparkTestBase {
     )
 
     // Generate daily tiles (timeBucketMinutes = 0 means daily aggregation)
-    val timedKvRdd = enhancedStats.enhancedDailySummary(
+    val (resultDf, _) = enhancedStats.enhancedDailySummary(
       sample = 1.0,
       timeBucketMinutes = 0 // Daily tiles
     )
-
-    // Convert to DataFrame for inspection
-    val resultDf = timedKvRdd.toFlatDf
 
     logger.info("\nDaily Enhanced Statistics:")
     logger.info(s"Number of daily tiles: ${resultDf.count()}")
@@ -187,12 +185,10 @@ class EnhancedStatsComputeTest extends SparkTestBase {
     )
 
     // Generate statistics (daily tiles)
-    val timedKvRdd = enhancedStats.enhancedDailySummary(
+    val (resultDf, _) = enhancedStats.enhancedDailySummary(
       sample = 1.0,
       timeBucketMinutes = 0 // Daily tiles
     )
-
-    val resultDf = timedKvRdd.toFlatDf
 
     logger.info("\nStatistics Verification:")
     resultDf.show(10, truncate = false)
@@ -259,13 +255,19 @@ class EnhancedStatsComputeTest extends SparkTestBase {
     )
 
     // Generate daily tiles
-    val timedKvRdd = enhancedStats.enhancedDailySummary(
+    val (flatDf, metadata) = enhancedStats.enhancedDailySummary(
       sample = 1.0,
       timeBucketMinutes = 0 // Daily tiles
     )
 
     // Convert to Avro format (ready for KV store)
-    val avroDf = timedKvRdd.toAvroDf
+    val keyColumns = Seq("JoinPath")
+    val valueColumns = flatDf.columns.filterNot(c => c == "JoinPath" || c == Constants.TimeColumn).toSeq
+    val avroDf = AvroKvEncoder.encodeTimed(
+      flatDf, keyColumns, valueColumns,
+      storeSchemasPrefix = Some("ratings_kv_upload"),
+      metadata = Some(metadata)
+    )
 
     logger.info("\nKV Store Ready Format:")
     val recordCount = avroDf.count()
@@ -328,17 +330,25 @@ class EnhancedStatsComputeTest extends SparkTestBase {
     }
 
     // Step 3: Generate daily tiles
-    val timedKvRdd = enhancedStats.enhancedDailySummary(
+    val (flatDf, statsMetadata) = enhancedStats.enhancedDailySummary(
       sample = 1.0,
       timeBucketMinutes = 0 // Daily tiles
     )
 
-    val tileCount = timedKvRdd.data.count()
+    val keyColumns = Seq("JoinPath")
+    val valueColumns = flatDf.columns.filterNot(c => c == "JoinPath" || c == Constants.TimeColumn).toSeq
+    val avroDf = AvroKvEncoder.encodeTimed(
+      flatDf, keyColumns, valueColumns,
+      storeSchemasPrefix = Some(tableName),
+      metadata = Some(statsMetadata)
+    )
+
+    val tileCount = flatDf.count()
     logger.info(s"✓ Generated $tileCount daily tiles")
 
     // Step 4: Upload to KV store
     val statsStore = new EnhancedStatsStore(mockApi)
-    statsStore.upload(timedKvRdd, putsPerRequest = 100)
+    statsStore.upload(avroDf, putsPerRequest = 100)
 
     logger.info(s"✓ Uploaded $tileCount tiles to InMemoryKVStore")
 
@@ -469,16 +479,22 @@ class EnhancedStatsComputeTest extends SparkTestBase {
     }
 
     // Step 10: Generate and upload evolved schema tiles
-    val evolvedTimedKvRdd = evolvedStats.enhancedDailySummary(
+    val (evolvedFlatDf, evolvedMetadata) = evolvedStats.enhancedDailySummary(
       sample = 1.0,
       timeBucketMinutes = 0
     )
 
-    val evolvedTileCount = evolvedTimedKvRdd.data.count()
+    val evolvedTileCount = evolvedFlatDf.count()
     logger.info(s"✓ Generated $evolvedTileCount tiles with evolved schema")
 
     // Upload evolved schema (this should update the metadata)
-    statsStore.upload(evolvedTimedKvRdd, putsPerRequest = 100)
+    val evolvedValueColumns = evolvedFlatDf.columns.filterNot(c => c == "JoinPath" || c == Constants.TimeColumn).toSeq
+    val evolvedAvroDf = AvroKvEncoder.encodeTimed(
+      evolvedFlatDf, keyColumns, evolvedValueColumns,
+      storeSchemasPrefix = Some(tableName),
+      metadata = Some(evolvedMetadata)
+    )
+    statsStore.upload(evolvedAvroDf, putsPerRequest = 100)
     logger.info(s"✓ Uploaded evolved schema to InMemoryKVStore")
 
     // Step 11: Fetch with evolved schema

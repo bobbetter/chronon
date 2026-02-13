@@ -202,6 +202,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.types.DoubleType$",
       "org.apache.spark.sql.types.IntegerType$",
       "org.apache.spark.sql.types.LongType$",
+      "org.apache.spark.sql.types.MapType",
       "org.apache.spark.sql.types.Metadata",
       "org.apache.spark.sql.types.NullType$",
       "org.apache.spark.sql.types.StringType",
@@ -229,6 +230,12 @@ class ChrononKryoRegistrator extends KryoRegistrator {
     )
     names.foreach(name => doRegister(name, kryo))
 
+    kryo.register(classOf[Array[java.lang.Double]])
+    kryo.register(classOf[Array[java.lang.Float]])
+    kryo.register(classOf[Array[java.lang.Long]])
+    kryo.register(classOf[Array[java.lang.Integer]])
+    kryo.register(classOf[Array[java.lang.Boolean]])
+    kryo.register(classOf[Array[java.lang.String]])
     kryo.register(classOf[Array[Array[Array[AnyRef]]]])
     kryo.register(classOf[Array[Array[AnyRef]]])
     kryo.register(classOf[CpcSketch], new CpcSketchKryoSerializer())

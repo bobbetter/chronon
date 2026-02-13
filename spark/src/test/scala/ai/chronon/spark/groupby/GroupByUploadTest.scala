@@ -21,13 +21,15 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.api.{Window, _}
 import ai.chronon.online.fetcher.Fetcher
+import ai.chronon.aggregator.windowing.{FiveMinuteResolution, SawtoothOnlineAggregator}
+import ai.chronon.online.serde.{AvroCodec, AvroConversions, SparkConversions}
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.GroupByUpload
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.submission.SparkSessionBuilder
 import ai.chronon.spark.utils.{DataFrameGen, MockApi, OnlineUtils, SparkTestBase}
 import com.google.gson.Gson
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
 import org.scalatest.matchers.should.Matchers.convertToAnyShouldWrapper
 import org.scalatest.matchers.should.Matchers
@@ -201,7 +203,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
         metaData = Builders.MetaData(namespace = namespace, name = "test_multiple_avg_upload"),
         accuracy = Accuracy.TEMPORAL
       )
-    val result = GroupByUpload.generateKvRdd(groupByConf, endDs = yesterday, tableUtils = tableUtils).nullCounts
+    val result = GroupByUpload.generateDf(groupByConf, endDs = yesterday, tableUtils = tableUtils).nullCounts
     print(result)
 
     result.keys.size shouldBe 3 // 3 output columns. 1 agg with 1 window, 1 agg with 2 windows = 3 output columns
@@ -238,7 +240,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
         metaData = Builders.MetaData(namespace = namespace, name = "test_multiple_avg_upload"),
         accuracy = Accuracy.TEMPORAL
       )
-    val result = GroupByUpload.generateKvRdd(groupByConf, endDs = yesterday, tableUtils = tableUtils).nullCounts
+    val result = GroupByUpload.generateDf(groupByConf, endDs = yesterday, tableUtils = tableUtils).nullCounts
     print(result)
 
     result.isEmpty shouldBe true // empty null count map
@@ -272,7 +274,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
         metaData = Builders.MetaData(namespace = namespace, name = "test_multiple_avg_upload"),
         accuracy = Accuracy.SNAPSHOT
       )
-    val result = GroupByUpload.generateKvRdd(groupByConf, endDs = yesterday, tableUtils = tableUtils).nullCounts
+    val result = GroupByUpload.generateDf(groupByConf, endDs = yesterday, tableUtils = tableUtils).nullCounts
     print(result)
 
     result shouldBe empty
@@ -290,8 +292,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
     val viewsData = Seq(
       ("user1", "some-list-event", null.asInstanceOf[Integer], ts("08-13 11:00"), "2023-08-13"),
     )
-    val viewsRdd = spark.sparkContext.parallelize(viewsData)
-    val viewsDf = spark.createDataFrame(viewsRdd).toDF(viewColumns: _*)
+    val viewsDf = spark.createDataFrame(viewsData).toDF(viewColumns: _*)
     viewsDf.save(eventsTable)
     viewsDf.show()
 
@@ -308,7 +309,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
         metaData = Builders.MetaData(namespace = namespace, name = "test_multiple_avg_upload"),
         accuracy = Accuracy.SNAPSHOT
       )
-    val result = GroupByUpload.generateKvRdd(groupByConf, endDs = batchEndDs, tableUtils = tableUtils).nullCounts
+    val result = GroupByUpload.generateDf(groupByConf, endDs = batchEndDs, tableUtils = tableUtils).nullCounts
     print(result)
 
     result.isEmpty shouldBe false
@@ -330,7 +331,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
     reviewGroupBy.aggregations = null
     reviewGroupBy.accuracy = Accuracy.SNAPSHOT
 
-    val result = GroupByUpload.generateKvRdd(reviewGroupBy, endDs = "2023-08-15", tableUtils = tableUtils).nullCounts
+    val result = GroupByUpload.generateDf(reviewGroupBy, endDs = "2023-08-15", tableUtils = tableUtils).nullCounts
     print(result)
 
     result shouldBe empty
@@ -353,7 +354,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
     reviewGroupBy.aggregations = null
     reviewGroupBy.accuracy = Accuracy.SNAPSHOT
 
-    val result = GroupByUpload.generateKvRdd(reviewGroupBy, endDs = "2023-08-15", tableUtils = tableUtils).nullCounts
+    val result = GroupByUpload.generateDf(reviewGroupBy, endDs = "2023-08-15", tableUtils = tableUtils).nullCounts
     print(result)
 
     result.isEmpty shouldBe false
@@ -374,8 +375,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
       ("review3", "listing2", ts("08-15 08:00"), "2023-08-15") // insert
     ))
 
-    val reviewsRdd = spark.sparkContext.parallelize(reviewsData)
-    val reviewsDf = spark.createDataFrame(reviewsRdd).toDF(reviewsColumns: _*)
+    val reviewsDf = spark.createDataFrame(reviewsData).toDF(reviewsColumns: _*)
     reviewsDf.save(reviewsTable)
     reviewsDf.show()
 
@@ -384,8 +384,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
       (true, ts("08-15 06:00"), "review2", "listing1", ts("07-13 11:00"), "2023-08-15"), // delete
       (false, ts("08-15 08:00"), "review3", "listing2", ts("08-15 08:00"), "2023-08-15") // insert
     )
-    val reviewsMutationsRdd = spark.sparkContext.parallelize(reviewsMutations)
-    val reviewsMutationsDf = spark.createDataFrame(reviewsMutationsRdd).toDF(reviewsMutationsColumns: _*)
+    val reviewsMutationsDf = spark.createDataFrame(reviewsMutations).toDF(reviewsMutationsColumns: _*)
     reviewsMutationsDf.save(s"${reviewsTable}_mutations")
     reviewsMutationsDf.show()
   }
@@ -425,8 +424,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
       ("review3", 3, Map("location" -> 4, "cleanliness" -> 2), ts("08-15 09:00"), "2023-08-15"), // insert
       ("review1", 2, Map("location" -> 1, "cleanliness" -> 3), ts("08-15 10:00"), "2023-08-15") // update
     )
-    val ratingsRdd = spark.sparkContext.parallelize(ratingsData)
-    val ratingsDf = spark.createDataFrame(ratingsRdd).toDF(ratingsColumns: _*)
+    val ratingsDf = spark.createDataFrame(ratingsData).toDF(ratingsColumns: _*)
     ratingsDf.save(ratingsTable)
     ratingsDf.show()
 
@@ -443,8 +441,7 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
       // update - after
       (false, ts("08-15 10:00"), "review1", 2, Map("location" -> 1, "cleanliness" -> 3), ts("08-15 10:00"), ds)
     )
-    val ratingsMutationsRdd = spark.sparkContext.parallelize(ratingsMutations)
-    val ratingsMutationsDf = spark.createDataFrame(ratingsMutationsRdd).toDF(ratingsMutationsColumns: _*)
+    val ratingsMutationsDf = spark.createDataFrame(ratingsMutations).toDF(ratingsMutationsColumns: _*)
     ratingsMutationsDf.save(s"${ratingsTable}_mutations")
     ratingsMutationsDf.show()
 
@@ -661,7 +658,10 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
 }
 
 object GroupByUploadTest {
-  def runAndValidateActualTemporalBatchData(namespace: String, sparkSession: SparkSession, tableUtils: TableUtils, eventsTable: String): Array[Array[Any]] = {
+  import org.scalatest.matchers.should.Matchers._
+
+  def runAndValidateActualTemporalBatchData(namespace: String, sparkSession: SparkSession, tableUtils: TableUtils, eventsTable: String): Unit = {
+    import ai.chronon.spark.Extensions.DataframeOps
     // Setup data
     tableUtils.sql(s"USE $namespace")
     val eventColumns = Seq("user", "views", "ts", "ds")
@@ -682,8 +682,7 @@ object GroupByUploadTest {
         ("user1", 10, TsUtils.datetimeToTs(s"2023-07-17 11:00:00"), "2023-07-17"),
       )
 
-    val eventRdd = sparkSession.sparkContext.parallelize(eventData)
-    val eventDf = sparkSession.createDataFrame(eventRdd).toDF(eventColumns: _*)
+    val eventDf = sparkSession.createDataFrame(eventData).toDF(eventColumns: _*)
     eventDf.save(eventsTable)
     eventDf.show()
 
@@ -700,42 +699,56 @@ object GroupByUploadTest {
         metaData = Builders.MetaData(namespace = namespace, name = "test_multiple_avg_upload"),
         accuracy = Accuracy.TEMPORAL
       )
-    val result = GroupByUpload.generateKvRdd(groupByConf, endDs = "2023-08-14", tableUtils = tableUtils)
-    print(result)
+    val result = GroupByUpload.generateDf(groupByConf, endDs = "2023-08-14", tableUtils = tableUtils)
 
-    // Check the data
-    val actualData = result.data.collect()
-    actualData.length shouldBe 1 // only one user
+    val kvDf = result.kvDf
+    kvDf.columns should contain allOf ("key_bytes", "value_bytes", "key_json", "value_json")
+    kvDf.count() shouldBe 1 // only one user
 
-    val actualValue = actualData(0)._2
-    val collapsed = actualValue(0).asInstanceOf[Array[Any]]
-    collapsed(0) shouldBe 50 // collapsedIr for 30 day window
-    collapsed(1) shouldBe 20 // collapsedIr for 7 day window
+    // Null counts should be empty since all values are non-null
+    result.nullCounts shouldBe empty
 
-    val tailHops = actualValue(1).asInstanceOf[Array[Array[Any]]]
-    tailHops.length shouldBe 3
+    // Decode the Avro value bytes to verify aggregation correctness
+    val endTs = tableUtils.partitionSpec.epochMillis(tableUtils.partitionSpec.after("2023-08-14"))
+    val chrononSchema = SparkConversions.toChrononSchema(eventDf.schema)
+    val sawtoothAggregator = new SawtoothOnlineAggregator(endTs, aggregations, chrononSchema, FiveMinuteResolution)
+    val valueZSchema = ai.chronon.api.StructType.from("Value", sawtoothAggregator.batchIrSchema)
+    val valueSchemaStr = AvroConversions.fromChrononSchema(valueZSchema).toString(true)
+    val valueCodec = new AvroCodec(valueSchemaStr)
+
+    val row = kvDf.collect()(0)
+    val valueBytes = row.getAs[Array[Byte]]("value_bytes")
+    val decoded = valueCodec.decodeArray(valueBytes)
+
+    // decoded(0) = collapsedIr (struct → Array[Any])
+    val collapsed = decoded(0).asInstanceOf[Array[Any]]
+    collapsed(0).asInstanceOf[Long] shouldBe 50L // collapsedIr for 30 day window
+    collapsed(1).asInstanceOf[Long] shouldBe 20L // collapsedIr for 7 day window
+
+    // decoded(1) = tailHopIrs (list of list of structs)
+    val tailHops = decoded(1).asInstanceOf[java.util.List[java.util.List[Array[Any]]]]
+    tailHops.size() shouldBe 3
 
     // inspect the first index - daily
-    val dailyResolution = tailHops(0)
-    dailyResolution.length shouldBe 1 // only 30day window
-    val dailyElement = dailyResolution(0).asInstanceOf[Array[Any]]
+    val dailyResolution = tailHops.get(0)
+    dailyResolution.size() shouldBe 1 // only 30day window
+    val dailyElement = dailyResolution.get(0)
     dailyElement(0).asInstanceOf[Long] shouldBe 20L
     dailyElement(1).asInstanceOf[Long] shouldBe 1689552000000L // 07-17 2023 12:00:00 AM UTC
 
     // inspect the second index - hourly
-    val hourlyResolution = tailHops(1)
-    hourlyResolution.length shouldBe 2 // 2 hourly tail hops for 7 day window
-    val firstHourlyElement = hourlyResolution(0).asInstanceOf[Array[Any]]
+    val hourlyResolution = tailHops.get(1)
+    hourlyResolution.size() shouldBe 2 // 2 hourly tail hops for 7 day window
+    val firstHourlyElement = hourlyResolution.get(0)
     firstHourlyElement(0).asInstanceOf[Long] shouldBe 20L // added 10 + 10
     firstHourlyElement(1).asInstanceOf[Long] shouldBe 1691575200000L // August 9, 2023 10:00:00 AM
 
-    val secondHourlyElement = hourlyResolution(1).asInstanceOf[Array[Any]]
+    val secondHourlyElement = hourlyResolution.get(1)
     secondHourlyElement(0).asInstanceOf[Long] shouldBe 10L // single 10
     secondHourlyElement(1).asInstanceOf[Long] shouldBe 1691578800000L // August 9, 2023 11:00:00 AM
 
     // inspect the third index - five minute
-    tailHops(2).length shouldBe 0
-    tailHops
+    tailHops.get(2).size() shouldBe 0
   }
 
 }

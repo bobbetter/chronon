@@ -281,14 +281,22 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
     )
 
     // Compute daily summary statistics
-    val timedKvRdd = enhancedStats.enhancedDailySummary(
+    val (flatDf, statsMetadata) = enhancedStats.enhancedDailySummary(
       sample = 1.0,
       timeBucketMinutes = 0 // Daily tiles
     )
 
     // Convert to Avro DataFrame format (with key_bytes, value_bytes, ts columns)
-    // This format can be uploaded directly to KV store
-    val avroDf = timedKvRdd.toAvroDf
+    implicit val sparkSession = tableUtils.sparkSession
+    val keyColumns = Seq("JoinPath")
+    val valueColumns = flatDf.columns.filterNot(c => c == "JoinPath" || c == Constants.TimeColumn).toSeq
+    val avroDf = ai.chronon.spark.AvroKvEncoder.encodeTimed(
+      flatDf,
+      keyColumns,
+      valueColumns,
+      storeSchemasPrefix = Some(joinConf.metaData.name),
+      metadata = Some(statsMetadata)
+    )
     val outputTable = metadata.outputTable
     avroDf.show()
 
@@ -299,7 +307,6 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
     logger.info(s"Saving $recordCount stats records to table: $outputTable")
 
     // Write the stats in Avro format to the output table, partitioned by day
-    // Using insertPartitions which handles the table format provider (iceberg)
     tableUtils.insertPartitions(
       df = avroDfWithPartition,
       tableName = outputTable,
@@ -311,7 +318,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
     logger.info(s"Uploading $recordCount stats records to KV store")
     import ai.chronon.spark.stats.EnhancedStatsStore
     val statsStore = new EnhancedStatsStore(api, Constants.EnhancedStatsDataset)(tableUtils)
-    statsStore.upload(timedKvRdd, putsPerRequest = 100)
+    statsStore.upload(avroDf, putsPerRequest = 100)
 
     logger.info(s"Successfully computed and saved stats for join '$joinName'")
   }
