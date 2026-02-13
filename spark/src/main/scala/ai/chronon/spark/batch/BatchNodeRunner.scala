@@ -204,17 +204,19 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
       s"Running join backfill for '$joinName' with skewFreeMode: ${tableUtils.skewFreeMode}, standalone union-join eligible: $standaloneUnionJoinEligible")
     logger.info(s"Processing range: [${range.start}, ${range.end}]")
 
+    val semanticHash = Option(node.semanticHash).filter(_.nonEmpty)
+
     if (standaloneUnionJoinEligible && tableUtils.skewFreeMode) {
 
       logger.info(s"Using standalone-union-join. Will skip writing join-part table & source table.")
 
-      UnionJoin.computeJoinAndSave(joinConf, range)(tableUtils)
+      UnionJoin.computeJoinAndSave(joinConf, range, semanticHash)(tableUtils)
 
       logger.info(s"Successfully wrote range: $range")
 
     } else {
       val join = new Join(joinConf, range.end, tableUtils)
-      val result = join.forceComputeRangeAndSave(range)
+      val result = join.forceComputeRangeAndSave(range, semanticHash)
 
       result match {
         case Some(df) =>
@@ -301,7 +303,8 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
     tableUtils.insertPartitions(
       df = avroDfWithPartition,
       tableName = outputTable,
-      saveMode = org.apache.spark.sql.SaveMode.Overwrite
+      saveMode = org.apache.spark.sql.SaveMode.Overwrite,
+      semanticHash = Option(node.semanticHash).filter(_.nonEmpty)
     )
 
     // Upload to KV store using the proper EnhancedStatsStore method
@@ -499,7 +502,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
     val kvPartitionsStore = new KvPartitionsStore(kvStore, tablePartitionsDataset)
     val kvPartitions = KvPartitions(
       partitions = allOutputTablePartitions,
-      semanticHash = Option(node.semanticHash)
+      semanticHash = Option(node.semanticHash).filter(_.nonEmpty)
     )
     val kvStoreUpdates = kvPartitionsStore.put(outputTable, kvPartitions)(range.partitionSpec)
     Await.result(kvStoreUpdates, Duration.Inf)

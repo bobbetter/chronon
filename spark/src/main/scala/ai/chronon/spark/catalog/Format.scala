@@ -1,7 +1,10 @@
 package ai.chronon.spark.catalog
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
+import org.apache.spark.sql.catalyst.util.QuotingUtils
 import org.apache.spark.sql.connector.catalog.Identifier
+import org.apache.spark.sql.types.StructType
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.util.{Failure, Success, Try}
@@ -11,6 +14,41 @@ trait Format {
   @transient protected lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
   def tableProperties: Map[String, String] = Map.empty[String, String]
+
+  def tableTypeString: String = ""
+
+  def createTable(tableName: String,
+                  schema: StructType,
+                  partitionColumns: List[String],
+                  providedProperties: Map[String, String],
+                  semanticHash: Option[String] = None)(implicit sparkSession: SparkSession): Unit = {
+    val (creationName, quotedOriginal) = semanticHash match {
+      case Some(hash) =>
+        val parts = sparkSession.sessionState.sqlParser.parseMultipartIdentifier(tableName).toList
+        val hashedParts = parts.init :+ s"${parts.last}_$hash"
+        (hashedParts.map(QuotingUtils.quoteIdentifier).mkString("."),
+         parts.map(QuotingUtils.quoteIdentifier).mkString("."))
+      case None => (tableName, tableName)
+    }
+    sparkSession.sql(
+      CreationUtils
+        .createTableSql(creationName, schema, partitionColumns, providedProperties, tableTypeString))
+    if (semanticHash.isDefined) {
+      try {
+        sparkSession.sql(s"ALTER TABLE $creationName RENAME TO $quotedOriginal")
+      } catch {
+        case _: TableAlreadyExistsException =>
+          // Another writer already created the target table — safe to clean up our intermediate table
+          logger.info(s"Table $quotedOriginal already exists, dropping intermediate table $creationName")
+          sparkSession.sql(s"DROP TABLE IF EXISTS $creationName")
+        case e: Exception =>
+          logger.error(
+            s"Failed to rename $creationName to $quotedOriginal. Orphan table $creationName may need manual cleanup.",
+            e)
+          throw e
+      }
+    }
+  }
 
   def table(tableName: String, partitionFilters: String)(implicit sparkSession: SparkSession): DataFrame = {
 

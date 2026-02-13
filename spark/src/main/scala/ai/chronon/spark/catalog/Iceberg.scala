@@ -9,6 +9,8 @@ import scala.util.{Failure, Success, Try}
 
 case object Iceberg extends Format {
 
+  override def tableTypeString: String = "iceberg"
+
   override def tableProperties: Map[String, String] = {
     Map(
       "commit.retry.num-retries" -> "20", // default = 4

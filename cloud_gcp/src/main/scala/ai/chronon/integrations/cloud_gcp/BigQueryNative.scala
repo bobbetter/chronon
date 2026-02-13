@@ -4,6 +4,7 @@ import ai.chronon.spark.catalog.{Format, TableUtils}
 import com.google.cloud.bigquery._
 import com.google.cloud.spark.bigquery.v2.Spark35BigQueryTableProvider
 import org.apache.spark.sql.functions.{col, date_format, to_date}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
 case class PartitionColumnNotFoundException(message: String) extends UnsupportedOperationException(message)
@@ -17,6 +18,14 @@ case object BigQueryNative extends Format {
   override def table(tableName: String, partitionFilters: String)(implicit sparkSession: SparkSession): DataFrame = {
     throw new UnsupportedOperationException(
       "Direct table reads are not supported for BigQueryNative format. Use a stagingQuery with EngineType.BIGQUERY to export the data first.")
+  }
+
+  override def createTable(tableName: String,
+                           schema: StructType,
+                           partitionColumns: List[String],
+                           tableProperties: Map[String, String],
+                           semanticHash: scala.Option[String])(implicit sparkSession: SparkSession): Unit = {
+    throw new UnsupportedOperationException("Table creation is not supported for BigQueryNative format.")
   }
 
   override def primaryPartitions(tableName: String,
