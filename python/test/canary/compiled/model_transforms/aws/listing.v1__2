@@ -39,10 +39,11 @@
           "spark.sql.catalog.default_iceberg": "org.apache.iceberg.spark.SparkCatalog",
           "spark.sql.catalog.default_iceberg.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
           "spark.sql.catalog.default_iceberg.warehouse": "s3://zipline-warehouse-dev/data/tables/",
-          "spark.sql.catalog.spark_catalog": "org.apache.iceberg.spark.SparkCatalog",
+          "spark.sql.catalog.spark_catalog": "org.apache.iceberg.spark.SparkSessionCatalog",
           "spark.sql.catalog.spark_catalog.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
           "spark.sql.catalog.spark_catalog.warehouse": "s3://zipline-warehouse-dev/data/tables/",
           "spark.sql.defaultUrlStreamHandlerFactory.enabled": "false",
+          "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
           "spark.sql.shuffle.partitions": "10"
         },
         "modeConfigs": {
@@ -60,10 +61,11 @@
             "spark.sql.catalog.default_iceberg": "org.apache.iceberg.spark.SparkCatalog",
             "spark.sql.catalog.default_iceberg.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
             "spark.sql.catalog.default_iceberg.warehouse": "s3://zipline-warehouse-dev/data/tables/",
-            "spark.sql.catalog.spark_catalog": "org.apache.iceberg.spark.SparkCatalog",
+            "spark.sql.catalog.spark_catalog": "org.apache.iceberg.spark.SparkSessionCatalog",
             "spark.sql.catalog.spark_catalog.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
             "spark.sql.catalog.spark_catalog.warehouse": "s3://zipline-warehouse-dev/data/tables/",
             "spark.sql.defaultUrlStreamHandlerFactory.enabled": "false",
+            "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
             "spark.sql.shuffle.partitions": "10"
           }
         }
@@ -137,10 +139,11 @@
               "spark.sql.catalog.default_iceberg": "org.apache.iceberg.spark.SparkCatalog",
               "spark.sql.catalog.default_iceberg.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
               "spark.sql.catalog.default_iceberg.warehouse": "s3://zipline-warehouse-dev/data/tables/",
-              "spark.sql.catalog.spark_catalog": "org.apache.iceberg.spark.SparkCatalog",
+              "spark.sql.catalog.spark_catalog": "org.apache.iceberg.spark.SparkSessionCatalog",
               "spark.sql.catalog.spark_catalog.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
               "spark.sql.catalog.spark_catalog.warehouse": "s3://zipline-warehouse-dev/data/tables/",
               "spark.sql.defaultUrlStreamHandlerFactory.enabled": "false",
+              "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
               "spark.sql.shuffle.partitions": "10"
             },
             "modeConfigs": {
@@ -158,10 +161,11 @@
                 "spark.sql.catalog.default_iceberg": "org.apache.iceberg.spark.SparkCatalog",
                 "spark.sql.catalog.default_iceberg.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
                 "spark.sql.catalog.default_iceberg.warehouse": "s3://zipline-warehouse-dev/data/tables/",
-                "spark.sql.catalog.spark_catalog": "org.apache.iceberg.spark.SparkCatalog",
+                "spark.sql.catalog.spark_catalog": "org.apache.iceberg.spark.SparkSessionCatalog",
                 "spark.sql.catalog.spark_catalog.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
                 "spark.sql.catalog.spark_catalog.warehouse": "s3://zipline-warehouse-dev/data/tables/",
                 "spark.sql.defaultUrlStreamHandlerFactory.enabled": "false",
+                "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
                 "spark.sql.shuffle.partitions": "10"
               }
             }
@@ -625,11 +629,11 @@
                           "is_tablet": "IF(device_type = 'tablet', 1, 0)",
                           "listing_id": "listing_id",
                           "purchase_event": "IF(event_type = 'purchase', 1, 0)",
-                          "user_event_struct": "STRUCT(event_type, listing_id, unix_millis(TIMESTAMP(event_time_ms)) as timestamp)",
+                          "user_event_struct": "STRUCT(event_type, listing_id, event_time_ms as timestamp)",
                           "user_id": "user_id",
                           "view_event": "IF(event_type = 'view', 1, 0)"
                         },
-                        "timeColumn": "unix_millis(TIMESTAMP(event_time_ms))"
+                        "timeColumn": "event_time_ms"
                       },
                       "table": "data.aws_exports_user_activities__0",
                       "topic": "kafka://user-activities-v2/serde=custom/provider_class=ai.chronon.flink.deser.MockCustomSchemaProvider/schema_name=user-activities"
