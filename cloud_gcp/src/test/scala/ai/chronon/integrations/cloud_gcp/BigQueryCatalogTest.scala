@@ -2,7 +2,7 @@ package ai.chronon.integrations.cloud_gcp
 
 import ai.chronon.api.PartitionRange
 import ai.chronon.spark.catalog.{FormatProvider, Iceberg, TableUtils}
-import ai.chronon.spark.submission.SparkSessionBuilder
+import ai.chronon.spark.submission.{ChrononKryoRegistrator, SparkSessionBuilder}
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.google.cloud.spark.bigquery.SparkBigQueryUtil
@@ -44,7 +44,7 @@ class BigQueryCatalogTest extends AnyFlatSpec with MockitoSugar {
 //        "spark.sql.catalog.default_iceberg.warehouse" -> "gs://zipline-warehouse-canary/data/tables/",
 //        "spark.sql.catalog.default_iceberg.gcp.bigquery.location" -> "us-central1",
 //        "spark.sql.catalog.default_iceberg.gcp.bigquery.project-id" -> "canary-443022",
-//        "spark.kryo.registrator" -> classOf[ChrononIcebergKryoRegistrator].getName,
+//        "spark.kryo.registrator" -> classOf[ChrononKryoRegistrator].getName,
 //        "spark.sql.defaultUrlStreamHandlerFactory.enabled" -> false.toString,
       ))
   )
@@ -320,7 +320,7 @@ class BigQueryCatalogTest extends AnyFlatSpec with MockitoSugar {
   }
 
   it should "kryo serialization for ResolvingFileIO" in {
-    val registrator = new ChrononIcebergKryoRegistrator()
+    val registrator = new ChrononKryoRegistrator()
     val kryo = new Kryo();
     kryo.setReferences(true);
     registrator.registerClasses(kryo)
@@ -349,7 +349,7 @@ class BigQueryCatalogTest extends AnyFlatSpec with MockitoSugar {
   }
 
   it should "kryo serialization for GCSFileIO" in {
-    val registrator = new ChrononIcebergKryoRegistrator()
+    val registrator = new ChrononKryoRegistrator()
     val kryo = new Kryo();
     kryo.setReferences(true);
     kryo.setInstantiatorStrategy(new Kryo.DefaultInstantiatorStrategy(new StdInstantiatorStrategy))

@@ -32,7 +32,6 @@
           "spark.driver.memory": "1g",
           "spark.executor.cores": "1",
           "spark.executor.memory": "1g",
-          "spark.kryo.registrator": "ai.chronon.integrations.cloud_gcp.ChrononIcebergKryoRegistrator",
           "spark.sql.catalog.default_iceberg": "org.apache.iceberg.spark.SparkCatalog",
           "spark.sql.catalog.default_iceberg.catalog-impl": "org.apache.iceberg.gcp.bigquery.BigQueryMetastoreCatalog",
           "spark.sql.catalog.default_iceberg.gcp.bigquery.location": "us-central1",

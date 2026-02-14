@@ -49,7 +49,6 @@
           "spark.sql.catalog.default_iceberg.gcp_location": "us",
           "spark.sql.catalog.default_iceberg.gcp_project": "customer-zipline-dev",
           "spark.sql.defaultUrlStreamHandlerFactory.enabled": "false",
-          "spark.kryo.registrator": "ai.chronon.integrations.cloud_gcp.ChrononIcebergKryoRegistrator",
           "spark.sql.catalog.lakehouse_output": "org.apache.iceberg.spark.SparkCatalog",
           "spark.sql.catalog.lakehouse_output.catalog-impl": "org.apache.iceberg.gcp.bigquery.BigQueryMetastoreCatalog",
           "spark.sql.catalog.lakehouse_output.io-impl": "org.apache.iceberg.io.ResolvingFileIO",

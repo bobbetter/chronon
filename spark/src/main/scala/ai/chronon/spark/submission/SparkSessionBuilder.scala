@@ -90,16 +90,15 @@ object SparkSessionBuilder {
     // allow us to override the format by specifying env vars. This allows us to not have to worry about interference
     // between Spark sessions created in existing chronon tests that need the hive format and some specific tests
     // that require a format override like delta lake.
-    val (formatConfigs, kryoRegistrator) = sys.env.get(FormatTestEnvVar) match {
+    val formatConfigs = sys.env.get(FormatTestEnvVar) match {
       case Some("deltalake") =>
-        logger.info("Using the delta lake table format + kryo registrators")
-        val configMap = Map(
+        logger.info("Using the delta lake table format")
+        Map(
           "spark.sql.extensions" -> "io.delta.sql.DeltaSparkSessionExtension",
           "spark.sql.catalog.spark_catalog" -> "org.apache.spark.sql.delta.catalog.DeltaCatalog",
           "spark.chronon.table_write.format" -> "delta"
         )
-        (configMap, "ai.chronon.spark.submission.ChrononDeltaLakeKryoRegistrator")
-      case _ => (Map.empty, "ai.chronon.spark.submission.ChrononKryoRegistrator")
+      case _ => Map.empty[String, String]
     }
 
     // tack on format configs with additional configs
@@ -134,7 +133,7 @@ object SparkSessionBuilder {
       val sparkConf = new SparkConf()
       val kryoSerializerConfMap = Map(
         "spark.serializer" -> "org.apache.spark.serializer.KryoSerializer",
-        "spark.kryo.registrator" -> kryoRegistrator,
+        "spark.kryo.registrator" -> "ai.chronon.spark.submission.ChrononKryoRegistrator",
         "spark.kryoserializer.buffer.max" -> "2000m",
         "spark.kryo.referenceTracking" -> "false"
       ).filter { case (k, _) => !sparkConf.contains(k) }

@@ -16,7 +16,6 @@ default = Team(
             "spark.sql.catalog.bigquery_catalog.catalog-impl": "org.apache.iceberg.gcp.bigquery.BigQueryMetastoreCatalog",
             "spark.sql.catalog.bigquery_catalog.io-impl": "org.apache.iceberg.io.ResolvingFileIO",
             "spark.sql.defaultUrlStreamHandlerFactory.enabled": "false",
-            "spark.kryo.registrator": "ai.chronon.integrations.cloud_gcp.ChrononIcebergKryoRegistrator",
             "spark.chronon.coalesce.factor": "10",
             "spark.default.parallelism": "10",
             "spark.sql.shuffle.partitions": "10",

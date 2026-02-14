@@ -402,7 +402,6 @@
           "spark.driver.memory": "1g",
           "spark.executor.cores": "1",
           "spark.executor.memory": "1g",
-          "spark.kryo.registrator": "ai.chronon.spark.submission.ChrononKryoRegistrator",
           "spark.sql.catalog.spark_catalog": "org.apache.iceberg.spark.SparkCatalog",
           "spark.sql.catalog.spark_catalog.credential": "XtyCirtE0/o3pcTMdkLCh7LXVno=:i++cOG/+vHgZwU8Wnj5Qx3hIzHwvlr0rhaGJnDwIBTg=",
           "spark.sql.catalog.spark_catalog.header.X-Iceberg-Access-Delegation": "vended-credentials",
