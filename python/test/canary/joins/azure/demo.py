@@ -43,7 +43,7 @@ v2 = Join(
         # ),
         # Listing dimension attributes (point-in-time lookup)
         JoinPart(
-            group_by=dim_listings.v2,
+            group_by=dim_listings.v3,
         ),
         # Listing dimension attributes (point-in-time lookup)
         JoinPart(
@@ -58,12 +58,12 @@ v2 = Join(
 )
 
 # Example join with some derivations
-derivations_v2 = Join(
+derivations_v3 = Join(
     left=source,
     row_ids=["event_id"], # TODO -- kill this once the SPJ API change goes through
     right_parts=[
         JoinPart(
-            group_by=dim_listings.v2,
+            group_by=dim_listings.v3,
         ),
         # user activity features disabled as streaming sources aren't ready yet
         # JoinPart(

@@ -655,6 +655,111 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
     val eventsTable = "my_events_check_temporal"
     GroupByUploadTest.runAndValidateActualTemporalBatchData(namespace=namespace, sparkSession = spark, tableUtils = tableUtils, eventsTable = eventsTable)
   }
+
+  it should "handle decimal types with aggregations and derivations" in {
+    val namespace = testNamespace("decimal_comprehensive")
+    createDatabase(namespace)
+    tableUtils.sql(s"USE $namespace")
+
+    import org.apache.spark.sql.functions._
+    import org.apache.spark.sql.types.{DecimalType => SparkDecimalType}
+
+    val transactionsTable = s"${namespace}.transactions"
+    def ts(arg: String) = TsUtils.datetimeToTs(s"2023-$arg:00")
+
+    val transactionsColumns = Seq("user_id", "product_id", "price", "discount", "quantity", "ts", "ds")
+    val transactionsData = Seq(
+      ("user1", "prod_a", new java.math.BigDecimal("100.50"), new java.math.BigDecimal("10.05"), new java.math.BigDecimal("2.5"), ts("08-13 10:00"), "2023-08-13"),
+      ("user1", "prod_b", new java.math.BigDecimal("50.25"), new java.math.BigDecimal("5.00"), new java.math.BigDecimal("1.0"), ts("08-13 11:00"), "2023-08-13"),
+      ("user2", "prod_c", new java.math.BigDecimal("200.75"), new java.math.BigDecimal("20.00"), new java.math.BigDecimal("3.0"), ts("08-13 09:00"), "2023-08-13")
+    )
+    val transactionsRdd = spark.sparkContext.parallelize(transactionsData)
+    val transactionsDf = spark.createDataFrame(transactionsRdd).toDF(transactionsColumns: _*)
+      .withColumn("price", col("price").cast(SparkDecimalType(10, 2)))
+      .withColumn("discount", col("discount").cast(SparkDecimalType(8, 2)))
+      .withColumn("quantity", col("quantity").cast(SparkDecimalType(8, 2)))
+    transactionsDf.save(transactionsTable)
+    transactionsDf.show()
+
+    val userTransactionsGroupBy = Builders.GroupBy(
+      metaData = Builders.MetaData(namespace = namespace, name = "user_transactions"),
+      sources = Seq(
+        Builders.Source.events(
+          Builders.Query(selects = Builders.Selects("user_id", "price", "discount", "quantity", "ts")),
+          table = transactionsTable
+        )
+      ),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(
+        Builders.Aggregation(
+          operation = Operation.SUM,
+          inputColumn = "price",
+          windows = Seq(WindowUtils.Unbounded)
+        ),
+        Builders.Aggregation(
+          operation = Operation.SUM,
+          inputColumn = "discount",
+          windows = Seq(WindowUtils.Unbounded)
+        ),
+        Builders.Aggregation(
+          operation = Operation.AVERAGE,
+          inputColumn = "price",
+          windows = Seq(WindowUtils.Unbounded)
+        ),
+        Builders.Aggregation(
+          operation = Operation.LAST,
+          inputColumn = "quantity",
+          windows = Seq(WindowUtils.Unbounded)
+        )
+      ),
+      derivations = Seq(
+        Builders.Derivation(
+          name = "net_price",
+          expression = "price_sum - discount_sum"
+        ),
+        Builders.Derivation(
+          name = "discount_rate",
+          expression = "discount_sum / price_sum"
+        )
+      ),
+      accuracy = Accuracy.TEMPORAL
+    )
+
+    val kvStore = OnlineUtils.buildInMemoryKVStore("decimal_test")
+    val endDs = "2023-08-14"
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("decimal_test")
+
+    OnlineUtils.serve(tableUtils, kvStore, kvStoreFunc, "decimal_test", endDs, userTransactionsGroupBy, debug = false)
+
+    kvStoreFunc().show()
+
+    val api = new MockApi(kvStoreFunc, "decimal_test")
+    val fetcher = api.buildFetcher(debug = true)
+    val requests = Seq(
+      Fetcher.Request("user_transactions", Map("user_id" -> "user1"), Some(ts("08-14 12:00"))),
+      Fetcher.Request("user_transactions", Map("user_id" -> "user2"), Some(ts("08-14 12:00")))
+    )
+    val responseF = fetcher.fetchGroupBys(requests)
+    val responses = Await.result(responseF, 10.seconds)
+
+    // Validate user1: price_sum=150.75, discount_sum=15.05
+    // Expected: net_price = 150.75 - 15.05 = 135.70, discount_rate = 15.05 / 150.75 ≈ 0.0998
+    val user1Response = responses(0)
+    val user1NetPrice = user1Response.values.get("net_price").asInstanceOf[java.math.BigDecimal]
+    user1NetPrice.compareTo(new java.math.BigDecimal("135.70")) shouldBe 0
+
+    val user1DiscountRate = user1Response.values.get("discount_rate").asInstanceOf[java.math.BigDecimal]
+    math.abs(user1DiscountRate.doubleValue() - 0.0998) should be < 0.0001
+
+    // Validate user2: price_sum=200.75, discount_sum=20.00
+    // Expected: net_price = 200.75 - 20.00 = 180.75, discount_rate = 20.00 / 200.75 ≈ 0.0996
+    val user2Response = responses(1)
+    val user2NetPrice = user2Response.values.get("net_price").asInstanceOf[java.math.BigDecimal]
+    user2NetPrice.compareTo(new java.math.BigDecimal("180.75")) shouldBe 0
+
+    val user2DiscountRate = user2Response.values.get("discount_rate").asInstanceOf[java.math.BigDecimal]
+    math.abs(user2DiscountRate.doubleValue() - 0.0996) should be < 0.0001
+  }
 }
 
 object GroupByUploadTest {

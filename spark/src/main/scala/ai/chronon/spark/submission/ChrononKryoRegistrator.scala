@@ -115,6 +115,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "ai.chronon.online.serde.RowWrapper",
       "ai.chronon.online.fetcher.Fetcher$Request",
       "ai.chronon.spark.KeyWithHash",
+      "java.math.BigDecimal",
+      "java.math.BigInteger",
       "java.time.LocalDate",
       "java.time.LocalDateTime",
       "java.util.ArrayList",

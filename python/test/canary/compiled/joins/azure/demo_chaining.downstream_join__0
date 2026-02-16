@@ -86,7 +86,7 @@
                           "historicalBackfill": 0,
                           "onlineSchedule": "@daily"
                         },
-                        "name": "azure.dim_listings.v2",
+                        "name": "azure.dim_listings.v3",
                         "online": 1,
                         "team": "azure"
                       },
@@ -98,19 +98,19 @@
                                 "brief_description": "brief_description",
                                 "currency": "currency",
                                 "headline": "headline",
-                                "inventory_count": "CAST(inventory_count AS INT)",
+                                "inventory_count": "inventory_count",
                                 "is_active": "is_active",
                                 "is_expensive": "IF(price_cents > 10000, 1, 0)",
                                 "is_in_stock": "IF(inventory_count > 0, 1, 0)",
                                 "listing_id": "CAST(listing_id AS INT)",
                                 "long_description": "long_description",
                                 "main_image_path": "main_image_path",
-                                "merchant_id": "CAST(merchant_id AS INT)",
-                                "price_cents": "CAST(price_cents AS INT)",
+                                "merchant_id": "merchant_id",
+                                "price_cents": "price_cents",
                                 "primary_category": "primary_category",
                                 "secondary_image_paths": "secondary_image_paths",
                                 "tags": "tags",
-                                "weight_grams": "CAST(weight_grams AS INT)"
+                                "weight_grams": "weight_grams"
                               },
                               "startPartition": "2025-01-01"
                             },
