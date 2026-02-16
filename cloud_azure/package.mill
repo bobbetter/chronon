@@ -14,8 +14,10 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
   // Versions force-overridden to fix CVEs from uber-jar transitive deps.
   // Also used by patchAssemblyMetadata to write correct pom.properties.
   private val jettyVersion = "12.0.12"
-  private val avroVersion = "1.11.4"
+  private val avroVersion = build.Constants.avroVersion
   private val nimbusJoseJwtVersion = "9.37.4"
+  // Azure Cosmos SDK requires Jackson 2.17.2 (incompatible with 2.15.2)
+  private val jacksonVersion = "2.17.2"
 
   def excludeJackson(dep: mill.scalalib.Dep): mill.scalalib.Dep = {
     dep
@@ -67,11 +69,11 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
     // CLI argument parsing for Spark loader
     mvn"org.rogach::scallop:5.0.0",
   ).map(excludeJackson) ++ Seq(
-    mvn"com.fasterxml.jackson.core:jackson-core:2.17.2",
-    mvn"com.fasterxml.jackson.core:jackson-databind:2.17.2",
-    mvn"com.fasterxml.jackson.core:jackson-annotations:2.17.2",
-    mvn"com.fasterxml.jackson.module::jackson-module-scala:2.17.2",
-    mvn"com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.17.2",
+    mvn"com.fasterxml.jackson.core:jackson-core:$jacksonVersion",
+    mvn"com.fasterxml.jackson.core:jackson-databind:$jacksonVersion",
+    mvn"com.fasterxml.jackson.core:jackson-annotations:$jacksonVersion",
+    mvn"com.fasterxml.jackson.module::jackson-module-scala:$jacksonVersion",
+    mvn"com.fasterxml.jackson.datatype:jackson-datatype-jsr310:$jacksonVersion",
     // Reactor and Netty dependencies required by Cosmos SDK's internal ReactorNettyClient
     // (used even in Gateway mode). Force versions compatible with azure-cosmos 4.76.0.
     mvn"io.netty:netty-all:4.1.118.Final",
@@ -84,7 +86,10 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
     mvn"org.eclipse.jetty:jetty-server:$jettyVersion",
     mvn"org.eclipse.jetty:jetty-http:$jettyVersion",
     mvn"org.eclipse.jetty:jetty-xml:$jettyVersion",
-    mvn"org.apache.avro:avro:$avroVersion",
+    mvn"org.apache.avro:avro:$avroVersion"
+      .exclude("com.fasterxml.jackson.core" -> "jackson-core")
+      .exclude("com.fasterxml.jackson.core" -> "jackson-databind")
+      .exclude("com.fasterxml.jackson.core" -> "jackson-annotations"),
     mvn"net.minidev:json-smart:2.5.2",
   ).map(_.forceVersion())
 
@@ -149,14 +154,13 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
       mvn"org.testcontainers:testcontainers:2.0.2",
       // Azure Cosmos Spark Connector - only for tests, not included in assembly
       // This is a shaded JAR so we keep it out of the main module dependencies
-      // Exclude Jackson to avoid version conflicts with Spark's jackson-module-scala 2.15.2
+      // Exclude Jackson to avoid version conflicts
       excludeJackson(mvn"com.azure.cosmos.spark:azure-cosmos-spark_3-5_2-12:4.42.0"),
       // Force Jackson 2.17.2 to match azure-cosmos SDK requirements
-      // Also force jackson-module-scala to 2.17.2 for compatibility
-      mvn"com.fasterxml.jackson.core:jackson-core:2.17.2",
-      mvn"com.fasterxml.jackson.core:jackson-databind:2.17.2",
-      mvn"com.fasterxml.jackson.core:jackson-annotations:2.17.2",
-      mvn"com.fasterxml.jackson.module::jackson-module-scala:2.17.2",
+      mvn"com.fasterxml.jackson.core:jackson-core:$jacksonVersion",
+      mvn"com.fasterxml.jackson.core:jackson-databind:$jacksonVersion",
+      mvn"com.fasterxml.jackson.core:jackson-annotations:$jacksonVersion",
+      mvn"com.fasterxml.jackson.module::jackson-module-scala:$jacksonVersion",
     ).map(_.forceVersion())
     override def testFramework = "org.scalatest.tools.Framework"
     def forkArgs = build.Constants.commonTestForkArgs ++ Seq(
