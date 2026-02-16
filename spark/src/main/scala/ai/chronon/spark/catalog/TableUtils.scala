@@ -77,6 +77,14 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
 
   sparkSession.sparkContext.setLogLevel("ERROR")
 
+  def withJobDescription[T](desc: String)(block: => T): T = {
+    val sc = sparkSession.sparkContext
+    val prev = sc.getLocalProperty("spark.job.description")
+    sc.setJobDescription(s"[chronon] $desc")
+    try block
+    finally sc.setJobDescription(prev)
+  }
+
   def tableReachable(tableName: String, ignoreFailure: Boolean = false): Boolean = {
     Try { sparkSession.table(tableName) } match {
       case Success(_) => true

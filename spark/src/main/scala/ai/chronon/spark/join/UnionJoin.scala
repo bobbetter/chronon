@@ -225,10 +225,11 @@ object UnionJoin {
   }
 
   def computeJoinAndSave(joinConf: api.Join, dateRange: PartitionRange, semanticHash: Option[String] = None)(implicit
-      tableUtils: TableUtils): Unit = {
-    val resultDf = computeJoin(joinConf, dateRange)
-    logger.info(s"Saving output to ${joinConf.metaData.outputTable}")
-    resultDf.save(joinConf.metaData.outputTable, semanticHash = semanticHash)
-  }
+      tableUtils: TableUtils): Unit =
+    tableUtils.withJobDescription(s"UnionJoin(${joinConf.metaData.name}) $dateRange") {
+      val resultDf = computeJoin(joinConf, dateRange)
+      logger.info(s"Saving output to ${joinConf.metaData.outputTable}")
+      resultDf.save(joinConf.metaData.outputTable, semanticHash = semanticHash)
+    }
 
 }
