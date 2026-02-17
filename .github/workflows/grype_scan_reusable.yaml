@@ -37,6 +37,12 @@ jobs:
       - name: Build Cloud GCP JAR
         run: ./mill cloud_gcp\[${{ env.SCALA_VERSION }}\].assembly
 
+      - name: Build Cloud AWS JAR
+        run: ./mill cloud_aws\[${{ env.SCALA_VERSION }}\].assembly
+
+      - name: Build Cloud Azure JAR
+        run: ./mill cloud_azure\[${{ env.SCALA_VERSION }}\].assembly
+
       - name: Build Flink jar
         run: ./mill flink\[${{ env.SCALA_VERSION }}\].assembly
 
@@ -49,6 +55,8 @@ jobs:
           mkdir -p build_output
           cp out/service/${{ env.SCALA_VERSION }}/assembly.dest/out.jar build_output/service_assembly_deploy.jar
           cp out/cloud_gcp/${{ env.SCALA_VERSION }}/assembly.dest/out.jar build_output/cloud_gcp_lib_deploy.jar
+          cp out/cloud_aws/${{ env.SCALA_VERSION }}/assembly.dest/out.jar build_output/cloud_aws_lib_deploy.jar
+          cp out/cloud_azure/${{ env.SCALA_VERSION }}/assembly.dest/out.jar build_output/cloud_azure_lib_deploy.jar
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -74,6 +82,18 @@ jobs:
         with:
           name: cloud-gcp-jar
           path: out/cloud_gcp/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
+
+      - name: Upload Cloud AWS Jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-aws-jar
+          path: out/cloud_aws/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
+
+      - name: Upload Cloud Azure Jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-azure-jar
+          path: out/cloud_azure/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
 
       - name: Upload Flink Jar
         uses: actions/upload-artifact@v4
@@ -112,6 +132,18 @@ jobs:
           name: cloud-gcp-jar
           path: cloud-gcp-jar
 
+      - name: Download Cloud AWS Jar
+        uses: actions/download-artifact@v4
+        with:
+          name: cloud-aws-jar
+          path: cloud-aws-jar
+
+      - name: Download Cloud Azure Jar
+        uses: actions/download-artifact@v4
+        with:
+          name: cloud-azure-jar
+          path: cloud-azure-jar
+
       - name: Download Flink Jar
         uses: actions/download-artifact@v4
         with:
@@ -142,6 +174,16 @@ jobs:
         run: |
           echo "Scanning Cloud GCP JAR for vulnerabilities..."
           grype --only-fixed --fail-on low cloud-gcp-jar/out.jar
+
+      - name: Run Grype scan on Cloud AWS JAR
+        run: |
+          echo "Scanning Cloud AWS JAR for vulnerabilities..."
+          grype --only-fixed --fail-on low cloud-aws-jar/out.jar
+
+      - name: Run Grype scan on Cloud Azure JAR
+        run: |
+          echo "Scanning Cloud Azure JAR for vulnerabilities..."
+          grype --only-fixed --fail-on low cloud-azure-jar/out.jar
 
       - name: Run Grype scan on Flink JAR
         run: |
