@@ -22,8 +22,13 @@ import software.amazon.awssdk.services.dynamodb.model.{
   AttributeValue,
   BillingMode,
   CreateTableRequest,
+  DescribeImportRequest,
   DescribeTableRequest,
   GetItemRequest,
+  ImportStatus,
+  ImportTableRequest,
+  InputCompressionType,
+  InputFormat,
   KeySchemaElement,
   KeyType,
   ProvisionedThroughputExceededException,
@@ -32,9 +37,11 @@ import software.amazon.awssdk.services.dynamodb.model.{
   QueryResponse,
   ResourceInUseException,
   ResourceNotFoundException,
+  S3BucketSource,
   ScalarAttributeType,
   ScanRequest,
   ScanResponse,
+  TableCreationParameters,
   TimeToLiveSpecification,
   UpdateTimeToLiveRequest
 }
@@ -50,7 +57,7 @@ import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 
-class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient, conf: Map[String, String] = Map.empty) extends KVStore {
+class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String, String] = Map.empty) extends KVStore {
   import DynamoDBKVStoreConstants._
 
   protected val metricsContext: Metrics.Context = Metrics.Context(Metrics.Environment.KVStore).withSuffix("dynamodb")
@@ -323,7 +330,7 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient, conf: Map[String, Stri
 
     try {
       val startTs = System.currentTimeMillis()
-      val importResponse = dynamoDbClient.importTable(importRequest)
+      val importResponse = dynamoDbClient.importTable(importRequest).join()
       val importArn = importResponse.importTableDescription().importArn()
 
       logger.info(s"DynamoDB import initiated with ARN: $importArn for table: $tableName")
@@ -364,7 +371,7 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbClient, conf: Map[String, Stri
       Thread.sleep(pollIntervalMs)
       try {
         val describeRequest = DescribeImportRequest.builder().importArn(importArn).build()
-        val describeResponse = dynamoDbClient.describeImport(describeRequest)
+        val describeResponse = dynamoDbClient.describeImport(describeRequest).join()
         status = describeResponse.importTableDescription().importStatus()
       } catch {
         case e: Exception =>
