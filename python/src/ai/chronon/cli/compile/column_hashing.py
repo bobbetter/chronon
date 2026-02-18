@@ -3,9 +3,8 @@ import re
 from collections import defaultdict
 from typing import Dict, List
 
-from gen_thrift.api.ttypes import Derivation, ExternalPart, GroupBy, Join, Source
-
 from ai.chronon.group_by import get_output_col_names
+from gen_thrift.api.ttypes import Derivation, ExternalPart, GroupBy, Join, Source
 
 
 # Returns a map of output column to semantic hash, including derivations

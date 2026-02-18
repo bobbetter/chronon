@@ -3,6 +3,8 @@
 import json
 import logging
 import os
+import shutil
+import subprocess
 import tarfile
 import tempfile
 
@@ -15,6 +17,7 @@ from ai.chronon.repo.registry_client import (
     RegistryClient,
     RegistryError,
 )
+from ai.chronon.repo.utils import upload_to_blob_store
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -33,74 +36,98 @@ def admin():
     pass
 
 
-@admin.command(help="Load Zipline images from Docker Hub (or an air-gap bundle) into a private registry.")
+@admin.command("install", help="Install Zipline images into a private registry or the local Docker daemon.")
 @click.option(
-    "--token",
-    envvar="ZIPLINE_DOCKER_TOKEN",
+    "--api-token",
+    envvar="ZIPLINE_API_TOKEN",
     default=None,
-    help="Docker Hub OAT / PAT. Can also be set via ZIPLINE_DOCKER_TOKEN env var.",
+    help="Zipline API token for Docker Hub access. Can also be set via ZIPLINE_API_TOKEN env var. "
+    "Optional when using --bundle or when already authenticated to Docker Hub.",
 )
-@click.option("--version", "version", required=True, help="Zipline version to load (e.g. 0.1.42).")
+@click.option("--release", default="latest", show_default=True, help="Zipline release to load (e.g. 0.1.42).")
 @click.option(
     "--cloud",
     required=True,
     type=click.Choice(VALID_CLOUDS, case_sensitive=False),
     help="Cloud provider variant.",
 )
-@click.option("--registry", required=True, help="Target private registry URL (e.g. us-docker.pkg.dev/project/repo).")
+@click.option(
+    "--registry",
+    required=True,
+    help='Target registry URL (e.g. us-docker.pkg.dev/project/repo) or "local" for the local Docker daemon.',
+)
 @click.option(
     "--artifact-store",
     default=None,
-    help="Target blob store for engine JARs (e.g. gs://bucket/zipline or s3://bucket/zipline).",
+    help="Target store for engine JARs: a blob store URI (e.g. gs://bucket/zipline) or a local filesystem path.",
 )
 @click.option(
     "--bundle",
     default=None,
     type=click.Path(exists=True),
-    help="Path to air-gap tarball (alternative to --token for disconnected environments).",
+    help="Path to air-gap tarball (alternative to pulling from Docker Hub).",
 )
-@click.option("--docker-username", envvar="ZIPLINE_DOCKER_USERNAME", default="ziplineai", help="Docker Hub username.")
-def load(token, version, cloud, registry, artifact_store, bundle, docker_username):
-    """Load Zipline images into a private container registry."""
-    if not token and not bundle:
-        raise click.UsageError("Either --token (or ZIPLINE_DOCKER_TOKEN) or --bundle is required.")
+def load(api_token, release, cloud, registry, artifact_store, bundle):
+    """Load Zipline images into a private container registry or the local Docker daemon."""
+    is_local = registry == "local"
+
+    if is_local:
+        _check_docker_available()
 
     client = RegistryClient()
 
     if bundle:
-        results = _load_from_bundle(client, bundle, version, cloud, registry)
+        if is_local:
+            results = _load_locally_from_bundle(bundle, release, cloud)
+        else:
+            results = _load_from_bundle(client, bundle, release, cloud, registry)
     else:
-        results = _load_from_docker_hub(client, token, docker_username, version, cloud, registry)
+        if is_local:
+            results = _load_locally_from_docker_hub(api_token, release, cloud)
+        else:
+            results = _load_from_docker_hub(client, api_token, release, cloud, registry)
 
     if artifact_store:
-        jar_results = _upload_engine_jars_to_store(client, registry, version, cloud, artifact_store)
+        if bundle and is_local:
+            jar_results = _extract_engine_jars_from_bundle(bundle, cloud, release, artifact_store)
+        else:
+            source_registry = DOCKER_HUB_REGISTRY if is_local else registry
+            if is_local and api_token:
+                client.authenticate(DOCKER_HUB_REGISTRY, username="ziplineai", password=api_token)
+            jar_results = _upload_engine_jars_to_store(client, source_registry, release, cloud, artifact_store)
         results.extend(jar_results)
 
-    _print_summary(results, version, cloud, registry)
+    _print_summary(results, release, cloud, registry)
 
 
-def _load_from_docker_hub(client, token, username, version, cloud, target_registry):
+def _load_from_docker_hub(client, api_token, release, cloud, target_registry):
     """Pull images from Docker Hub and push to target registry."""
-    client.authenticate(DOCKER_HUB_REGISTRY, username=username, password=token)
+    if api_token:
+        client.authenticate(DOCKER_HUB_REGISTRY, username="ziplineai", password=api_token)
     _authenticate_target_registry(client, target_registry)
 
     results = []
 
-    for image_type, src_repo, dst_repo in [
-        ("managed", f"ziplineai/managed-{cloud}", f"ziplineai/managed-{cloud}"),
+    images = [
+        ("hub", f"ziplineai/hub-{cloud}", f"ziplineai/hub-{cloud}"),
+        ("frontend", "ziplineai/web-ui", "ziplineai/web-ui"),
         ("engine", f"ziplineai/engine-{cloud}", f"ziplineai/engine-{cloud}"),
-    ]:
-        console.print(f"[bold]Copying {src_repo}:{version}...[/bold]")
+    ]
+    if cloud == "gcp":
+        images.insert(1, ("eval", "ziplineai/eval-gcp", "ziplineai/eval-gcp"))
+
+    for image_type, src_repo, dst_repo in images:
+        console.print(f"[bold]Copying {src_repo}:{release}...[/bold]")
         try:
-            digest = client.copy_image(DOCKER_HUB_REGISTRY, src_repo, target_registry, dst_repo, version)
-            results.append((image_type, f"{target_registry}/{dst_repo}:{version}", digest, "ok"))
+            digest = client.copy_image(DOCKER_HUB_REGISTRY, src_repo, target_registry, dst_repo, release)
+            results.append((image_type, f"{target_registry}/{dst_repo}:{release}", digest, "ok"))
         except RegistryError as e:
-            results.append((image_type, f"{target_registry}/{dst_repo}:{version}", "", f"FAILED: {e}"))
+            results.append((image_type, f"{target_registry}/{dst_repo}:{release}", "", f"FAILED: {e}"))
 
     return results
 
 
-def _load_from_bundle(client, bundle_path, version, cloud, target_registry):
+def _load_from_bundle(client, bundle_path, release, cloud, target_registry):
     """Load images from an air-gap tarball and push to target registry."""
     _authenticate_target_registry(client, target_registry)
 
@@ -111,19 +138,152 @@ def _load_from_bundle(client, bundle_path, version, cloud, target_registry):
         with tarfile.open(bundle_path, "r:gz") as tar:
             tar.extractall(tmpdir)
 
-        for image_name in [f"managed-{cloud}", f"engine-{cloud}"]:
+        image_names = [f"hub-{cloud}", "web-ui", f"engine-{cloud}"]
+        if cloud == "gcp":
+            image_names.insert(1, "eval-gcp")
+
+        for image_name in image_names:
             archive_path = os.path.join(tmpdir, f"{image_name}.tar")
             if not os.path.exists(archive_path):
                 results.append((image_name, "", "", f"FAILED: {archive_path} not found in bundle"))
                 continue
 
             dst_repo = f"ziplineai/{image_name}"
-            console.print(f"[bold]Pushing {image_name}:{version} from bundle...[/bold]")
+            console.print(f"[bold]Pushing {image_name}:{release} from bundle...[/bold]")
             try:
-                digest = _push_oci_archive(client, archive_path, target_registry, dst_repo, version)
-                results.append((image_name, f"{target_registry}/{dst_repo}:{version}", digest, "ok"))
+                digest = _push_oci_archive(client, archive_path, target_registry, dst_repo, release)
+                results.append((image_name, f"{target_registry}/{dst_repo}:{release}", digest, "ok"))
             except RegistryError as e:
-                results.append((image_name, f"{target_registry}/{dst_repo}:{version}", "", f"FAILED: {e}"))
+                results.append((image_name, f"{target_registry}/{dst_repo}:{release}", "", f"FAILED: {e}"))
+
+    return results
+
+
+def _check_docker_available():
+    """Verify that the Docker CLI is on PATH and the daemon is running."""
+    if not shutil.which("docker"):
+        raise click.UsageError("Docker CLI not found on PATH. Install Docker to use --registry local.")
+    try:
+        subprocess.run(["docker", "info"], capture_output=True, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise click.UsageError("Docker daemon is not running. Start Docker to use --registry local.") from exc
+
+
+def _load_locally_from_docker_hub(api_token, release, cloud):
+    """Pull Zipline images from Docker Hub into the local Docker daemon."""
+    if api_token:
+        console.print("[bold]Logging in to Docker Hub...[/bold]")
+        proc = subprocess.run(
+            ["docker", "login", "-u", "ziplineai", "--password-stdin"],
+            input=api_token,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            console.print(f"[yellow]Warning: docker login failed: {proc.stderr.strip()}[/yellow]")
+
+    results = []
+    images = [
+        ("hub", f"ziplineai/hub-{cloud}"),
+        ("frontend", "ziplineai/web-ui"),
+    ]
+    if cloud == "gcp":
+        images.insert(1, ("eval", "ziplineai/eval-gcp"))
+
+    for image_type, repo in images:
+        ref = f"{repo}:{release}"
+        console.print(f"[bold]Pulling {ref}...[/bold]")
+        proc = subprocess.run(["docker", "pull", ref], capture_output=True, text=True)
+        if proc.returncode == 0:
+            results.append((image_type, ref, "", "ok"))
+        else:
+            results.append((image_type, ref, "", f"FAILED: {proc.stderr.strip()}"))
+
+    return results
+
+
+def _load_locally_from_bundle(bundle_path, release, cloud):
+    """Load Zipline images from an air-gap tarball into the local Docker daemon."""
+    results = []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        console.print(f"[bold]Extracting bundle {bundle_path}...[/bold]")
+        with tarfile.open(bundle_path, "r:gz") as tar:
+            tar.extractall(tmpdir)
+
+        image_names = [f"hub-{cloud}", "web-ui"]
+        if cloud == "gcp":
+            image_names.insert(1, "eval-gcp")
+
+        for image_name in image_names:
+            archive_path = os.path.join(tmpdir, f"{image_name}.tar")
+            if not os.path.exists(archive_path):
+                results.append((image_name, "", "", f"FAILED: {archive_path} not found in bundle"))
+                continue
+
+            console.print(f"[bold]Loading {image_name}:{release} from bundle...[/bold]")
+            proc = subprocess.run(["docker", "load", "-i", archive_path], capture_output=True, text=True)
+            if proc.returncode == 0:
+                results.append((image_name, f"ziplineai/{image_name}:{release}", "", "ok"))
+            else:
+                results.append((image_name, f"ziplineai/{image_name}:{release}", "", f"FAILED: {proc.stderr.strip()}"))
+
+    return results
+
+
+def _extract_engine_jars_from_bundle(bundle_path, cloud, release, artifact_store):
+    """Extract engine JARs from a bundle's engine image archive and copy them to the artifact store."""
+    results = []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        console.print("[bold]Extracting engine JARs from bundle...[/bold]")
+        with tarfile.open(bundle_path, "r:gz") as tar:
+            tar.extractall(tmpdir)
+
+        engine_archive = os.path.join(tmpdir, f"engine-{cloud}.tar")
+        if not os.path.exists(engine_archive):
+            results.append(("engine-jars", artifact_store, "", f"FAILED: engine-{cloud}.tar not found in bundle"))
+            return results
+
+        # Extract OCI archive
+        oci_dir = os.path.join(tmpdir, "oci")
+        with tarfile.open(engine_archive, "r") as tar:
+            tar.extractall(oci_dir)
+
+        manifest_path = os.path.join(oci_dir, "manifest.json")
+        with open(manifest_path) as f:
+            archive_manifests = json.load(f)
+
+        if not archive_manifests:
+            results.append(("engine-jars", artifact_store, "", "FAILED: no manifests in engine archive"))
+            return results
+
+        entry = archive_manifests[0]
+
+        # Extract JARs/JSON from layers into a separate dir to avoid manifest.json collision
+        jars_tmpdir = os.path.join(tmpdir, "jars_extract")
+        os.makedirs(jars_tmpdir, exist_ok=True)
+
+        for layer_file_rel in entry["Layers"]:
+            layer_path = os.path.join(oci_dir, layer_file_rel)
+            try:
+                with tarfile.open(layer_path, "r") as layer_tar:
+                    for member in layer_tar.getmembers():
+                        if member.name.endswith(".jar") or member.name.endswith(".json"):
+                            layer_tar.extract(member, jars_tmpdir)
+            except tarfile.ReadError:
+                continue
+
+        jars_dir = os.path.join(jars_tmpdir, "jars")
+        if os.path.isdir(jars_dir):
+            for jar_file in os.listdir(jars_dir):
+                local_path = os.path.join(jars_dir, jar_file)
+                remote_path = f"{artifact_store.rstrip('/')}/release/{release}/jars/{jar_file}"
+                try:
+                    upload_to_blob_store(local_path, remote_path)
+                    results.append(("jar", remote_path, "", "ok"))
+                except Exception as e:
+                    results.append(("jar", remote_path, "", f"FAILED: {e}"))
 
     return results
 
@@ -189,15 +349,15 @@ def _push_oci_archive(client, archive_path, registry, repo, tag):
         )
 
 
-def _upload_engine_jars_to_store(client, registry, version, cloud, artifact_store):
+def _upload_engine_jars_to_store(client, registry, release, cloud, artifact_store):
     """Extract JARs from the engine image and upload to a blob store."""
     results = []
     engine_repo = f"ziplineai/engine-{cloud}"
 
-    console.print(f"[bold]Extracting engine JARs from {engine_repo}:{version}...[/bold]")
+    console.print(f"[bold]Extracting engine JARs from {engine_repo}:{release}...[/bold]")
 
     try:
-        manifest_bytes, _, _ = client.get_manifest(registry, engine_repo, version)
+        manifest_bytes, _, _ = client.get_manifest(registry, engine_repo, release)
         manifest = json.loads(manifest_bytes)
     except RegistryError as e:
         results.append(("engine-jars", artifact_store, "", f"FAILED: {e}"))
@@ -221,9 +381,9 @@ def _upload_engine_jars_to_store(client, registry, version, cloud, artifact_stor
         if os.path.isdir(jars_dir):
             for jar_file in os.listdir(jars_dir):
                 local_path = os.path.join(jars_dir, jar_file)
-                remote_path = f"{artifact_store.rstrip('/')}/release/{version}/jars/{jar_file}"
+                remote_path = f"{artifact_store.rstrip('/')}/release/{release}/jars/{jar_file}"
                 try:
-                    _upload_to_blob_store(local_path, remote_path)
+                    upload_to_blob_store(local_path, remote_path)
                     results.append(("jar", remote_path, "", "ok"))
                 except Exception as e:
                     results.append(("jar", remote_path, "", f"FAILED: {e}"))
@@ -231,70 +391,12 @@ def _upload_engine_jars_to_store(client, registry, version, cloud, artifact_stor
     return results
 
 
-def _upload_to_blob_store(local_path, remote_path):
-    """Upload a file to GCS, S3, or Azure Blob Storage based on the URI scheme."""
-    if remote_path.startswith("gs://"):
-        _upload_to_gcs(local_path, remote_path)
-    elif remote_path.startswith("s3://"):
-        _upload_to_s3(local_path, remote_path)
-    elif remote_path.startswith("https://") and ".blob.core.windows.net" in remote_path:
-        _upload_to_azure_blob(local_path, remote_path)
-    else:
-        raise ValueError(f"Unsupported blob store scheme: {remote_path}")
-
-
-def _upload_to_gcs(local_path, gcs_path):
-    from google.cloud import storage as gcs_storage
-
-    parts = gcs_path[5:].split("/", 1)
-    bucket_name = parts[0]
-    blob_name = parts[1] if len(parts) > 1 else ""
-
-    gcs_client = gcs_storage.Client()
-    bucket = gcs_client.bucket(bucket_name)
-    blob = bucket.blob(blob_name)
-    blob.upload_from_filename(local_path)
-    logger.info(f"Uploaded {local_path} -> {gcs_path}")
-
-
-def _upload_to_s3(local_path, s3_path):
-    import boto3
-
-    parts = s3_path[5:].split("/", 1)
-    bucket_name = parts[0]
-    key = parts[1] if len(parts) > 1 else ""
-
-    s3 = boto3.client("s3")
-    s3.upload_file(local_path, bucket_name, key)
-    logger.info(f"Uploaded {local_path} -> {s3_path}")
-
-
-def _upload_to_azure_blob(local_path, azure_path):
-    from urllib.parse import urlparse
-
-    from azure.identity import DefaultAzureCredential
-    from azure.storage.blob import BlobServiceClient
-
-    credential = DefaultAzureCredential()
-    parsed = urlparse(azure_path)
-    account_url = f"{parsed.scheme}://{parsed.netloc}"
-    path_parts = parsed.path.lstrip("/").split("/", 1)
-    container = path_parts[0]
-    blob_name = path_parts[1] if len(path_parts) > 1 else ""
-
-    blob_service = BlobServiceClient(account_url=account_url, credential=credential)
-    blob_client = blob_service.get_blob_client(container=container, blob=blob_name)
-    with open(local_path, "rb") as f:
-        blob_client.upload_blob(f, overwrite=True)
-    logger.info(f"Uploaded {local_path} -> {azure_path}")
 
 
 def _authenticate_target_registry(client, registry):
     """Set up auth for the target registry using ambient cloud credentials."""
     if "pkg.dev" in registry:
         try:
-            import subprocess
-
             result = subprocess.run(
                 ["gcloud", "auth", "print-access-token"], capture_output=True, text=True, check=True
             )
@@ -317,8 +419,6 @@ def _authenticate_target_registry(client, registry):
             console.print("[yellow]Warning: Could not get ECR auth token. Target registry auth may fail.[/yellow]")
     elif ".azurecr.io" in registry:
         try:
-            import subprocess
-
             result = subprocess.run(
                 ["az", "acr", "login", "--name", registry.split(".")[0], "--expose-token"],
                 capture_output=True,
@@ -333,9 +433,11 @@ def _authenticate_target_registry(client, registry):
             console.print("[yellow]Warning: Could not get ACR token. Target registry auth may fail.[/yellow]")
 
 
-def _print_summary(results, version, cloud, registry):
+def _print_summary(results, release, cloud, registry):
     """Print a summary table of the load operation."""
-    table = Table(title=f"Zipline {version} ({cloud}) -> {registry}")
+    is_local = registry == "local"
+    title = f"Zipline {release} ({cloud}) -> local Docker" if is_local else f"Zipline {release} ({cloud}) -> {registry}"
+    table = Table(title=title)
     table.add_column("Type", style="cyan")
     table.add_column("Reference", style="white")
     table.add_column("Status", style="green")
@@ -351,9 +453,19 @@ def _print_summary(results, version, cloud, registry):
 
     if all_ok:
         console.print("\n[bold green]All artifacts loaded successfully.[/bold green]")
-        console.print("\nFor terraform.tfvars:")
-        console.print(f'  managed_image = "{registry}/ziplineai/managed-{cloud}:{version}"')
-        console.print(f'  engine_image  = "{registry}/ziplineai/engine-{cloud}:{version}"')
+        if is_local:
+            console.print("\nImages available in local Docker daemon:")
+            console.print(f"  ziplineai/hub-{cloud}:{release}")
+            if cloud == "gcp":
+                console.print(f"  ziplineai/eval-gcp:{release}")
+            console.print(f"  ziplineai/web-ui:{release}")
+        else:
+            console.print("\nFor terraform.tfvars:")
+            console.print(f'  hub_image      = "{registry}/ziplineai/hub-{cloud}:{release}"')
+            if cloud == "gcp":
+                console.print(f'  eval_image     = "{registry}/ziplineai/eval-gcp:{release}"')
+            console.print(f'  frontend_image = "{registry}/ziplineai/web-ui:{release}"')
+            console.print(f'  engine_image   = "{registry}/ziplineai/engine-{cloud}:{release}"')
     else:
         console.print("\n[bold red]Some artifacts failed to load. See errors above.[/bold red]")
         raise SystemExit(1)

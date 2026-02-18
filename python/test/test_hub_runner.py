@@ -208,7 +208,7 @@ class TestHubRunner:
             '--repo', canary,
             '--workflow-id', workflow_id,
             '--no-use-auth',
-            '--cloud-provider', 'gcp',
+            '--cloud', 'gcp',
         ])
 
         assert result.exit_code == 0
@@ -246,7 +246,7 @@ class TestHubRunner:
             '--repo', canary,
             '--workflow-id', workflow_id,
             '--no-use-auth',
-            '--cloud-provider', 'azure',
+            '--cloud', 'azure',
             '--customer-id', customer_id,
         ])
 
@@ -284,7 +284,7 @@ class TestHubRunner:
             '--repo', canary,
             '--workflow-id', workflow_id,
             '--no-use-auth',
-            '--cloud-provider', 'azure',
+            '--cloud', 'azure',
             # Intentionally not providing --customer-id
         ])
 

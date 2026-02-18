@@ -6,6 +6,8 @@ from copy import deepcopy
 from enum import Enum
 from typing import Any, Dict, Optional, Union
 
+from ai.chronon.cli.compile.display.console import console
+from ai.chronon.cli.logger import get_logger
 from gen_thrift.api.ttypes import Join, JoinPart, MetaData, Model, ModelTransforms, Team
 from gen_thrift.common.ttypes import (
     ClusterConfigProperties,
@@ -13,9 +15,6 @@ from gen_thrift.common.ttypes import (
     EnvironmentVariables,
     ExecutionInfo,
 )
-
-from ai.chronon.cli.compile.display.console import console
-from ai.chronon.cli.logger import get_logger
 
 logger = get_logger()
 

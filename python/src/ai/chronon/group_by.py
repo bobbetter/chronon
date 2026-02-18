@@ -18,11 +18,10 @@ import logging
 from copy import deepcopy
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
-import gen_thrift.api.ttypes as ttypes
-import gen_thrift.common.ttypes as common
-
 import ai.chronon.utils as utils
 import ai.chronon.windows as window_utils
+import gen_thrift.api.ttypes as ttypes
+import gen_thrift.common.ttypes as common
 
 OperationType = int  # type(zthrift.Operation.FIRST)
 

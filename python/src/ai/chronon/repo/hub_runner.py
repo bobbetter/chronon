@@ -7,16 +7,16 @@ from typing import Optional
 
 import click
 import requests
-from gen_thrift.planner.ttypes import Mode
 
 from ai.chronon.cli.formatter import Format, format_print, jsonify_exceptions_if_json_format
 from ai.chronon.cli.git_utils import get_current_branch, get_git_user_email
 from ai.chronon.click_helpers import handle_compile, handle_conf_not_found
 from ai.chronon.repo import hub_uploader, utils
 from ai.chronon.repo.constants import RunMode
-from ai.chronon.repo.utils import print_possible_confs
+from ai.chronon.repo.utils import print_possible_confs, upload_to_blob_store
 from ai.chronon.repo.zipline_hub import ZiplineHub
 from ai.chronon.schedule_validation import validate_at_most_daily_schedule
+from gen_thrift.planner.ttypes import Mode
 
 ALLOWED_DATE_FORMATS = ["%Y-%m-%d"]
 
@@ -52,7 +52,7 @@ def use_auth_option(func):
     )(func)
 def hub_url_option(func):
     return click.option(
-        "--hub_url", help="Zipline Hub address, e.g. http://localhost:3903", default=None
+        "--hub-url", help="Zipline Hub address, e.g. http://localhost:3903", default=None
     )(func)
 def format_option(func):
     return click.option(
@@ -64,7 +64,7 @@ def force_option(func):
     )(func)
 def cloud_provider_option(func):
     return click.option(
-        "--cloud-provider",
+        "--cloud",
         help="Cloud provider for the hub and related services",
         type=click.Choice(["aws", "gcp", "azure"], case_sensitive=False),
         required=False,
@@ -285,8 +285,8 @@ def schedule(repo, conf, hub_url, use_auth, format, force, skip_compile):
 @jsonify_exceptions_if_json_format
 @cloud_provider_option
 @customer_id_option
-def cancel(repo, hub_url, use_auth, format, workflow_id, cloud_provider, customer_id):
-    zipline_hub = _get_zipline_hub(hub_url, get_hub_conf_from_metadata_conf(DEFAULT_TEAM_METADATA_CONF, root_dir=repo, cloud_provider=cloud_provider, customer_id=customer_id), use_auth, format)
+def cancel(repo, hub_url, use_auth, format, workflow_id, cloud, customer_id):
+    zipline_hub = _get_zipline_hub(hub_url, get_hub_conf_from_metadata_conf(DEFAULT_TEAM_METADATA_CONF, root_dir=repo, cloud_provider=cloud, customer_id=customer_id), use_auth, format)
     response_json = zipline_hub.call_cancel_api(workflow_id)
     if format == Format.JSON:
         print(json.dumps(response_json, indent=4))
@@ -426,13 +426,12 @@ def eval(repo, conf, hub_url, use_auth, format, force, eval_url, generate_test_c
         if hub_conf.cloud_provider != "gcp":
             raise RuntimeError(" 🔴 Test data path is only supported for GCP")
         # import here to avoid dependency for other clouds.
-        from ai.chronon.repo.gcp import GcpRunner
-        zipline_artifact_prefix = hub_conf.artifact_prefix
+        zipline_artifact_prefix = hub_conf.artifact_prefix.rstrip("/") if hub_conf.artifact_prefix else ""
         if not zipline_artifact_prefix:
             print(" 🔴 Zipline artifact prefix is not set")
             sys.exit(1)
         url = f"eval/test_data/{os.path.basename(test_data_path)}"
-        GcpRunner.upload_gcs_blob(zipline_artifact_prefix.replace("gs://", ""), test_data_path, url)
+        upload_to_blob_store(test_data_path, f"{zipline_artifact_prefix}/{url}")
         parameters["testDataPath"] = f"{zipline_artifact_prefix}/{url}"
 
     hub_uploader.compute_and_upload_diffs(
@@ -489,7 +488,7 @@ def get_hub_conf_from_metadata_conf(metadata_path, root_dir=".", cloud_provider:
     cloud_provider = cloud_provider or common_env_map.get("CLOUD_PROVIDER")
 
     if not cloud_provider:
-        print(" 🔴 Cloud provider is not set. Please set the cloud provider using the --cloud-provider flag of the CLI, or the CLOUD_PROVIDER environment variable in the `default` team env common block and re-compile.")
+        print(" 🔴 Cloud provider is not set. Please set the cloud provider using the --cloud flag of the CLI, or the CLOUD_PROVIDER environment variable in the `default` team env common block and re-compile.")
         sys.exit(1)
 
     customer_id = customer_id or common_env_map.get("CUSTOMER_ID")

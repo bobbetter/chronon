@@ -18,6 +18,7 @@ Basic tests for namespace and breaking changes in run.py
 
 import json
 import os
+import tempfile
 import time
 
 import click
@@ -71,11 +72,12 @@ def test_download_jar(monkeypatch, sleepless):
     jar_path = utils.download_jar(
         "version", jar_type="uber", release_tag=None, spark_version="2.4.0"
     )
-    assert jar_path == "/tmp/spark_uber_2.11-version-assembly.jar"
+    tmp = tempfile.gettempdir()
+    assert jar_path == f"{tmp}/spark_uber_2.11-version-assembly.jar"
     jar_path = utils.download_jar(
         "version", jar_type="uber", release_tag=None, spark_version="3.1.1"
     )
-    assert jar_path == "/tmp/spark_uber_2.12-version-assembly.jar"
+    assert jar_path == f"{tmp}/spark_uber_2.12-version-assembly.jar"
     with pytest.raises(Exception):
         utils.download_jar(
             "version", jar_type="uber", release_tag=None, spark_version="2.1.0"

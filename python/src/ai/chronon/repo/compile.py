@@ -3,12 +3,12 @@ import os
 import sys
 
 import click
-from gen_thrift.api.ttypes import ConfType
 
 from ai.chronon.cli.compile.compile_context import CompileContext
 from ai.chronon.cli.compile.compiler import Compiler, CompileResult
 from ai.chronon.cli.compile.display.console import console
 from ai.chronon.cli.formatter import Format, jsonify_exceptions_if_json_format
+from gen_thrift.api.ttypes import ConfType
 
 
 @click.command(name="compile")

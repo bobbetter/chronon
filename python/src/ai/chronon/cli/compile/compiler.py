@@ -4,8 +4,6 @@ import traceback
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-from gen_thrift.api.ttypes import ConfType
-
 import ai.chronon.cli.compile.display.compiled_obj
 import ai.chronon.cli.compile.parse_configs as parser
 import ai.chronon.cli.logger as logger
@@ -16,6 +14,7 @@ from ai.chronon.cli.compile.display.console import console
 from ai.chronon.cli.compile.parse_teams import merge_team_execution_info
 from ai.chronon.cli.formatter import Format, PromptException
 from ai.chronon.types import MetaData
+from gen_thrift.api.ttypes import ConfType
 
 logger = logger.get_logger()
 

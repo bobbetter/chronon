@@ -3,14 +3,13 @@ import hashlib
 import json
 import os
 
-from gen_thrift.api.ttypes import Conf
-
 from ai.chronon.cli.formatter import Format, format_print
 from ai.chronon.repo import (
     FOLDER_NAME_TO_CLASS,
     FOLDER_NAME_TO_CONF_TYPE,
 )
 from ai.chronon.repo.zipline_hub import ZiplineHub
+from gen_thrift.api.ttypes import Conf
 
 
 def build_local_repo_hashmap(root_dir: str):

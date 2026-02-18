@@ -1,13 +1,13 @@
 
-# 🧠 Zipline AI: Sample Chronon Project
+# Zipline AI: Sample Chronon Project
 
-This repository demonstrates how to author and run [Chronon](https://chronon.ai) pipelines, including GroupBy and Join definitions.
+This repository demonstrates how to author and run [Chronon](https://chronon.ai) pipelines, including GroupBy and Join definitions, using AWS (Glue + Iceberg + S3) as the storage backend.
 
 Chronon is a unified platform for **feature engineering**, enabling **online and offline consistency**, **real-time feature generation**, and **historical backfills** from a single codebase.
 
 ---
 
-## 📦 Project Structure
+## Project Structure
 
 ```bash
 .
@@ -21,18 +21,21 @@ Chronon is a unified platform for **feature engineering**, enabling **online and
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-### 🛠️ Requirements
+### Requirements
 
 To get started, make sure you have the following set up:
 
-- ✅ **Python** 3.11 or higher
-- ✅ **Zipline CLI** — Install or upgrade via:
+- **Python** 3.11 or higher
+- **Zipline CLI** — Install or upgrade via:
   ```bash
   pip install --upgrade zipline-ai
-- ✅ `az` CLI — authenticated and configured with Azure CLI
-- ✅Add this to your shell config (e.g., .bashrc, .zshrc):
+- **AWS CLI** — authenticated and configured with the correct AWS account
+- **AWS credentials** — either:
+  - Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
+  - An IAM role with access to S3, Glue, and EMR
+- Add this to your shell config (e.g., .bashrc, .zshrc):
 
 ```bash
 # From the same directory as this README
@@ -46,7 +49,7 @@ Teams define metadata, Spark config, and environment variables.
 
 In [teams.py](teams.py), fill in the appropriate values in the TODO section.
 
-Make sure to replace placeholders like `<project-id>` and `<abfss-prefix>` with real values.
+Make sure to replace placeholders like `<customer_id>` and `<region>` with real values.
 
 ### Partition format and column
 Chronon expects tables to be date partitioned. Please specify the partition format and the column in teams.py here:
@@ -58,7 +61,7 @@ Chronon expects tables to be date partitioned. Please specify the partition form
 
 ---
 
-## 🧪 Compiling
+## Compiling
 
 To generate the user configs from the Python chronon objects to be used in the CLI, run:
 
@@ -70,7 +73,7 @@ This will create a `compiled` directory.
 
 ---
 
-## 🧪 Running a GroupBy or Join Backfill
+## Running a GroupBy or Join Backfill
 
 Run a GroupBy backfill from the CLI:
 
@@ -88,11 +91,11 @@ zipline run \
 --conf compiled/joins/<TEAM_NAME>/<JOIN_NAME>
 ```
 
-Results are written to the configured BigQuery + Iceberg tables under the `outputNamespace` (e.g. `default.group_by_v1` or `default.v1`).
+Results are written to the configured Iceberg tables under the `outputNamespace` (e.g. `default.group_by_v1` or `default.v1`).
 
 ---
 
-## 🧪 Running a GroupBy upload (GBU) job.
+## Running a GroupBy upload (GBU) job.
 
 ```bash
 zipline run \
@@ -101,11 +104,11 @@ zipline run \
 --ds <DATE>
 ```
 
-Results are written to the configured BigQuery + Iceberg tables under the `outputNamespace` (e.g. `default.group_by_v1` or `default.v1`).
+Results are written to the configured Iceberg tables under the `outputNamespace` (e.g. `default.group_by_v1` or `default.v1`).
 
 ---
 
-## 🧪 Upload the GBU values to online KV store.
+## Upload the GBU values to online KV store.
 
 ```bash
 zipline run \
@@ -116,7 +119,7 @@ zipline run \
 
 ---
 
-## 🧪 Upload the metadata of Chronon GroupBy or Join to online KV store for serving.
+## Upload the metadata of Chronon GroupBy or Join to online KV store for serving.
 
 GroupBy metadata upload:
 ```bash
@@ -134,7 +137,7 @@ zipline run \
 
 ---
 
-## 🧪 Fetch feature values from Chronon GroupBy or Join.
+## Fetch feature values from Chronon GroupBy or Join.
 
 **Note:** This is only for debugging purposes. Not for production use.
 
@@ -158,7 +161,7 @@ zipline run \
 
 ---
 
-## 📚 Resources
+## Resources
 
 - [Chronon Docs](https://chronon.ai)
 - [GitHub](https://github.com/airbnb/chronon)
@@ -166,6 +169,6 @@ zipline run \
 
 ---
 
-## 👋 About
+## About
 
-This project is a reference scaffold for building scalable feature pipelines using Chronon. It provides end-to-end visibility from source to production features.
+This project is a reference scaffold for building scalable feature pipelines using Chronon on AWS. It provides end-to-end visibility from source to production features.

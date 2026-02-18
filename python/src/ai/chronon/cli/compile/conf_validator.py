@@ -24,17 +24,6 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 import gen_thrift.common.ttypes as common
-from gen_thrift.api.ttypes import (
-    Accuracy,
-    Aggregation,
-    Derivation,
-    EventSource,
-    GroupBy,
-    Join,
-    JoinPart,
-    Source,
-)
-
 from ai.chronon.cli.compile.column_hashing import (
     compute_group_by_columns_hashes,
     get_pre_derived_group_by_columns,
@@ -46,6 +35,16 @@ from ai.chronon.cli.compile.version_utils import is_version_change
 from ai.chronon.logger import get_logger
 from ai.chronon.repo.serializer import thrift_simple_json
 from ai.chronon.utils import get_query, get_root_source
+from gen_thrift.api.ttypes import (
+    Accuracy,
+    Aggregation,
+    Derivation,
+    EventSource,
+    GroupBy,
+    Join,
+    JoinPart,
+    Source,
+)
 
 # Fields that indicate status of the entities.
 SKIPPED_FIELDS = frozenset(["metaData"])

@@ -4,7 +4,7 @@ from gen_thrift.api.ttypes import EventSource, Source
 """
 Example: Defining a Chronon Source from a Batch Table
 
-This example demonstrates how to configure a Chronon `Source` from a BigQuery or Hive table,
+This example demonstrates how to configure a Chronon `Source` from a table,
 with a clear event time column and selected fields for downstream feature computation.
 """
 

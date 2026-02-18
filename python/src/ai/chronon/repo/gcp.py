@@ -20,6 +20,7 @@ from ai.chronon.repo.utils import (
     get_environ_arg,
     retry_decorator,
     split_date_range,
+    upload_to_blob_store,
 )
 
 LOG = get_logger()
@@ -119,24 +120,6 @@ class GcpRunner(Runner):
             )
         except Exception as e:
             raise RuntimeError(f"Failed to download {source_blob_name}: {str(e)}") from e
-
-    @staticmethod
-    @retry_decorator(retries=2, backoff=5)
-    def upload_gcs_blob(bucket_name, source_file_name, destination_blob_name):
-        """Uploads a file to the bucket."""
-
-        try:
-            storage_client = storage.Client(project=GcpRunner.get_gcp_project_id())
-            bucket = storage_client.bucket(bucket_name)
-            blob = bucket.blob(destination_blob_name)
-            blob.upload_from_filename(source_file_name)
-
-            LOG.info(
-                f"File {source_file_name} uploaded to {destination_blob_name} in bucket {bucket_name}."
-            )
-            return f"gs://{bucket_name}/{destination_blob_name}"
-        except Exception as e:
-            raise RuntimeError(f"Failed to upload {source_file_name}: {str(e)}") from e
 
     @staticmethod
     def get_gcs_file_hash(remote_file_path: str) -> str:
@@ -246,8 +229,8 @@ class GcpRunner(Runner):
                 f"{extract_filename_from_path(metadata_conf_path)}",
             )
             gcs_files.append(
-                GcpRunner.upload_gcs_blob(
-                    self.warehouse_bucket, metadata_conf_path, destination_file_path
+                upload_to_blob_store(
+                    metadata_conf_path, f"gs://{self.warehouse_bucket}/{destination_file_path}"
                 )
             )
 
