@@ -401,9 +401,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload $VERSION ${{ needs.build_python_wheel.outputs.wheel_file }}
+          gh release upload --repo ${{ github.repository }} $VERSION ${{ needs.build_python_wheel.outputs.wheel_file }}
           for jar in jars/*.jar; do
-            gh release upload $VERSION "$jar"
+            gh release upload --repo ${{ github.repository }} $VERSION "$jar"
           done
 
       # Setup JFrog CLI
