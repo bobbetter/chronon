@@ -16,9 +16,21 @@ from ai.chronon.repo.constants import RunMode
 from ai.chronon.repo.utils import print_possible_confs, upload_to_blob_store
 from ai.chronon.repo.zipline_hub import ZiplineHub
 from ai.chronon.schedule_validation import validate_at_most_daily_schedule
+from gen_thrift.api.ttypes import DataKind
 from gen_thrift.planner.ttypes import Mode
 
 ALLOWED_DATE_FORMATS = ["%Y-%m-%d"]
+
+
+def _resolve_data_type_kinds(obj):
+    """Recursively replace numeric `kind` values in dataType objects with their string names."""
+    if isinstance(obj, dict):
+        if "kind" in obj and isinstance(obj["kind"], int):
+            obj = {**obj, "kind": DataKind._VALUES_TO_NAMES.get(obj["kind"], obj["kind"])}
+        return {k: _resolve_data_type_kinds(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_resolve_data_type_kinds(item) for item in obj]
+    return obj
 
 DEFAULT_TEAM_METADATA_CONF = "compiled/teams_metadata/default/default_team_metadata"
 
@@ -457,6 +469,94 @@ def eval(repo, conf, hub_url, use_auth, format, force, eval_url, generate_test_c
     if format == Format.JSON:
         print(json.dumps(response_json, indent=4))
         sys.exit(0)
+
+
+# zipline hub eval-table --table=data.loggable_response
+# evaluate table schema using eval API
+@hub.command()
+@repo_option
+@click.option("--table", required=True, help="Table name for schema evaluation (e.g., data.loggable_response)")
+@click.option("--conf", required=False, help="Optional conf to use for executionInfo. Takes precedence over --team.")
+@click.option("--team", required=False, help="Optional team name to use for executionInfo. If not specified, uses default team metadata.")
+@hub_url_option
+@use_auth_option
+@format_option
+@click.option(
+    "--eval-url",
+    help="Eval Server",
+    type=str,
+    default=None
+)
+@click.option(
+    "--engine-type",
+    help="Engine type for table evaluation",
+    type=str,
+    default="SPARK"
+)
+@jsonify_exceptions_if_json_format
+def eval_table(repo, table, conf, team, hub_url, use_auth, format, eval_url, engine_type):
+    """
+    Evaluate a table schema using the Zipline eval API.
+    Uses executionInfo from --conf if provided, otherwise from --team, otherwise from default team metadata.
+    Precedence: --conf > --team > default team metadata
+    """
+    # Use conf for executionInfo if provided (highest priority)
+    conf_execution_info, team_execution_info, default_execution_info = None, None, None
+    team = team or os.environ.get("TEAM")
+    if conf:
+        file_path = os.path.join(repo, conf)
+        conf_execution_info = get_metadata_map(file_path).get("executionInfo")
+    # Otherwise use team metadata if specified
+    elif team:
+        team_metadata_path = f"compiled/teams_metadata/{team}/{team}_team_metadata"
+        file_path = os.path.join(repo, team_metadata_path)
+        with open(file_path, "r") as f:
+            team_execution_info = json.load(f).get("executionInfo")
+    # Otherwise use default team metadata
+    else:
+        file_path = os.path.join(repo, DEFAULT_TEAM_METADATA_CONF)
+        with open(file_path, "r") as f:
+            default_execution_info = json.load(f).get("executionInfo")
+    execution_info = conf_execution_info or team_execution_info or default_execution_info
+    common_env = execution_info["env"]["common"]
+    common_env.update(os.environ) # Override conf with env vars if set
+    hub_conf = HubConfig(**{k: common_env.get(k.upper()) for k in HubConfig.__dataclass_fields__.keys()})
+    scope = ""
+    if hub_conf.auth_scope is not None:
+        scope = hub_conf.auth_scope
+    elif hub_conf.cloud_provider == "azure" and hub_conf.customer_id is not None:
+        scope = f"api://{hub_conf.customer_id}-zipline-auth"
+
+    zipline_hub = ZiplineHub(
+        base_url=hub_url or hub_conf.hub_url,
+        sa_name=hub_conf.sa_name,
+        use_auth=use_auth,
+        eval_url=eval_url or hub_conf.eval_url,
+        cloud_provider=hub_conf.cloud_provider,
+        scope=scope,
+        format=format
+    )
+
+    execution_info = conf_execution_info or team_execution_info or default_execution_info
+    response_json = zipline_hub.call_schema_api(
+        table_name=table,
+        engine_type=engine_type,
+        execution_info=execution_info,
+    )
+
+    success = response_json.get("success")
+    if format == Format.JSON:
+        response_json = _resolve_data_type_kinds(response_json)
+        print(json.dumps(response_json, indent=4))
+        sys.exit(0 if success else 1)
+
+    if success:
+        format_print(" 🟢 Schema evaluation finished successfully", format=format)
+        format_print(response_json.get("message"), format=format)
+    else:
+        format_print(" 🔴 Schema evaluation failed", format=format)
+        format_print(response_json.get("message"), format=format)
+        sys.exit(1)
 
 
 def get_hub_conf(conf_path, root_dir="."):

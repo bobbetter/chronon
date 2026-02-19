@@ -282,6 +282,28 @@ class ZiplineHub:
             format_print(f" ❌ Error calling eval API: {e}", format=self.format)
             raise e
 
+    def call_schema_api(
+        self,
+        table_name,
+        engine_type,
+        execution_info,
+        ):
+        if not self.eval_url:
+            raise ValueError(" ❌ Eval URL not specified. Please specify EVAL_URL in teams.py, environment variables, or use the --eval-url flag.")
+        _request = {
+            "tableName": table_name,
+            "engineType": engine_type,
+            "executionInfo": execution_info,
+        }
+        try:
+            response = requests.post(self.eval_url + "/schema", json=_request, headers=self.auth_headers(self.eval_url))
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            self.handle_unauth(e, "schema")
+            format_print(f" ❌ Error calling schema API: {e}", format=self.format)
+            raise e
+
     def call_workflow_start_api(
         self,
         conf_name,
