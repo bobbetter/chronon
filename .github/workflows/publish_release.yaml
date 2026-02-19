@@ -241,42 +241,6 @@ jobs:
           done
           echo "Artifacts uploaded to GCS"
 
-      - name: Attach Wheel to Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-        run: |
-          gh release upload $VERSION ${{ needs.build_python_wheel.outputs.wheel_file }}
-
-      - name: Attach JARs to Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          for jar in jars/*.jar; do
-            gh release upload $VERSION $jar
-          done
-
-      # Setup JFrog CLI
-      - name: Setup JFrog CLI
-        uses: jfrog/setup-jfrog-cli@v4
-
-      - name: Configure JFrog CLI with Access Token
-        run: |
-          jf config add artifactory \
-            --url="${{ secrets.ARTIFACTORY_URL }}" \
-            --access-token="${{ secrets.ARTIFACTORY_TOKEN }}" \
-            --interactive=false
-
-      - name: Upload Wheel to Artifactory
-        run: |
-          jf rt upload ${{ needs.build_python_wheel.outputs.wheel_file }} "wheels/${VERSION#v}/"
-
-      - name: Upload JARs to Artifactory
-        run: |
-          for jar in jars/*.jar; do
-            jf rt upload $jar "jars/${VERSION#v}/"
-          done
-
   promote-aws-candidate:
     runs-on: ubuntu-latest
     needs: [check_if_latest, build_python_wheel, download_passing_candidate_jars]
@@ -326,33 +290,6 @@ jobs:
                 aws s3 cp $jar s3://zipline-artifacts-${customer_id}/release/latest/jars/$jar_name --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
               fi
             done
-          done
-
-      - name: Attach JARs to Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          for jar in jars/*.jar; do
-            gh release upload $VERSION $jar
-          done
-
-      # Setup JFrog CLI
-      - name: Setup JFrog CLI
-        uses: jfrog/setup-jfrog-cli@v4
-        with:
-          version: latest
-
-      - name: Configure JFrog CLI with Access Token
-        run: |
-          jf config add artifactory \
-            --url="${{ secrets.ARTIFACTORY_URL }}" \
-            --access-token="${{ secrets.ARTIFACTORY_TOKEN }}" \
-            --interactive=false
-
-      - name: Upload JARs to Artifactory
-        run: |
-          for jar in jars/*.jar; do
-            jf rt upload $jar "jars/${VERSION#v}/"
           done
 
   promote-azure-candidate:
@@ -441,19 +378,37 @@ jobs:
           done
           echo "Artifacts uploaded to Azure Blob Storage"
 
-      - name: Attach JARs to Release
+  attach-release-assets:
+    runs-on: ubuntu-latest
+    needs: [promote-gcp-candidate, promote-aws-candidate, promote-azure-candidate, build_python_wheel]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all JARs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: passing-candidate-*-jars
+          path: jars/
+          merge-multiple: true
+
+      - name: Download Wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: zipline-ai-wheel
+
+      - name: Attach assets to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          gh release upload $VERSION ${{ needs.build_python_wheel.outputs.wheel_file }}
           for jar in jars/*.jar; do
-            gh release upload $VERSION $jar
+            gh release upload $VERSION "$jar"
           done
 
       # Setup JFrog CLI
       - name: Setup JFrog CLI
         uses: jfrog/setup-jfrog-cli@v4
-        with:
-          version: latest
 
       - name: Configure JFrog CLI with Access Token
         run: |
@@ -461,6 +416,10 @@ jobs:
             --url="${{ secrets.ARTIFACTORY_URL }}" \
             --access-token="${{ secrets.ARTIFACTORY_TOKEN }}" \
             --interactive=false
+
+      - name: Upload Wheel to Artifactory
+        run: |
+          jf rt upload ${{ needs.build_python_wheel.outputs.wheel_file }} "wheels/${VERSION#v}/"
 
       - name: Upload JARs to Artifactory
         run: |
@@ -582,7 +541,7 @@ jobs:
         run: rm -rf build_output
 
   on_fail_notify_slack:
-    needs: [ publish_to_pypi, promote-aws-candidate, promote-gcp-candidate, promote-azure-candidate, build_and_publish_docker, build_engine_images ]
+    needs: [ publish_to_pypi, promote-aws-candidate, promote-gcp-candidate, promote-azure-candidate, attach-release-assets, build_and_publish_docker, build_engine_images ]
     if: failure()
     runs-on: ubuntu-latest
 
@@ -610,7 +569,7 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    needs: [ promote-aws-candidate, promote-gcp-candidate, promote-azure-candidate, build_and_publish_docker, build_engine_images ]
+    needs: [ promote-aws-candidate, promote-gcp-candidate, promote-azure-candidate, attach-release-assets, build_and_publish_docker, build_engine_images ]
 
     steps:
       - name: Delete Artifacts
