@@ -10,6 +10,7 @@ from rich.prompt import Prompt
 from rich.syntax import Syntax
 
 from ai.chronon.cli.compile.display.console import console
+from ai.chronon.repo.constants import VALID_CLOUDS
 
 
 def _detect_shell_config():
@@ -55,7 +56,7 @@ def _apply_pythonpath(target_path):
     envvar="CLOUD_PROVIDER",
     help="Cloud provider to use.",
     required=True,
-    type=click.Choice(["aws", "gcp", "azure"], case_sensitive=False),
+    type=click.Choice(VALID_CLOUDS, case_sensitive=False),
 )
 @click.option(
     "--chronon-root",

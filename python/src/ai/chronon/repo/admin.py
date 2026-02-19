@@ -7,13 +7,25 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+from functools import partial
 
 import click
 from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
+)
 from rich.table import Table
 
+from ai.chronon.repo.constants import VALID_CLOUDS
 from ai.chronon.repo.registry_client import (
     DOCKER_HUB_REGISTRY,
+    ImageTarget,
     RegistryClient,
     RegistryError,
 )
@@ -22,16 +34,32 @@ from ai.chronon.repo.utils import upload_to_blob_store
 logger = logging.getLogger(__name__)
 console = Console()
 
-VALID_CLOUDS = ("gcp", "aws", "azure")
+
+def _app_images(cloud):
+    """Return the list of (image_type, repo) tuples for application images (excludes engine)."""
+    images = [
+        ("hub", f"ziplineai/hub-{cloud}"),
+        ("frontend", "ziplineai/web-ui"),
+    ]
+    if cloud == "gcp":
+        images.insert(1, ("eval", "ziplineai/eval-gcp"))
+    return images
 
 
-def _sha256(data: bytes) -> str:
-    import hashlib
+def _parse_registry(registry):
+    """Parse a registry URL into (host, repo_prefix)."""
+    from urllib.parse import urlparse
 
-    return hashlib.sha256(data).hexdigest()
+    parsed = urlparse(registry if "://" in registry else f"https://{registry}")
+    host = parsed.hostname or ""
+    prefix = parsed.path.strip("/")
+    return host, prefix
 
 
-@click.group(help="Administrative commands for loading Zipline images and verifying deployments.")
+# ── CLI commands ──────────────────────────────────────────────────────
+
+
+@click.group(help="Administrative commands for initializing repos, loading images, and verifying deployments.")
 def admin():
     pass
 
@@ -69,185 +97,246 @@ def admin():
 )
 def load(api_token, release, cloud, registry, artifact_store, bundle):
     """Load Zipline images into a private container registry or the local Docker daemon."""
-    is_local = registry == "local"
+    for name in ("urllib3", "ai.chronon.logger"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
-    if is_local:
+    if registry == "local":
         _check_docker_available()
-
-    client = RegistryClient()
-
-    if bundle:
-        if is_local:
-            results = _load_locally_from_bundle(bundle, release, cloud)
-        else:
-            results = _load_from_bundle(client, bundle, release, cloud, registry)
+        target = ImageTarget()
     else:
-        if is_local:
-            results = _load_locally_from_docker_hub(api_token, release, cloud)
-        else:
-            results = _load_from_docker_hub(client, api_token, release, cloud, registry)
+        client = RegistryClient()
+        host, prefix = _parse_registry(registry)
+        target = ImageTarget(client, host, prefix)
 
-    if artifact_store:
-        if bundle and is_local:
-            jar_results = _extract_engine_jars_from_bundle(bundle, cloud, release, artifact_store)
+    with _make_progress() as progress:
+        if bundle:
+            results = _load_from_bundle(target, bundle, release, cloud, progress)
         else:
-            source_registry = DOCKER_HUB_REGISTRY if is_local else registry
-            if is_local and api_token:
-                client.authenticate(DOCKER_HUB_REGISTRY, username="ziplineai", password=api_token)
-            jar_results = _upload_engine_jars_to_store(client, source_registry, release, cloud, artifact_store)
-        results.extend(jar_results)
+            results = _load_from_docker_hub(target, api_token, release, cloud, progress)
+
+        if artifact_store:
+            if bundle:
+                jar_results = _extract_engine_jars_from_bundle(bundle, cloud, release, artifact_store, progress)
+            else:
+                hub_client = RegistryClient()
+                _authenticate_docker_hub(hub_client, api_token)
+                jar_results = _upload_engine_jars_to_store(
+                    hub_client, DOCKER_HUB_REGISTRY, release, cloud, artifact_store, progress
+                )
+            results.extend(jar_results)
 
     _print_summary(results, release, cloud, registry)
 
 
-def _load_from_docker_hub(client, api_token, release, cloud, target_registry):
-    """Pull images from Docker Hub and push to target registry."""
-    if api_token:
-        client.authenticate(DOCKER_HUB_REGISTRY, username="ziplineai", password=api_token)
-    _authenticate_target_registry(client, target_registry)
-
-    results = []
-
-    images = [
-        ("hub", f"ziplineai/hub-{cloud}", f"ziplineai/hub-{cloud}"),
-        ("frontend", "ziplineai/web-ui", "ziplineai/web-ui"),
-        ("engine", f"ziplineai/engine-{cloud}", f"ziplineai/engine-{cloud}"),
-    ]
-    if cloud == "gcp":
-        images.insert(1, ("eval", "ziplineai/eval-gcp", "ziplineai/eval-gcp"))
-
-    for image_type, src_repo, dst_repo in images:
-        console.print(f"[bold]Copying {src_repo}:{release}...[/bold]")
-        try:
-            digest = client.copy_image(DOCKER_HUB_REGISTRY, src_repo, target_registry, dst_repo, release)
-            results.append((image_type, f"{target_registry}/{dst_repo}:{release}", digest, "ok"))
-        except RegistryError as e:
-            results.append((image_type, f"{target_registry}/{dst_repo}:{release}", "", f"FAILED: {e}"))
-
-    return results
+# ── Progress helpers ──────────────────────────────────────────────────
 
 
-def _load_from_bundle(client, bundle_path, release, cloud, target_registry):
-    """Load images from an air-gap tarball and push to target registry."""
-    _authenticate_target_registry(client, target_registry)
-
-    results = []
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        console.print(f"[bold]Extracting bundle {bundle_path}...[/bold]")
-        with tarfile.open(bundle_path, "r:gz") as tar:
-            tar.extractall(tmpdir)
-
-        image_names = [f"hub-{cloud}", "web-ui", f"engine-{cloud}"]
-        if cloud == "gcp":
-            image_names.insert(1, "eval-gcp")
-
-        for image_name in image_names:
-            archive_path = os.path.join(tmpdir, f"{image_name}.tar")
-            if not os.path.exists(archive_path):
-                results.append((image_name, "", "", f"FAILED: {archive_path} not found in bundle"))
-                continue
-
-            dst_repo = f"ziplineai/{image_name}"
-            console.print(f"[bold]Pushing {image_name}:{release} from bundle...[/bold]")
-            try:
-                digest = _push_oci_archive(client, archive_path, target_registry, dst_repo, release)
-                results.append((image_name, f"{target_registry}/{dst_repo}:{release}", digest, "ok"))
-            except RegistryError as e:
-                results.append((image_name, f"{target_registry}/{dst_repo}:{release}", "", f"FAILED: {e}"))
-
-    return results
+def _make_progress():
+    """Create a configured rich Progress bar."""
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[bold]{task.description}"),
+        BarColumn(),
+        DownloadColumn(),
+        TransferSpeedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    )
 
 
-def _check_docker_available():
-    """Verify that the Docker CLI is on PATH and the daemon is running."""
-    if not shutil.which("docker"):
-        raise click.UsageError("Docker CLI not found on PATH. Install Docker to use --registry local.")
-    try:
-        subprocess.run(["docker", "info"], capture_output=True, check=True)
-    except subprocess.CalledProcessError as exc:
-        raise click.UsageError("Docker daemon is not running. Start Docker to use --registry local.") from exc
+def _advance_progress(progress, task_id, n):
+    """Callback for on_progress: advance a rich progress bar task by *n* bytes."""
+    progress.update(task_id, advance=n)
 
 
-def _load_locally_from_docker_hub(api_token, release, cloud):
-    """Pull Zipline images from Docker Hub into the local Docker daemon."""
-    if api_token:
-        console.print("[bold]Logging in to Docker Hub...[/bold]")
-        proc = subprocess.run(
-            ["docker", "login", "-u", "ziplineai", "--password-stdin"],
-            input=api_token,
-            capture_output=True,
-            text=True,
+def _update_status(progress, task_id, base_label, layer_sizes, line):
+    """Callback for on_status: parse Docker pull/load output and advance progress.
+
+    Docker non-TTY output emits lines like ``a2abf6c4d29d: Pull complete``.
+    We advance the progress bar by one layer's worth of bytes per completed layer.
+    """
+    parts = line.split(": ", 1)
+    if len(parts) == 2:
+        _layer_id, status = parts
+        if status in ("Pull complete", "Already exists"):
+            if layer_sizes:
+                progress.update(task_id, advance=layer_sizes.pop(0))
+        elif status not in ("Waiting", "Pulling fs layer"):
+            progress.update(task_id, description=f"{base_label}: {status[:40]}")
+    elif "Digest:" in line or "Status:" in line:
+        progress.update(task_id, description=base_label)
+
+
+def _finish_task(progress, task_id, label, ok):
+    """Remove a progress task and print a completion or failure line."""
+    progress.remove_task(task_id)
+    if ok:
+        progress.console.print(f"✅ [bold green]{label}[/bold green]")
+    else:
+        progress.console.print(f"❌ [bold red]{label} FAILED[/bold red]")
+
+
+def _make_target_with_progress(target, progress, task_id, action_label, layer_sizes=None):
+    """Create an ImageTarget copy wired to a progress bar task."""
+    if target.is_local:
+        return target.with_callbacks(
+            on_status=partial(_update_status, progress, task_id, action_label, layer_sizes or []),
         )
-        if proc.returncode != 0:
-            console.print(f"[yellow]Warning: docker login failed: {proc.stderr.strip()}[/yellow]")
+    return target.with_callbacks(
+        on_progress=partial(_advance_progress, progress, task_id),
+    )
+
+
+# ── Image loading ─────────────────────────────────────────────────────
+
+
+def _load_from_docker_hub(target, api_token, release, cloud, progress):
+    """Pull images from Docker Hub."""
+    hub_client = None
+    if target.is_local:
+        if api_token:
+            console.print("[bold]Logging in to Docker Hub...[/bold]")
+            proc = subprocess.run(
+                ["docker", "login", "-u", "ziplineai", "--password-stdin"],
+                input=api_token,
+                capture_output=True,
+                text=True,
+            )
+            if proc.returncode != 0:
+                console.print(f"[yellow]Warning: docker login failed: {proc.stderr.strip()}[/yellow]")
+        # OCI client for querying image sizes (anonymous access suffices for public images)
+        hub_client = RegistryClient()
+        try:
+            _authenticate_docker_hub(hub_client, api_token)
+        except (click.UsageError, RegistryError):
+            hub_client.authenticate(DOCKER_HUB_REGISTRY)
+    else:
+        _authenticate_docker_hub(target.client, api_token)
+        _authenticate_target_registry(target.client, target.registry_host)
 
     results = []
-    images = [
-        ("hub", f"ziplineai/hub-{cloud}"),
-        ("frontend", "ziplineai/web-ui"),
-    ]
-    if cloud == "gcp":
-        images.insert(1, ("eval", "ziplineai/eval-gcp"))
+    size_client = hub_client if target.is_local else target.client
+    for image_type, repo in _app_images(cloud):
+        action = "Pulling" if target.is_local else "Copying"
+        label = f"{repo}:{release}"
 
-    for image_type, repo in images:
-        ref = f"{repo}:{release}"
-        console.print(f"[bold]Pulling {ref}...[/bold]")
-        proc = subprocess.run(["docker", "pull", ref], capture_output=True, text=True)
-        if proc.returncode == 0:
-            results.append((image_type, ref, "", "ok"))
-        else:
-            results.append((image_type, ref, "", f"FAILED: {proc.stderr.strip()}"))
+        total_bytes, layer_sizes = None, []
+        if size_client:
+            try:
+                if target.is_local:
+                    total_bytes, layer_sizes = size_client.get_layer_sizes(DOCKER_HUB_REGISTRY, repo, release)
+                else:
+                    total_bytes = size_client.get_total_image_size(DOCKER_HUB_REGISTRY, repo, release)
+            except RegistryError:
+                pass
 
+        task_id = progress.add_task(f"{action} {label}", total=total_bytes)
+        img_target = _make_target_with_progress(target, progress, task_id, f"{action} {label}", layer_sizes)
+
+        try:
+            digest = img_target.copy_from_hub(repo, release)
+            _finish_task(progress, task_id, label, ok=True)
+            results.append((image_type, target.ref(repo, release), digest, "ok"))
+        except RegistryError as e:
+            _finish_task(progress, task_id, label, ok=False)
+            results.append((image_type, target.ref(repo, release), "", f"FAILED: {e}"))
     return results
 
 
-def _load_locally_from_bundle(bundle_path, release, cloud):
-    """Load Zipline images from an air-gap tarball into the local Docker daemon."""
-    results = []
+def _get_bundle_image_size(archive_path):
+    """Return total bytes of all layer files in an OCI archive."""
+    with tarfile.open(archive_path, "r") as tar:
+        manifest_member = tar.getmember("manifest.json")
+        with tar.extractfile(manifest_member) as f:
+            archive_manifests = json.load(f)
+        if not archive_manifests:
+            return 0
+        entry = archive_manifests[0]
+        total = 0
+        for layer_rel in entry.get("Layers", []):
+            try:
+                member = tar.getmember(layer_rel)
+                total += member.size
+            except KeyError:
+                pass
+        return total
 
+
+def _load_from_bundle(target, bundle_path, release, cloud, progress):
+    """Load images from an air-gap tarball."""
+    if not target.is_local:
+        _authenticate_target_registry(target.client, target.registry_host)
+
+    results = []
     with tempfile.TemporaryDirectory() as tmpdir:
         console.print(f"[bold]Extracting bundle {bundle_path}...[/bold]")
         with tarfile.open(bundle_path, "r:gz") as tar:
             tar.extractall(tmpdir)
 
-        image_names = [f"hub-{cloud}", "web-ui"]
-        if cloud == "gcp":
-            image_names.insert(1, "eval-gcp")
-
-        for image_name in image_names:
+        for _image_type, repo in _app_images(cloud):
+            image_name = repo.split("/")[-1]
             archive_path = os.path.join(tmpdir, f"{image_name}.tar")
             if not os.path.exists(archive_path):
-                results.append((image_name, "", "", f"FAILED: {archive_path} not found in bundle"))
+                results.append((image_name, "", "", f"FAILED: {image_name}.tar not found in bundle"))
                 continue
 
-            console.print(f"[bold]Loading {image_name}:{release} from bundle...[/bold]")
-            proc = subprocess.run(["docker", "load", "-i", archive_path], capture_output=True, text=True)
-            if proc.returncode == 0:
-                results.append((image_name, f"ziplineai/{image_name}:{release}", "", "ok"))
-            else:
-                results.append((image_name, f"ziplineai/{image_name}:{release}", "", f"FAILED: {proc.stderr.strip()}"))
+            action = "Pushing" if not target.is_local else "Loading"
+            label = f"{image_name}:{release}"
 
+            try:
+                total_bytes = _get_bundle_image_size(archive_path)
+            except Exception:
+                total_bytes = None
+
+            task_id = progress.add_task(f"{action} {label}", total=total_bytes)
+            img_target = _make_target_with_progress(target, progress, task_id, f"{action} {label}")
+
+            try:
+                digest = img_target.load_archive(archive_path, repo, release)
+                _finish_task(progress, task_id, label, ok=True)
+                results.append((image_name, target.ref(repo, release), digest, "ok"))
+            except RegistryError as e:
+                _finish_task(progress, task_id, label, ok=False)
+                results.append((image_name, target.ref(repo, release), "", f"FAILED: {e}"))
     return results
 
 
-def _extract_engine_jars_from_bundle(bundle_path, cloud, release, artifact_store):
-    """Extract engine JARs from a bundle's engine image archive and copy them to the artifact store."""
+# ── Engine JAR extraction ─────────────────────────────────────────────
+
+
+def _extract_jars_from_layer(layer_path, dest_dir):
+    """Extract .jar and .json files from a single tar layer."""
+    try:
+        with tarfile.open(layer_path, "r") as tar:
+            for member in tar.getmembers():
+                if member.name.endswith(".jar") or member.name.endswith(".json"):
+                    tar.extract(member, dest_dir)
+    except tarfile.ReadError:
+        pass
+
+
+def _upload_jars_to_store(jars_dir, release, artifact_store):
+    """Upload all files in jars_dir to the artifact store."""
+    results = []
+    if os.path.isdir(jars_dir):
+        for jar_file in os.listdir(jars_dir):
+            local_path = os.path.join(jars_dir, jar_file)
+            remote_path = f"{artifact_store.rstrip('/')}/release/{release}/jars/{jar_file}"
+            try:
+                upload_to_blob_store(local_path, remote_path)
+                results.append(("jar", remote_path, "", "ok"))
+            except Exception as e:
+                results.append(("jar", remote_path, "", f"FAILED: {e}"))
+    return results
+
+
+def _extract_jars_from_oci_archive(archive_path, release, artifact_store):
+    """Extract JARs from an OCI image archive (docker save format) and upload to the artifact store."""
     results = []
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        console.print("[bold]Extracting engine JARs from bundle...[/bold]")
-        with tarfile.open(bundle_path, "r:gz") as tar:
-            tar.extractall(tmpdir)
-
-        engine_archive = os.path.join(tmpdir, f"engine-{cloud}.tar")
-        if not os.path.exists(engine_archive):
-            results.append(("engine-jars", artifact_store, "", f"FAILED: engine-{cloud}.tar not found in bundle"))
-            return results
-
-        # Extract OCI archive
         oci_dir = os.path.join(tmpdir, "oci")
-        with tarfile.open(engine_archive, "r") as tar:
+        with tarfile.open(archive_path, "r") as tar:
             tar.extractall(oci_dir)
 
         manifest_path = os.path.join(oci_dir, "manifest.json")
@@ -260,137 +349,168 @@ def _extract_engine_jars_from_bundle(bundle_path, cloud, release, artifact_store
 
         entry = archive_manifests[0]
 
-        # Extract JARs/JSON from layers into a separate dir to avoid manifest.json collision
         jars_tmpdir = os.path.join(tmpdir, "jars_extract")
         os.makedirs(jars_tmpdir, exist_ok=True)
 
         for layer_file_rel in entry["Layers"]:
             layer_path = os.path.join(oci_dir, layer_file_rel)
-            try:
-                with tarfile.open(layer_path, "r") as layer_tar:
-                    for member in layer_tar.getmembers():
-                        if member.name.endswith(".jar") or member.name.endswith(".json"):
-                            layer_tar.extract(member, jars_tmpdir)
-            except tarfile.ReadError:
-                continue
+            _extract_jars_from_layer(layer_path, jars_tmpdir)
 
-        jars_dir = os.path.join(jars_tmpdir, "jars")
-        if os.path.isdir(jars_dir):
-            for jar_file in os.listdir(jars_dir):
-                local_path = os.path.join(jars_dir, jar_file)
-                remote_path = f"{artifact_store.rstrip('/')}/release/{release}/jars/{jar_file}"
-                try:
-                    upload_to_blob_store(local_path, remote_path)
-                    results.append(("jar", remote_path, "", "ok"))
-                except Exception as e:
-                    results.append(("jar", remote_path, "", f"FAILED: {e}"))
+        results.extend(_upload_jars_to_store(os.path.join(jars_tmpdir, "jars"), release, artifact_store))
 
     return results
 
 
-def _push_oci_archive(client, archive_path, registry, repo, tag):
-    """Push a `docker save` OCI archive to a registry."""
+def _extract_engine_jars_from_bundle(bundle_path, cloud, release, artifact_store, progress):
+    """Extract engine JARs from a bundle's engine image archive and copy them to the artifact store."""
+    label = f"engine JARs (engine-{cloud}:{release})"
+    task_id = progress.add_task(f"Extracting {label}", total=None)
+
     with tempfile.TemporaryDirectory() as tmpdir:
-        with tarfile.open(archive_path, "r") as tar:
+        with tarfile.open(bundle_path, "r:gz") as tar:
             tar.extractall(tmpdir)
 
-        manifest_path = os.path.join(tmpdir, "manifest.json")
-        with open(manifest_path) as f:
-            archive_manifests = json.load(f)
+        engine_archive = os.path.join(tmpdir, f"engine-{cloud}.tar")
+        if not os.path.exists(engine_archive):
+            _finish_task(progress, task_id, label, ok=False)
+            return [("engine-jars", artifact_store, "", f"FAILED: engine-{cloud}.tar not found in bundle")]
 
-        if not archive_manifests:
-            raise RegistryError(f"No manifests found in {archive_path}")
+        results = _extract_jars_from_oci_archive(engine_archive, release, artifact_store)
 
-        entry = archive_manifests[0]
-
-        # Push config blob
-        config_file = os.path.join(tmpdir, entry["Config"])
-        with open(config_file, "rb") as f:
-            config_data = f.read()
-        config_digest = "sha256:" + _sha256(config_data)
-        if not client.blob_exists(registry, repo, config_digest):
-            client.push_blob(registry, repo, config_digest, config_data)
-
-        # Push layer blobs
-        layer_digests = []
-        layer_sizes = []
-        for layer_file_rel in entry["Layers"]:
-            layer_file = os.path.join(tmpdir, layer_file_rel)
-            with open(layer_file, "rb") as f:
-                layer_data = f.read()
-            layer_digest = "sha256:" + _sha256(layer_data)
-            layer_size = len(layer_data)
-            if not client.blob_exists(registry, repo, layer_digest):
-                client.push_blob(registry, repo, layer_digest, layer_data)
-            layer_digests.append(layer_digest)
-            layer_sizes.append(layer_size)
-
-        # Build and push manifest
-        manifest = {
-            "schemaVersion": 2,
-            "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
-            "config": {
-                "mediaType": "application/vnd.docker.container.image.v1+json",
-                "digest": config_digest,
-                "size": len(config_data),
-            },
-            "layers": [
-                {
-                    "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
-                    "digest": d,
-                    "size": s,
-                }
-                for d, s in zip(layer_digests, layer_sizes, strict=True)
-            ],
-        }
-        manifest_bytes = json.dumps(manifest, indent=2).encode()
-        return client.put_manifest(
-            registry, repo, tag, manifest_bytes, "application/vnd.docker.distribution.manifest.v2+json"
-        )
+    ok = all(status == "ok" for _, _, _, status in results)
+    _finish_task(progress, task_id, label, ok=ok)
+    return results
 
 
-def _upload_engine_jars_to_store(client, registry, release, cloud, artifact_store):
+def _upload_engine_jars_to_store(client, registry, release, cloud, artifact_store, progress):
     """Extract JARs from the engine image and upload to a blob store."""
     results = []
     engine_repo = f"ziplineai/engine-{cloud}"
-
-    console.print(f"[bold]Extracting engine JARs from {engine_repo}:{release}...[/bold]")
+    label = f"engine JARs ({engine_repo}:{release})"
 
     try:
-        manifest_bytes, _, _ = client.get_manifest(registry, engine_repo, release)
-        manifest = json.loads(manifest_bytes)
+        manifest = client.resolve_single_platform(registry, engine_repo, release)
     except RegistryError as e:
         results.append(("engine-jars", artifact_store, "", f"FAILED: {e}"))
         return results
+
+    total_bytes = sum(layer.get("size", 0) for layer in manifest.get("layers", []))
+    task_id = progress.add_task(f"Extracting {label}", total=total_bytes)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         for layer in manifest.get("layers", []):
             layer_digest = layer["digest"]
             layer_path = os.path.join(tmpdir, "layer.tar")
-            client.extract_blob_to_file(registry, engine_repo, layer_digest, layer_path)
+            client.extract_blob_to_file(
+                registry, engine_repo, layer_digest, layer_path,
+                on_progress=partial(_advance_progress, progress, task_id),
+            )
+            _extract_jars_from_layer(layer_path, tmpdir)
 
-            try:
-                with tarfile.open(layer_path, "r") as tar:
-                    for member in tar.getmembers():
-                        if member.name.endswith(".jar") or member.name.endswith(".json"):
-                            tar.extract(member, tmpdir)
-            except tarfile.ReadError:
-                continue
+        results.extend(_upload_jars_to_store(os.path.join(tmpdir, "jars"), release, artifact_store))
 
-        jars_dir = os.path.join(tmpdir, "jars")
-        if os.path.isdir(jars_dir):
-            for jar_file in os.listdir(jars_dir):
-                local_path = os.path.join(jars_dir, jar_file)
-                remote_path = f"{artifact_store.rstrip('/')}/release/{release}/jars/{jar_file}"
-                try:
-                    upload_to_blob_store(local_path, remote_path)
-                    results.append(("jar", remote_path, "", "ok"))
-                except Exception as e:
-                    results.append(("jar", remote_path, "", f"FAILED: {e}"))
-
+    ok = all(status == "ok" for _, _, _, status in results)
+    _finish_task(progress, task_id, label, ok=ok)
     return results
 
 
+# ── Auth helpers ──────────────────────────────────────────────────────
+
+
+def _check_docker_available():
+    """Verify that the Docker CLI is on PATH and the daemon is running."""
+    if not shutil.which("docker"):
+        raise click.UsageError("Docker CLI not found on PATH. Install Docker to use --registry local.")
+    try:
+        subprocess.run(["docker", "info"], capture_output=True, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise click.UsageError("Docker daemon is not running. Start Docker to use --registry local.") from exc
+
+
+def _authenticate_docker_hub(client, api_token):
+    """Authenticate the OCI client against Docker Hub using an API token or local Docker credentials."""
+    if api_token:
+        client.authenticate(DOCKER_HUB_REGISTRY, username="ziplineai", password=api_token)
+        return
+
+    username, password = _get_docker_credentials(DOCKER_HUB_REGISTRY)
+    if username and password:
+        client.authenticate(DOCKER_HUB_REGISTRY, username=username, password=password)
+        return
+
+    raise click.UsageError(
+        "Docker Hub credentials not found. Provide --api-token or log in with 'docker login'."
+    )
+
+
+def _base_domain(server):
+    """Extract base domain from a Docker config server key (e.g. 'https://index.docker.io/v1/' -> 'docker.io')."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(server if "://" in server else f"https://{server}")
+    hostname = parsed.hostname or ""
+    parts = hostname.rsplit(".", 2)
+    return ".".join(parts[-2:]) if len(parts) >= 2 else hostname
+
+
+def _get_docker_credentials(registry):
+    """Read credentials for a registry from the local Docker credential store (~/.docker/config.json)."""
+    config_path = os.path.join(os.path.expanduser("~"), ".docker", "config.json")
+    if not os.path.exists(config_path):
+        return None, None
+
+    with open(config_path) as f:
+        config = json.load(f)
+
+    registry_domain = _base_domain(registry)
+
+    for server, helper in config.get("credHelpers", {}).items():
+        if _base_domain(server) == registry_domain:
+            username, password = _creds_from_helper(helper, server)
+            if username:
+                return username, password
+
+    creds_store = config.get("credsStore")
+    if creds_store:
+        for server in config.get("auths", {}):
+            if _base_domain(server) == registry_domain:
+                username, password = _creds_from_helper(creds_store, server)
+                if username:
+                    return username, password
+
+    import base64
+
+    for server, entry in config.get("auths", {}).items():
+        if _base_domain(server) == registry_domain:
+            auth_b64 = entry.get("auth")
+            if auth_b64:
+                try:
+                    decoded = base64.b64decode(auth_b64).decode()
+                except Exception:
+                    continue
+                if ":" not in decoded:
+                    continue
+                username, password = decoded.split(":", 1)
+                return username, password
+
+    return None, None
+
+
+def _creds_from_helper(helper_name, server):
+    """Get credentials from a Docker credential helper binary."""
+    try:
+        proc = subprocess.run(
+            [f"docker-credential-{helper_name}", "get"],
+            input=server,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0:
+            creds = json.loads(proc.stdout)
+            return creds.get("Username"), creds.get("Secret")
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return None, None
 
 
 def _authenticate_target_registry(client, registry):
@@ -431,6 +551,9 @@ def _authenticate_target_registry(client, registry):
             )
         except (subprocess.CalledProcessError, FileNotFoundError):
             console.print("[yellow]Warning: Could not get ACR token. Target registry auth may fail.[/yellow]")
+
+
+# ── Output ────────────────────────────────────────────────────────────
 
 
 def _print_summary(results, release, cloud, registry):
@@ -483,7 +606,6 @@ def verify(hub_url, expected_version):
 
     results = []
 
-    # Check hub health via /debug
     console.print(f"[bold]Checking hub health at {hub_url}/debug...[/bold]")
     try:
         resp = http.request("GET", f"{hub_url}/debug", timeout=10.0)
@@ -503,7 +625,6 @@ def verify(hub_url, expected_version):
     except Exception as e:
         results.append(("Hub Health", f"{hub_url}/debug", "FAIL", str(e)))
 
-    # Check upload API reachability
     console.print(f"[bold]Checking upload API at {hub_url}/upload/v2/diff...[/bold]")
     try:
         resp = http.request("POST", f"{hub_url}/upload/v2/diff", timeout=10.0, body=b"{}")
@@ -514,7 +635,6 @@ def verify(hub_url, expected_version):
     except Exception as e:
         results.append(("Upload API", f"{hub_url}/upload/v2/diff", "FAIL", str(e)))
 
-    # Print results
     table = Table(title=f"Zipline Deployment Verification: {hub_url}")
     table.add_column("Check", style="cyan")
     table.add_column("Endpoint", style="white")

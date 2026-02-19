@@ -12,7 +12,7 @@ from ai.chronon.cli.formatter import Format, format_print, jsonify_exceptions_if
 from ai.chronon.cli.git_utils import get_current_branch, get_git_user_email
 from ai.chronon.click_helpers import handle_compile, handle_conf_not_found
 from ai.chronon.repo import hub_uploader, utils
-from ai.chronon.repo.constants import RunMode
+from ai.chronon.repo.constants import VALID_CLOUDS, RunMode
 from ai.chronon.repo.utils import print_possible_confs, upload_to_blob_store
 from ai.chronon.repo.zipline_hub import ZiplineHub
 from ai.chronon.schedule_validation import validate_at_most_daily_schedule
@@ -78,7 +78,7 @@ def cloud_provider_option(func):
     return click.option(
         "--cloud",
         help="Cloud provider for the hub and related services",
-        type=click.Choice(["aws", "gcp", "azure"], case_sensitive=False),
+        type=click.Choice(VALID_CLOUDS, case_sensitive=False),
         required=False,
         default=None,
     )(func)
