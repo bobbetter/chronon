@@ -340,7 +340,7 @@ def _push_oci_archive(client, archive_path, registry, repo, tag):
                     "digest": d,
                     "size": s,
                 }
-                for d, s in zip(layer_digests, layer_sizes)
+                for d, s in zip(layer_digests, layer_sizes, strict=True)
             ],
         }
         manifest_bytes = json.dumps(manifest, indent=2).encode()

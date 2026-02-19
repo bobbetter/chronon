@@ -28,7 +28,7 @@ jobs:
         run: |
           CURRENT_TAG=${{ env.VERSION }}
           LATEST_TAG=$(gh release view --json tagName --jq '.tagName')
-          
+
           if [ "$CURRENT_TAG" = "$LATEST_TAG" ]; then
             echo "IS_LATEST=true" >> $GITHUB_OUTPUT
           else
@@ -89,6 +89,79 @@ jobs:
     outputs:
       wheel_file: ${{ steps.build-wheel.outputs.wheel_file }}
 
+  download_passing_candidate_jars:
+    runs-on: ubuntu-latest
+    environment: main
+    needs: [check_if_latest]
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Configure GCP Credentials
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{secrets.GCP_MAIN_PROJECT_ID}}
+          workload_identity_provider: projects/${{secrets.GCP_MAIN_PROJECT_NUMBER}}/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-actions@${{secrets.GCP_MAIN_PROJECT_ID}}.iam.gserviceaccount.com
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{secrets.AWS_ACCOUNT_ID}}:role/github_actions
+          aws-region: ${{secrets.AWS_REGION}}
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Download GCP JARs
+        run: |
+          mkdir -p gcp-jars
+          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/* gcp-jars/
+
+      - name: Download AWS JARs
+        run: |
+          mkdir -p aws-jars
+          aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/ aws-jars/ --recursive
+
+      - name: Download Azure JARs
+        run: |
+          mkdir -p azure-jars
+          az storage blob download-batch \
+            --account-name ziplineai2 \
+            --auth-mode login \
+            --source dev-zipline-artifacts \
+            --pattern "release/passing-candidate/jars/*" \
+            --destination azure-jars/ \
+            --no-progress
+          mv azure-jars/release/passing-candidate/jars/* azure-jars/
+          rm -rf azure-jars/release
+
+      - name: Upload GCP JARs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: passing-candidate-gcp-jars
+          path: gcp-jars/
+
+      - name: Upload AWS JARs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: passing-candidate-aws-jars
+          path: aws-jars/
+
+      - name: Upload Azure JARs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: passing-candidate-azure-jars
+          path: azure-jars/
+
   publish_to_pypi:
     runs-on: ubuntu-latest
     needs: [build_python_wheel]
@@ -110,7 +183,7 @@ jobs:
 
   promote-gcp-candidate:
     runs-on: ubuntu-latest
-    needs: [check_if_latest, build_python_wheel]
+    needs: [check_if_latest, build_python_wheel, download_passing_candidate_jars]
 
     permissions:
       id-token: write
@@ -135,15 +208,16 @@ jobs:
         with:
           name: zipline-ai-wheel
 
-      - name: Copy GCS Artifacts from Canary Candidate
+      - name: Download GCP JARs
+        uses: actions/download-artifact@v4
+        with:
+          name: passing-candidate-gcp-jars
+          path: jars/
+
+      - name: Upload GCP Artifacts to Customer Buckets
         shell: bash
         run: |
           set -eo pipefail
-          # Download Jars from Canary for attaching to the release
-          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/flink_assembly_deploy.jar .
-          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/cloud_gcp_lib_deploy.jar .
-          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/service_assembly_deploy.jar .
-          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/connectors_pubsub_deploy.jar .
 
           for customer_id in "canary" "etsy" "base" "dev"; do
             echo "Uploading wheel to GCS for customer_id: $customer_id"
@@ -155,33 +229,15 @@ jobs:
               gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/latest/wheels/${{ needs.build_python_wheel.outputs.wheel_file }} --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
             fi
             echo "Uploading jars to GCS for customer_id: $customer_id"
-            gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/flink_assembly_deploy.jar gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/flink_assembly_deploy.jar
-            gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/flink_assembly_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
-              gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/flink_assembly_deploy.jar gs://zipline-artifacts-${customer_id}/release/latest/jars/flink_assembly_deploy.jar
-              gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/latest/jars/flink_assembly_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            fi
-
-            gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/cloud_gcp_lib_deploy.jar gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/cloud_gcp_lib_deploy.jar
-            gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/cloud_gcp_lib_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
-              gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/cloud_gcp_lib_deploy.jar gs://zipline-artifacts-${customer_id}/release/latest/jars/cloud_gcp_lib_deploy.jar
-              gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/latest/jars/cloud_gcp_lib_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            fi
-
-            gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/connectors_pubsub_deploy.jar gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/connectors_pubsub_deploy.jar
-            gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/connectors_pubsub_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
-              gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/connectors_pubsub_deploy.jar gs://zipline-artifacts-${customer_id}/release/latest/jars/connectors_pubsub_deploy.jar
-              gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/latest/jars/connectors_pubsub_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            fi
-
-            gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/service_assembly_deploy.jar gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/service_assembly_deploy.jar
-            gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/service_assembly_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
-              gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/service_assembly_deploy.jar gs://zipline-artifacts-${customer_id}/release/latest/jars/service_assembly_deploy.jar
-              gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/latest/jars/service_assembly_deploy.jar --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            fi
+            for jar in jars/*.jar; do
+              jar_name=$(basename $jar)
+              gcloud storage cp $jar gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/$jar_name
+              gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/$jar_name --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+              if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
+                gcloud storage cp $jar gs://zipline-artifacts-${customer_id}/release/latest/jars/$jar_name
+                gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/latest/jars/$jar_name --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+              fi
+            done
           done
           echo "Artifacts uploaded to GCS"
 
@@ -192,30 +248,13 @@ jobs:
         run: |
           gh release upload $VERSION ${{ needs.build_python_wheel.outputs.wheel_file }}
 
-      - name: Attach Flink Assembly Jar to Release
+      - name: Attach JARs to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload $VERSION flink_assembly_deploy.jar
-
-
-      - name: Attach Cloud GCP Jar to Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload $VERSION cloud_gcp_lib_deploy.jar
-
-      - name: Attach Pubsub connector Jar to Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload $VERSION connectors_pubsub_deploy.jar
-
-      - name: Attach Service Assembly Jar to Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload $VERSION service_assembly_deploy.jar
+          for jar in jars/*.jar; do
+            gh release upload $VERSION $jar
+          done
 
       # Setup JFrog CLI
       - name: Setup JFrog CLI
@@ -232,25 +271,15 @@ jobs:
         run: |
           jf rt upload ${{ needs.build_python_wheel.outputs.wheel_file }} "wheels/${VERSION#v}/"
 
-      - name: Upload Flink Assembly Jar to Artifactory
+      - name: Upload JARs to Artifactory
         run: |
-          jf rt upload flink_assembly_deploy.jar "jars/${VERSION#v}/"
-
-      - name: Upload Cloud GCP Jar to Artifactory
-        run: |
-          jf rt upload cloud_gcp_lib_deploy.jar "jars/${VERSION#v}/"
-
-      - name: Upload PubSub Connector Jar to Artifactory
-        run: |
-          jf rt upload connectors_pubsub_deploy.jar "jars/${VERSION#v}/"
-
-      - name: Upload Service Assembly Jar to Artifactory
-        run: |
-          jf rt upload service_assembly_deploy.jar "jars/${VERSION#v}/"
+          for jar in jars/*.jar; do
+            jf rt upload $jar "jars/${VERSION#v}/"
+          done
 
   promote-aws-candidate:
     runs-on: ubuntu-latest
-    needs: [check_if_latest, build_python_wheel]
+    needs: [check_if_latest, build_python_wheel, download_passing_candidate_jars]
 
     permissions:
       id-token: write
@@ -271,12 +300,16 @@ jobs:
         with:
           name: zipline-ai-wheel
 
-      - name: Copy AWS Artifacts from Canary Candidate
+      - name: Download AWS JARs
+        uses: actions/download-artifact@v4
+        with:
+          name: passing-candidate-aws-jars
+          path: jars/
+
+      - name: Upload AWS Artifacts to Customer Buckets
         shell: bash
         run: |
           set -eo pipefail
-          # Download Jars from Canary for attaching to the release
-          aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/cloud_aws_lib_deploy.jar .
 
           for customer_id in "canary" "base" "dev" "plaid"; do
             echo "Uploading wheel to S3 for customer_id: $customer_id"
@@ -286,25 +319,22 @@ jobs:
               aws s3 cp ${{ needs.build_python_wheel.outputs.wheel_file }} s3://zipline-artifacts-${customer_id}/release/latest/wheels/${{ needs.build_python_wheel.outputs.wheel_file }} --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
             fi
             echo "Uploading jars to S3 for customer_id: $customer_id"
-            aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/flink_assembly_deploy.jar s3://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/flink_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
-              aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/flink_assembly_deploy.jar s3://zipline-artifacts-${customer_id}/release/latest/jars/flink_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            fi
-            aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/cloud_aws_lib_deploy.jar s3://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/cloud_aws_lib_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
-              aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/cloud_aws_lib_deploy.jar s3://zipline-artifacts-${customer_id}/release/latest/jars/cloud_aws_lib_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            fi
-            aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/service_assembly_deploy.jar s3://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/service_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
-              aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/service_assembly_deploy.jar s3://zipline-artifacts-${customer_id}/release/latest/jars/service_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
-            fi
+            for jar in jars/*.jar; do
+              jar_name=$(basename $jar)
+              aws s3 cp $jar s3://zipline-artifacts-${customer_id}/release/${VERSION#v}/jars/$jar_name --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+              if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
+                aws s3 cp $jar s3://zipline-artifacts-${customer_id}/release/latest/jars/$jar_name --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+              fi
+            done
           done
 
-      - name: Attach Cloud AWS Jar to Release
+      - name: Attach JARs to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload $VERSION cloud_aws_lib_deploy.jar
+          for jar in jars/*.jar; do
+            gh release upload $VERSION $jar
+          done
 
       # Setup JFrog CLI
       - name: Setup JFrog CLI
@@ -319,13 +349,15 @@ jobs:
             --access-token="${{ secrets.ARTIFACTORY_TOKEN }}" \
             --interactive=false
 
-      - name: Upload Cloud AWS Jar to Artifactory
+      - name: Upload JARs to Artifactory
         run: |
-          jf rt upload cloud_aws_lib_deploy.jar "jars/${VERSION#v}/"
+          for jar in jars/*.jar; do
+            jf rt upload $jar "jars/${VERSION#v}/"
+          done
 
   promote-azure-candidate:
     runs-on: ubuntu-latest
-    needs: [check_if_latest, build_python_wheel]
+    needs: [check_if_latest, build_python_wheel, download_passing_candidate_jars]
     environment: main
 
     permissions:
@@ -348,25 +380,21 @@ jobs:
         with:
           name: zipline-ai-wheel
 
-      - name: Copy Azure Artifacts from Canary Candidate
+      - name: Download Azure JARs
+        uses: actions/download-artifact@v4
+        with:
+          name: passing-candidate-azure-jars
+          path: jars/
+
+      - name: Upload Azure Artifacts to Customer Buckets
         shell: bash
         run: |
           set -eo pipefail
           ACCOUNT="ziplineai2"
           CONTAINER="dev-zipline-artifacts"
 
-          # Download Jar from Azure Blob Storage Canary for attaching to the release
-          az storage blob download \
-            --account-name $ACCOUNT \
-            --auth-mode login \
-            --container-name $CONTAINER \
-            --name release/passing-candidate/jars/cloud_azure_lib_deploy.jar \
-            --file cloud_azure_lib_deploy.jar
-
-          # Upload wheel to Azure Blob Storage for various environments
           for customer_id in "canary" "base" "dev"; do
             echo "Uploading wheel to Azure for customer_id: $customer_id"
-            # Note: Azure storage blob metadata syntax differs from GCS/S3
             az storage blob upload \
               --account-name $ACCOUNT \
               --auth-mode login \
@@ -388,76 +416,38 @@ jobs:
             fi
 
             echo "Uploading jars to Azure for customer_id: $customer_id"
-            # Upload flink_assembly_deploy.jar
-            az storage blob copy start \
-              --account-name $ACCOUNT \
-              --auth-mode login \
-              --destination-blob release/${VERSION#v}/jars/flink_assembly_deploy.jar \
-              --destination-container $CONTAINER \
-              --source-blob release/passing-candidate/jars/flink_assembly_deploy.jar \
-              --source-container $CONTAINER \
-              --source-account-name $ACCOUNT
-
-            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
-              az storage blob copy start \
+            for jar in jars/*.jar; do
+              jar_name=$(basename $jar)
+              az storage blob upload \
                 --account-name $ACCOUNT \
                 --auth-mode login \
-                --destination-blob release/latest/jars/flink_assembly_deploy.jar \
-                --destination-container $CONTAINER \
-                --source-blob release/passing-candidate/jars/flink_assembly_deploy.jar \
-                --source-container $CONTAINER \
-                --source-account-name $ACCOUNT
-            fi
+                --container-name $CONTAINER \
+                --file $jar \
+                --name release/${VERSION#v}/jars/$jar_name \
+                --tier cool \
+                --overwrite
 
-            # Upload cloud_azure_lib_deploy.jar
-            az storage blob copy start \
-              --account-name $ACCOUNT \
-              --auth-mode login \
-              --destination-blob release/${VERSION#v}/jars/cloud_azure_lib_deploy.jar \
-              --destination-container $CONTAINER \
-              --source-blob release/passing-candidate/jars/cloud_azure_lib_deploy.jar \
-              --source-container $CONTAINER \
-              --source-account-name $ACCOUNT
-
-            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
-              az storage blob copy start \
-                --account-name $ACCOUNT \
-                --auth-mode login \
-                --destination-blob release/latest/jars/cloud_azure_lib_deploy.jar \
-                --destination-container $CONTAINER \
-                --source-blob release/passing-candidate/jars/cloud_azure_lib_deploy.jar \
-                --source-container $CONTAINER \
-                --source-account-name $ACCOUNT
-            fi
-
-            # Upload service_assembly_deploy.jar
-            az storage blob copy start \
-              --account-name $ACCOUNT \
-              --auth-mode login \
-              --destination-blob release/${VERSION#v}/jars/service_assembly_deploy.jar \
-              --destination-container $CONTAINER \
-              --source-blob release/passing-candidate/jars/service_assembly_deploy.jar \
-              --source-container $CONTAINER \
-              --source-account-name $ACCOUNT
-
-            if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
-              az storage blob copy start \
-                --account-name $ACCOUNT \
-                --auth-mode login \
-                --destination-blob release/latest/jars/service_assembly_deploy.jar \
-                --destination-container $CONTAINER \
-                --source-blob release/passing-candidate/jars/service_assembly_deploy.jar \
-                --source-container $CONTAINER \
-                --source-account-name $ACCOUNT
-            fi
+              if [ "${{ needs.check_if_latest.outputs.is_latest }}" == "true" ]; then
+                az storage blob upload \
+                  --account-name $ACCOUNT \
+                  --auth-mode login \
+                  --container-name $CONTAINER \
+                  --file $jar \
+                  --name release/latest/jars/$jar_name \
+                  --tier cool \
+                  --overwrite
+              fi
+            done
           done
           echo "Artifacts uploaded to Azure Blob Storage"
 
-      - name: Attach Cloud Azure Jar to Release
+      - name: Attach JARs to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload $VERSION cloud_azure_lib_deploy.jar
+          for jar in jars/*.jar; do
+            gh release upload $VERSION $jar
+          done
 
       # Setup JFrog CLI
       - name: Setup JFrog CLI
@@ -472,14 +462,63 @@ jobs:
             --access-token="${{ secrets.ARTIFACTORY_TOKEN }}" \
             --interactive=false
 
-      - name: Upload Cloud Azure Jar to Artifactory
+      - name: Upload JARs to Artifactory
         run: |
-          jf rt upload cloud_azure_lib_deploy.jar "jars/${VERSION#v}/"
+          for jar in jars/*.jar; do
+            jf rt upload $jar "jars/${VERSION#v}/"
+          done
+
+  build_engine_images:
+    runs-on: ubuntu-latest
+    needs: [check_if_latest, download_passing_candidate_jars]
+    strategy:
+      fail-fast: true
+      matrix:
+        cloud: [gcp, aws, azure]
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Download JARs
+        uses: actions/download-artifact@v4
+        with:
+          name: passing-candidate-${{ matrix.cloud }}-jars
+          path: build_output/engine/
+
+      - name: Create engine manifest
+        run: |
+          echo '{"version": "${{ env.VERSION }}", "cloud": "${{ matrix.cloud }}", "commit": "${{ github.sha }}"}' > build_output/engine_manifest.json
+
+      - name: Build and push engine image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/engine/Dockerfile
+          build-args: |
+            VERSION=${{ env.VERSION }}
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ziplineai/engine-${{ matrix.cloud }}:${{ github.sha }}
+            ${{ env.VERSION && format('ziplineai/engine-{0}:{1}', matrix.cloud, env.VERSION) || '' }}
+            ${{ needs.check_if_latest.outputs.is_latest == 'true' && format('ziplineai/engine-{0}:latest', matrix.cloud) || '' }}
 
   build_and_publish_docker:
     runs-on: ubuntu-latest
     environment: main
-    needs: [ check_if_latest ]
+    needs: [check_if_latest, download_passing_candidate_jars]
     permissions:
       contents: read
       packages: read
@@ -499,50 +538,31 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Configure GCP Credentials for Main Project
-        uses: google-github-actions/auth@v2
+      - name: Download GCP JARs
+        uses: actions/download-artifact@v4
         with:
-          project_id: ${{secrets.GCP_MAIN_PROJECT_ID}}
-          workload_identity_provider: projects/${{secrets.GCP_MAIN_PROJECT_NUMBER}}/locations/global/workloadIdentityPools/github-actions/providers/github
-          service_account: github-actions@${{secrets.GCP_MAIN_PROJECT_ID}}.iam.gserviceaccount.com
+          name: passing-candidate-gcp-jars
+          path: gcp-jars/
 
-      - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Configure AWS Credentials for Main Project
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Download AWS JARs
+        uses: actions/download-artifact@v4
         with:
-          role-to-assume: arn:aws:iam::${{secrets.AWS_ACCOUNT_ID}}:role/github_actions
-          aws-region: ${{secrets.AWS_REGION}}
+          name: passing-candidate-aws-jars
+          path: aws-jars/
 
-      - name: Azure Login
-        uses: azure/login@v2
+      - name: Download Azure JARs
+        uses: actions/download-artifact@v4
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Download JAR files from Canary Candidate
-        run: |
-          # Download Jars from Canary for Docker build
-          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/cloud_gcp_lib_deploy.jar .
-          aws s3 cp s3://zipline-artifacts-canary/release/passing-candidate/jars/cloud_aws_lib_deploy.jar .
-          az storage blob download \
-            --account-name ziplineai2 \
-            --auth-mode login \
-            --container-name dev-zipline-artifacts \
-            --name release/passing-candidate/jars/cloud_azure_lib_deploy.jar \
-            --file cloud_azure_lib_deploy.jar
-          gcloud storage cp gs://zipline-artifacts-canary/release/passing-candidate/jars/service_assembly_deploy.jar .
+          name: passing-candidate-azure-jars
+          path: azure-jars/
 
       - name: Prepare build artifacts
         run: |
-          # Copy jars to build_output as docker build can't access the downloaded files directly
           mkdir -p build_output
-          cp service_assembly_deploy.jar build_output/
-          cp cloud_aws_lib_deploy.jar build_output/
-          cp cloud_gcp_lib_deploy.jar build_output/
-          cp cloud_azure_lib_deploy.jar build_output/
+          cp gcp-jars/cloud_gcp_lib_deploy.jar build_output/
+          cp aws-jars/cloud_aws_lib_deploy.jar build_output/
+          cp azure-jars/cloud_azure_lib_deploy.jar build_output/
+          cp gcp-jars/service_assembly_deploy.jar build_output/
 
       - name: Build and push Fetcher Docker image
         uses: docker/build-push-action@v6
@@ -562,7 +582,7 @@ jobs:
         run: rm -rf build_output
 
   on_fail_notify_slack:
-    needs: [ publish_to_pypi, promote-aws-candidate, promote-gcp-candidate, promote-azure-candidate, build_and_publish_docker ]
+    needs: [ publish_to_pypi, promote-aws-candidate, promote-gcp-candidate, promote-azure-candidate, build_and_publish_docker, build_engine_images ]
     if: failure()
     runs-on: ubuntu-latest
 
@@ -590,10 +610,14 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    needs: [ promote-aws-candidate, promote-gcp-candidate, promote-azure-candidate ]
+    needs: [ promote-aws-candidate, promote-gcp-candidate, promote-azure-candidate, build_and_publish_docker, build_engine_images ]
 
     steps:
       - name: Delete Artifacts
         uses: geekyeggo/delete-artifact@v5
         with:
-          name: zipline-ai-wheel
+          name: |
+            zipline-ai-wheel
+            passing-candidate-gcp-jars
+            passing-candidate-aws-jars
+            passing-candidate-azure-jars
