@@ -5,7 +5,8 @@ from typing import Optional
 
 import requests
 
-from ai.chronon.cli.formatter import Format, format_print
+from ai.chronon.cli.formatter import Format
+from ai.chronon.cli.theme import print_error, print_info, print_warning
 
 
 class ZiplineHub:
@@ -34,37 +35,37 @@ class ZiplineHub:
                     self.use_auth = False
                     self.id_token = None
                     self.sa = None
-                    format_print("\n ⚠️  No ID_TOKEN found in environment for non-GCP cloud provider. Disabling authentication for ZiplineHub.", format=format)
+                    print_warning("No ID_TOKEN found in environment for non-GCP cloud provider. Disabling authentication.", format=format)
                 else:
                     self.use_auth = True
-                    format_print("\n 🔐 Using authentication for ZiplineHub.", format=format)
+                    print_info("Using authentication for ZiplineHub.", format=format)
                     self.sa = None
         else:
             self.use_auth = False
-            format_print("\n 🔓 Not using authentication for ZiplineHub.", format=format)
+            print_info("Not using authentication for ZiplineHub.", format=format)
 
     def _setup_gcp_auth(self, sa_name):
         """Setup Google Cloud authentication."""
         import google.auth
         from google.auth.transport.requests import Request
 
-        format_print("\n 🔐 Using Google Cloud authentication for ZiplineHub.", format=self.format)
+        print_info("Using Google Cloud authentication for ZiplineHub.", format=self.format)
 
         # First try to get ID token from environment (GitHub Actions)
         self.id_token = os.getenv("GCP_ID_TOKEN")
         if self.id_token:
-            format_print(" 🔑 Using ID token from environment", format=self.format)
+            print_info("Using ID token from environment.", format=self.format)
             self.sa = None
         elif sa_name is not None:
             # Fallback to Google Cloud authentication
-            format_print(" 🔑 Generating ID token from service account credentials", format=self.format)
+            print_info("Generating ID token from service account credentials.", format=self.format)
             credentials, project_id = google.auth.default()
             self.project_id = project_id
             credentials.refresh(Request())
 
             self.sa = f"{sa_name}@{project_id}.iam.gserviceaccount.com"
         else:
-            format_print(" 🔑 Generating ID token from default credentials", format=self.format)
+            print_info("Generating ID token from default credentials.", format=self.format)
             credentials, project_id = google.auth.default()
             credentials.refresh(Request())
             self.sa = None
@@ -75,8 +76,8 @@ class ZiplineHub:
         from azure.core.exceptions import ClientAuthenticationError
         from azure.identity import AzureCliCredential, CredentialUnavailableError
 
-        format_print("\n 🔐 Using Azure authentication for ZiplineHub.", format=self.format)
-        format_print(f"Acquiring token from cli credentials for scope: {scope}...", format=self.format)
+        print_info("Using Azure authentication for ZiplineHub.", format=self.format)
+        print_info(f"Acquiring token from CLI credentials for scope: {scope}...", format=self.format)
         try:
             credential = AzureCliCredential()
 
@@ -84,9 +85,9 @@ class ZiplineHub:
             token_object = credential.get_token(scope)
             self.id_token = token_object.token
 
-            format_print("   Success! Token acquired.", format=self.format)
+            print_info("Token acquired.", format=self.format)
         except (ClientAuthenticationError, CredentialUnavailableError) as e:
-            format_print(f"   Error: Could not acquire token. Make sure you are logged in via 'az login'.\n   Details: {e}", format=self.format)
+            print_error(f"Could not acquire token. Make sure you are logged in via 'az login'. Details: {e}", format=self.format)
             self.use_auth = False
             self.id_token = None
             return
@@ -101,13 +102,17 @@ class ZiplineHub:
 
     def handle_unauth(self, e: requests.RequestException, api_name: str):
         if e.response is not None and e.response.status_code == 401 and self.sa is None:
-            format_print(
-                f" ❌  Error calling {api_name} API. Unauthorized and no service account provided. Make sure the environment has default credentials set up or provide a service account name as SA_NAME in teams.py."
-            , format=self.format)
+            print_error(
+                f"Error calling {api_name} API. Unauthorized and no service account provided. "
+                "Set up default credentials or provide SA_NAME in teams.py.",
+                format=self.format,
+            )
         elif e.response is not None and e.response.status_code == 401 and self.sa is not None:
-            format_print(
-                f" ❌  Error calling {api_name} API. Unauthorized with provided service account: {self.sa}. Make sure the service account has the 'iap.webServiceVersions.accessViaIap' permission."
-            , format=self.format)
+            print_error(
+                f"Error calling {api_name} API. Unauthorized with service account: {self.sa}. "
+                "Ensure the service account has 'iap.webServiceVersions.accessViaIap' permission.",
+                format=self.format,
+            )
 
     def _generate_jwt_payload(self, service_account_email: str, resource_url: str) -> str:
         """Generates JWT payload for service account.
@@ -191,7 +196,7 @@ class ZiplineHub:
             return response.json()
         except requests.RequestException as e:
             self.handle_unauth(e, "diff")
-            format_print(f" ❌ Error calling diff API: {e}", format=self.format)
+            print_error(f"Error calling diff API: {e}", format=self.format)
             raise e
 
     def call_upload_api(self, diff_confs, branch: str):
@@ -208,7 +213,7 @@ class ZiplineHub:
             return response.json()
         except requests.RequestException as e:
             self.handle_unauth(e, "upload")
-            format_print(f" ❌ Error calling upload API: {e}", format=self.format)
+            print_error(f"Error calling upload API: {e}", format=self.format)
             raise e
 
     def call_schedule_api(self, modes, branch, conf_name, conf_hash):
@@ -227,7 +232,7 @@ class ZiplineHub:
             return response.json()
         except requests.RequestException as e:
             self.handle_unauth(e, "schedule deploy")
-            format_print(f" ❌ Error deploying schedule: {e}", format=self.format)
+            print_error(f"Error deploying schedule: {e}", format=self.format)
             raise e
 
     def call_cancel_api(self, workflow_id):
@@ -239,7 +244,7 @@ class ZiplineHub:
             return response.json()
         except requests.RequestException as e:
             self.handle_unauth(e, "workflow cancel")
-            format_print(f" ❌ Error calling workflow cancel API: {e}", format=self.format)
+            print_error(f"Error calling workflow cancel API: {e}", format=self.format)
             raise e
 
     def call_sync_api(self, branch: str, names_to_hashes: dict[str, str]) -> Optional[list[str]]:
@@ -256,7 +261,7 @@ class ZiplineHub:
             return response.json()
         except requests.RequestException as e:
             self.handle_unauth(e, "sync")
-            format_print(f" ❌ Error calling sync API: {e}", format=self.format)
+            print_error(f"Error calling sync API: {e}", format=self.format)
             raise e
 
     def call_eval_api(
@@ -266,7 +271,7 @@ class ZiplineHub:
         parameters=None,
         ):
         if not self.eval_url:
-            raise ValueError(" ❌ Eval URL not specified. Please specify EVAL_URL in teams.py, environment variables, or use the --eval-url flag.")
+            raise ValueError("Eval URL not specified. Specify EVAL_URL in teams.py, environment variables, or use --eval-url.")
         _request = {
             "confName": conf_name,
             "confHashMap": conf_hash_map,
@@ -279,7 +284,7 @@ class ZiplineHub:
             return response.json()
         except requests.RequestException as e:
             self.handle_unauth(e, "eval")
-            format_print(f" ❌ Error calling eval API: {e}", format=self.format)
+            print_error(f"Error calling eval API: {e}", format=self.format)
             raise e
 
     def call_schema_api(
@@ -289,7 +294,7 @@ class ZiplineHub:
         execution_info,
         ):
         if not self.eval_url:
-            raise ValueError(" ❌ Eval URL not specified. Please specify EVAL_URL in teams.py, environment variables, or use the --eval-url flag.")
+            raise ValueError("Eval URL not specified. Specify EVAL_URL in teams.py, environment variables, or use --eval-url.")
         _request = {
             "tableName": table_name,
             "engineType": engine_type,
@@ -301,7 +306,7 @@ class ZiplineHub:
             return response.json()
         except requests.RequestException as e:
             self.handle_unauth(e, "schema")
-            format_print(f" ❌ Error calling schema API: {e}", format=self.format)
+            print_error(f"Error calling schema API: {e}", format=self.format)
             raise e
 
     def call_workflow_start_api(
@@ -338,5 +343,5 @@ class ZiplineHub:
             return response.json()
         except requests.RequestException as e:
             self.handle_unauth(e, "workflow start")
-            format_print(f" ❌ Error calling workflow start API: {e}", format=self.format)
+            print_error(f"Error calling workflow start API: {e}", format=self.format)
             raise e

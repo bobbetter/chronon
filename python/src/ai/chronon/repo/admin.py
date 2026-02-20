@@ -10,7 +10,6 @@ import tempfile
 from functools import partial
 
 import click
-from rich.console import Console
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -22,6 +21,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
+from ai.chronon.cli.theme import STYLE_ERROR, STYLE_SUCCESS, console
 from ai.chronon.repo.constants import VALID_CLOUDS
 from ai.chronon.repo.registry_client import (
     DOCKER_HUB_REGISTRY,
@@ -32,7 +32,19 @@ from ai.chronon.repo.registry_client import (
 from ai.chronon.repo.utils import upload_to_blob_store
 
 logger = logging.getLogger(__name__)
-console = Console()
+
+
+def _safe_extractall(tar, dest):
+    """Extract tar members after validating no paths escape *dest* (path traversal guard)."""
+    dest = os.path.realpath(dest)
+    for member in tar.getmembers():
+        member_path = os.path.realpath(os.path.join(dest, member.name))
+        if not member_path.startswith(dest + os.sep) and member_path != dest:
+            raise RuntimeError(f"Tar member {member.name!r} would escape destination directory")
+    tar.extractall(dest)
+
+
+_CLOUDS_WITH_EVAL = ("gcp", "azure")
 
 
 def _app_images(cloud):
@@ -41,8 +53,8 @@ def _app_images(cloud):
         ("hub", f"ziplineai/hub-{cloud}"),
         ("frontend", "ziplineai/web-ui"),
     ]
-    if cloud == "gcp":
-        images.insert(1, ("eval", "ziplineai/eval-gcp"))
+    if cloud in _CLOUDS_WITH_EVAL:
+        images.insert(1, ("eval", f"ziplineai/eval-{cloud}"))
     return images
 
 
@@ -171,9 +183,9 @@ def _finish_task(progress, task_id, label, ok):
     """Remove a progress task and print a completion or failure line."""
     progress.remove_task(task_id)
     if ok:
-        progress.console.print(f"✅ [bold green]{label}[/bold green]")
+        progress.console.print(f"[{STYLE_SUCCESS}] ✅ SUCCESS [/] {label}")
     else:
-        progress.console.print(f"❌ [bold red]{label} FAILED[/bold red]")
+        progress.console.print(f"[{STYLE_ERROR}] 🔴 FAILED [/] {label}")
 
 
 def _make_target_with_progress(target, progress, task_id, action_label, layer_sizes=None):
@@ -271,7 +283,7 @@ def _load_from_bundle(target, bundle_path, release, cloud, progress):
     with tempfile.TemporaryDirectory() as tmpdir:
         console.print(f"[bold]Extracting bundle {bundle_path}...[/bold]")
         with tarfile.open(bundle_path, "r:gz") as tar:
-            tar.extractall(tmpdir)
+            _safe_extractall(tar, tmpdir)
 
         for _image_type, repo in _app_images(cloud):
             image_name = repo.split("/")[-1]
@@ -337,7 +349,7 @@ def _extract_jars_from_oci_archive(archive_path, release, artifact_store):
     with tempfile.TemporaryDirectory() as tmpdir:
         oci_dir = os.path.join(tmpdir, "oci")
         with tarfile.open(archive_path, "r") as tar:
-            tar.extractall(oci_dir)
+            _safe_extractall(tar, oci_dir)
 
         manifest_path = os.path.join(oci_dir, "manifest.json")
         with open(manifest_path) as f:
@@ -368,7 +380,7 @@ def _extract_engine_jars_from_bundle(bundle_path, cloud, release, artifact_store
 
     with tempfile.TemporaryDirectory() as tmpdir:
         with tarfile.open(bundle_path, "r:gz") as tar:
-            tar.extractall(tmpdir)
+            _safe_extractall(tar, tmpdir)
 
         engine_archive = os.path.join(tmpdir, f"engine-{cloud}.tar")
         if not os.path.exists(engine_archive):
@@ -579,14 +591,14 @@ def _print_summary(results, release, cloud, registry):
         if is_local:
             console.print("\nImages available in local Docker daemon:")
             console.print(f"  ziplineai/hub-{cloud}:{release}")
-            if cloud == "gcp":
-                console.print(f"  ziplineai/eval-gcp:{release}")
+            if cloud in _CLOUDS_WITH_EVAL:
+                console.print(f"  ziplineai/eval-{cloud}:{release}")
             console.print(f"  ziplineai/web-ui:{release}")
         else:
             console.print("\nFor terraform.tfvars:")
             console.print(f'  hub_image      = "{registry}/ziplineai/hub-{cloud}:{release}"')
-            if cloud == "gcp":
-                console.print(f'  eval_image     = "{registry}/ziplineai/eval-gcp:{release}"')
+            if cloud in _CLOUDS_WITH_EVAL:
+                console.print(f'  eval_image     = "{registry}/ziplineai/eval-{cloud}:{release}"')
             console.print(f'  frontend_image = "{registry}/ziplineai/web-ui:{release}"')
             console.print(f'  engine_image   = "{registry}/ziplineai/engine-{cloud}:{release}"')
     else:

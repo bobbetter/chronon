@@ -3,7 +3,7 @@ from importlib.metadata import version as ver
 
 import click
 
-from ai.chronon.cli.compile.display.console import console
+from ai.chronon.cli.theme import console
 from ai.chronon.repo.admin import admin
 from ai.chronon.repo.compile import compile
 from ai.chronon.repo.hub_runner import hub

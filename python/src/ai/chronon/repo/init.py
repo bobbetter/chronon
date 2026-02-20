@@ -9,7 +9,7 @@ from importlib_resources import files
 from rich.prompt import Prompt
 from rich.syntax import Syntax
 
-from ai.chronon.cli.compile.display.console import console
+from ai.chronon.cli.theme import console, print_success
 from ai.chronon.repo.constants import VALID_CLOUDS
 
 
@@ -82,7 +82,7 @@ def main(ctx, chronon_root, cloud):
 
     try:
         shutil.copytree(template_path, target_path, dirs_exist_ok=True)
-        console.print("[bold green] Project scaffolding created successfully! 🎉\n")
+        print_success("Project scaffolding created successfully! 🎉")
         export_line = f'export PYTHONPATH="{target_path}:$PYTHONPATH"'
         shell_name, config_path = _detect_shell_config()
         if config_path is not None:

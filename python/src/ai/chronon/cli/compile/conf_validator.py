@@ -32,6 +32,7 @@ from ai.chronon.cli.compile.column_hashing import (
     get_pre_derived_source_keys,
 )
 from ai.chronon.cli.compile.version_utils import is_version_change
+from ai.chronon.cli.theme import console
 from ai.chronon.logger import get_logger
 from ai.chronon.repo.serializer import thrift_simple_json
 from ai.chronon.utils import get_query, get_root_source
@@ -661,8 +662,6 @@ class ConfValidator(object):
 
     def check_pending_changes_confirmation(self, compile_status):
         """Check if user confirmation is needed for pending changes after display."""
-        from ai.chronon.cli.compile.display.console import console
-
         # Skip confirmation if there are compilation errors
         if self._has_compilation_errors(compile_status):
             return  # Don't prompt when there are errors
@@ -704,8 +703,6 @@ class ConfValidator(object):
         Prompt user for Y/N confirmation to proceed with overwriting existing configs.
         Returns True if user confirms, False otherwise.
         """
-        from ai.chronon.cli.compile.display.console import console
-
         console.print(
             "\n❗ [bold red3]Some configs are changing in-place (changing semantics without changing the version).[/bold red3]"
         )

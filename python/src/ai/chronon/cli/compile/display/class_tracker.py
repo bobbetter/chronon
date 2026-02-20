@@ -6,6 +6,7 @@ from rich.text import Text
 from ai.chronon.cli.compile.display.compiled_obj import CompiledObj
 from ai.chronon.cli.compile.display.diff_result import DiffResult
 from ai.chronon.cli.formatter import Format, format_print
+from ai.chronon.cli.theme import STYLE_ACCENT, STYLE_ERROR
 
 
 class ClassTracker:
@@ -76,7 +77,7 @@ class ClassTracker:
 
         if self.files_to_errors:
             text.append("  Failed to compile ")
-            text.append(f"{len(self.files_to_errors)} ", style="red")
+            text.append(f"{len(self.files_to_errors)} ", style=STYLE_ERROR)
             text.append("files.\n")
 
         return text
@@ -86,13 +87,13 @@ class ClassTracker:
 
         if self.files_to_errors:
             for file, errors in self.files_to_errors.items():
-                text.append("  ERROR ", style="bold red")
+                text.append("  ERROR ", style=STYLE_ERROR)
                 text.append(f"- {file}:\n")
 
                 for error in errors:
                     # Format each error properly, handling newlines
                     error_msg = str(error)
-                    text.append(f"    {error_msg}\n", style="red")
+                    text.append(f"    {error_msg}\n", style=STYLE_ERROR)
 
         return text
 
@@ -100,5 +101,5 @@ class ClassTracker:
     def diff(self, ignore_python_errors: bool = False) -> Text:
         # Don't show diff if there are compile errors - it's confusing
         if self.files_to_errors and not ignore_python_errors:
-            return Text("\n❗Please fix python errors then retry compilation.\n", style="dim cyan")
+            return Text("\n❗Please fix python errors then retry compilation.\n", style=f"dim {STYLE_ACCENT}")
         return self.diff_result.render(deleted_names=self.deleted_names)
