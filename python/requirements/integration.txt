@@ -1,0 +1,12 @@
+# This file was manually created for integration test dependencies.
+# To update, run:
+#
+#    pip-compile requirements/integration.in -o requirements/integration.txt
+#
+-r base.txt
+google-cloud-bigquery==3.31.0
+    # via -r requirements/integration.in
+google-cloud-core==2.5.0
+    # via google-cloud-bigquery
+requests==2.32.5
+    # via -r requirements/integration.in

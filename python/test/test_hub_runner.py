@@ -14,8 +14,14 @@
 from unittest.mock import patch
 
 from click.testing import CliRunner
+from rich.text import Text
 
 from ai.chronon.repo.hub_runner import hub
+
+
+def _plain(text: str) -> str:
+    """Strip ANSI escape sequences using Rich's own parser."""
+    return Text.from_ansi(text).plain
 
 class TestHubRunner:
     """Test cases for hub_runner backfill command."""
@@ -212,8 +218,9 @@ class TestHubRunner:
         ])
 
         assert result.exit_code == 0
-        assert "Workflow cancelled" in result.output
-        assert workflow_id in result.output
+        plain_output = _plain(result.output)
+        assert "Workflow cancelled" in plain_output
+        assert workflow_id in plain_output
 
         # Verify the actual POST request was made with correct parameters
         mock_post.assert_called_once()
@@ -251,8 +258,9 @@ class TestHubRunner:
         ])
 
         assert result.exit_code == 0
-        assert "Workflow cancelled" in result.output
-        assert workflow_id in result.output
+        plain_output = _plain(result.output)
+        assert "Workflow cancelled" in plain_output
+        assert workflow_id in plain_output
 
         # Verify the actual POST request was made
         mock_post.assert_called_once()
