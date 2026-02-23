@@ -371,7 +371,6 @@ class SnowflakeImport(stagingQueryConf: api.StagingQuery, endPartition: String, 
 
     // Ensure the outputTable name is fully qualified for the Iceberg Catalog
     // e.g., "open_catalog.my_schema.my_iceberg_table"
-    df.printSchema()
     tableUtils.insertPartitions(
       df = df,
       tableName = outputTable, // Must use the catalog-prefixed name

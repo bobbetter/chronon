@@ -44,6 +44,10 @@ trait FlinkAwsModule extends Cross.Module[String] with build.BaseModule {
 
   // Additional dependencies (most come transitively from cloud_aws)
   def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingDeps ++ build.Constants.utilityDeps ++ Seq(
+    // Required at runtime by Flink deserialization schema (Encoders.row)
+    mvn"org.apache.spark::spark-core:${build.Constants.sparkVersion}",
+    mvn"org.apache.spark::spark-sql:${build.Constants.sparkVersion}",
+
     // Kinesis SDK for Flink connector
     mvn"software.amazon.awssdk:kinesis:2.30.13",
     mvn"software.amazon.awssdk:sts:2.30.13",
