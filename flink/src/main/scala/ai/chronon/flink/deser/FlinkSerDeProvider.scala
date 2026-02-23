@@ -12,6 +12,7 @@ object FlinkSerDeProvider {
   private val PubsubSchemaSerDeClass = "ai.chronon.flink_connectors.pubsub.PubSubSchemaSerDe"
   private val SchemaRegistrySerDeClass = "ai.chronon.flink.deser.SchemaRegistrySerDe"
   private val GlueJsonSchemaSerDeClass = "ai.chronon.flink.aws.GlueJsonSchemaSerDe"
+  private val GlueRegistrySerDeClass = "ai.chronon.flink_connectors.kinesis.GlueSchemaSerDe"
   private val GlueRegistryKey = "glue_registry"
 
   // If the user explicitly provides serde, we use that, else we fallback to inferring based on the topic params to cover
@@ -24,13 +25,14 @@ object FlinkSerDeProvider {
       case Some("schema_registry") => SchemaRegistrySerDeClass
       case Some("pubsub_schema")   => PubsubSchemaSerDeClass
       case Some("glue_json")       => GlueJsonSchemaSerDeClass
+      case Some("glue_registry")   => GlueRegistrySerDeClass
       // Some users might not set the serde explicitly but are using the schema registry host key, so we fallback to that.
       case None if topicInfo.params.contains(RegistryHostKey) => SchemaRegistrySerDeClass
       // Fallback to Glue if glue_registry is set
       case None if topicInfo.params.contains(GlueRegistryKey) => GlueJsonSchemaSerDeClass
       case _ =>
         throw new IllegalArgumentException(
-          s"Unsupported SerDe type: $serDe. Supported values are 'custom', 'schema_registry', 'pubsub_schema' or 'glue_json'.")
+          s"Unsupported SerDe type: $serDe. Supported values are 'custom', 'schema_registry', 'pubsub_schema', 'glue_json' or 'glue_registry'.")
     }
     loadSchemaSerDe(className, topicInfo)
   }
