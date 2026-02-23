@@ -268,7 +268,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
     try {
       kryo.register(Class.forName("org.apache.iceberg.gcp.gcs.GCSFileIO"), new JavaSerializer)
     } catch {
-      case _: ClassNotFoundException => // GCP jars not on classpath
+      case _: ClassNotFoundException => // Optional GCP class missing
+      case _: LinkageError           => // Optional GCP dependency missing
     }
 
     kryo.register(classOf[Array[Array[Array[AnyRef]]]])
@@ -286,6 +287,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
     } catch {
       case _: ClassNotFoundException => // do nothing
+      case _: LinkageError           => // do nothing
     }
   }
 }
