@@ -41,9 +41,6 @@ abstract class BaseFlinkJob {
     * This is the main execution method that should be implemented by subclasses.
     */
   def runTiledGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse]
-
-  // Need untiled jobs since tiled tables are not being read properly in DynamoDB read implementation
-  def runGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse]
 }
 
 object FlinkJob {
@@ -227,7 +224,6 @@ object FlinkJob {
     }
 
     val jobDatastream = flinkJob.runTiledGroupByJob(env)
-    // val jobDatastream = flinkJob.runGroupByJob(env)
 
     jobDatastream
       .addSink(new MetricsSink(groupByName))
