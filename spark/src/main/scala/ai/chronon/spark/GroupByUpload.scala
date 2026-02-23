@@ -482,21 +482,16 @@ object GroupByUpload {
       kvDf.schema
     )
 
-    val uploadFormat =
-      groupByConf
-        .commonConfValue(IonPathConfig.UploadFormatKey)
-        .getOrElse("parquet")
-    val partitionCol = groupByConf
-      .commonConfValue(IonPathConfig.PartitionColumnKey)
-      .getOrElse(IonPathConfig.DefaultPartitionColumn)
+    val sparkConf = tableUtils.sparkSession.conf
+    val uploadFormat = sparkConf.getOption(IonPathConfig.UploadFormatKey).getOrElse("parquet")
+    val partitionCol =
+      sparkConf.getOption(IonPathConfig.PartitionColumnKey).getOrElse(IonPathConfig.DefaultPartitionColumn)
     val uploadDf = kvDf.union(metaDf).withColumn(partitionCol, lit(endDs))
 
     logger.info(s"GroupBy upload with upload format: $uploadFormat")
 
     if (uploadFormat == "ion") {
-      val rootPath =
-        groupByConf
-          .commonConfValue(IonPathConfig.UploadLocationKey)
+      val rootPath = sparkConf.getOption(IonPathConfig.UploadLocationKey)
       val ionDf = uploadDf.withColumn(partitionCol, to_date(col(partitionCol)))
       val result = IonWriter.write(
         ionDf,

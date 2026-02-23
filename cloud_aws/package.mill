@@ -26,6 +26,7 @@ trait CloudAwsModule extends Cross.Module[String] with build.BaseModule {
     mvn"software.amazon.awssdk:url-connection-client:2.30.13",
     mvn"software.amazon.awssdk:netty-nio-client:2.30.13",
     mvn"software.amazon.awssdk:identity-spi:2.30.13",
+    mvn"org.apache.hadoop:hadoop-client-api:3.4.1",
     mvn"org.apache.iceberg::iceberg-spark-runtime-3.5:1.10.0",
   )
   

@@ -134,6 +134,8 @@ aws = Team(
             "spark.chronon.partition.column": "ds",
             "spark.chronon.table_write.prefix": "s3://zipline-warehouse-dev/data/tables/",
             "spark.chronon.table_write.format": "iceberg",
+            "spark.chronon.table_write.upload.format": "ion",
+            "spark.chronon.table_write.upload.location": "s3://zipline-warehouse-dev/data/ion_uploads/",
             "spark.sql.catalog.spark_catalog.warehouse": "s3://zipline-warehouse-dev/data/tables/",
             "spark.sql.catalog.spark_catalog": "org.apache.iceberg.spark.SparkSessionCatalog",
             "spark.sql.catalog.spark_catalog.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",

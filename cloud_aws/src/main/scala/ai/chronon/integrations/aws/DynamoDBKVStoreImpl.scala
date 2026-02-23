@@ -2,12 +2,11 @@ package ai.chronon.integrations.aws
 
 import ai.chronon.api.Constants
 import ai.chronon.api.Constants.{ContinuationKey, ListLimit}
+import ai.chronon.api.Extensions.StringOps
 import ai.chronon.api.TilingUtils
 import ai.chronon.api.ScalaJavaConversions._
-import ai.chronon.api.{GroupBy, MetaData}
-import ai.chronon.api.Extensions._
-import ai.chronon.online.KVStore
 import ai.chronon.spark.{IonPathConfig, IonWriter}
+import ai.chronon.online.KVStore
 import ai.chronon.online.KVStore.GetResponse
 import ai.chronon.online.KVStore.ListRequest
 import ai.chronon.online.KVStore.ListResponse
@@ -15,6 +14,7 @@ import ai.chronon.online.KVStore.ListValue
 import ai.chronon.online.KVStore.TimedValue
 import ai.chronon.online.metrics.Metrics.Context
 import ai.chronon.online.metrics.Metrics
+import ai.chronon.online.metrics.TTLCache
 import software.amazon.awssdk.core.SdkBytes
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
 import software.amazon.awssdk.services.dynamodb.model.{
@@ -22,10 +22,12 @@ import software.amazon.awssdk.services.dynamodb.model.{
   AttributeValue,
   BillingMode,
   CreateTableRequest,
+  DeleteTableRequest,
   DescribeImportRequest,
   DescribeTableRequest,
   GetItemRequest,
   ImportStatus,
+  ImportTableDescription,
   ImportTableRequest,
   InputCompressionType,
   InputFormat,
@@ -62,6 +64,65 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
   import DynamoDBKVStoreConstants._
 
   protected val metricsContext: Metrics.Context = Metrics.Context(Metrics.Environment.KVStore).withSuffix("dynamodb")
+
+  // TTLCache: resolves logical batch dataset names to physical date-suffixed table names
+  private val batchTableCache: TTLCache[String, String] = new TTLCache[String, String](
+    f = { dataset =>
+      val request = GetItemRequest.builder
+        .tableName(batchTableRegistry)
+        .key(Map(registryKeyColumn -> AttributeValue.builder.s(dataset).build).toJava)
+        .build
+      val item = dynamoDbClient.getItem(request).join().item().toScala
+      item.get(registryValueColumn).map(_.s()).getOrElse(dataset)
+    },
+    contextBuilder = { _ => metricsContext.withSuffix("batch_table_cache") }
+  )
+
+  private[aws] def resolveTableName(dataset: String): String = {
+    if (dataset.endsWith(batchSuffix)) batchTableCache(dataset)
+    else dataset
+  }
+
+  private def ensureRegistryTable(): Unit = {
+    val request = CreateTableRequest.builder
+      .tableName(batchTableRegistry)
+      .attributeDefinitions(
+        AttributeDefinition.builder.attributeName(registryKeyColumn).attributeType(ScalarAttributeType.S).build
+      )
+      .keySchema(
+        KeySchemaElement.builder.attributeName(registryKeyColumn).keyType(KeyType.HASH).build
+      )
+      .billingMode(BillingMode.PAY_PER_REQUEST)
+      .build
+
+    try {
+      dynamoDbClient.createTable(request).join()
+      val tableRequest = DescribeTableRequest.builder.tableName(batchTableRegistry).build
+      val waiterResponse = dynamoDbClient.waiter.waitUntilTableExists(tableRequest).join()
+      if (waiterResponse.matched.exception().isPresent)
+        throw waiterResponse.matched.exception().get()
+      logger.info(s"Registry table $batchTableRegistry created successfully")
+    } catch {
+      case _: ResourceInUseException =>
+        logger.info(s"Registry table $batchTableRegistry already exists")
+      case e: CompletionException if e.getCause.isInstanceOf[ResourceInUseException] =>
+        logger.info(s"Registry table $batchTableRegistry already exists")
+      case e: Exception =>
+        logger.error(s"Error creating registry table $batchTableRegistry", e)
+        throw e
+    }
+  }
+
+  private def writeRegistryEntry(logicalName: String, physicalName: String): Unit = {
+    val item = Map(
+      registryKeyColumn -> AttributeValue.builder.s(logicalName).build,
+      registryValueColumn -> AttributeValue.builder.s(physicalName).build,
+      registryTimestampColumn -> AttributeValue.builder.n(System.currentTimeMillis().toString).build
+    )
+    val putRequest = PutItemRequest.builder.tableName(batchTableRegistry).item(item.toJava).build()
+    dynamoDbClient.putItem(putRequest).join()
+    logger.info(s"Registry updated: $logicalName -> $physicalName")
+  }
 
   override def create(dataset: String): Unit = create(dataset, Map.empty)
 
@@ -139,7 +200,8 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
   private def doGetLookups(getLookups: Seq[KVStore.GetRequest]): Seq[Future[GetResponse]] = {
     val getItemCompletables = getLookups.map { req =>
       val keyAttributeMap = primaryKeyMap(req.keyBytes)
-      val getItemReq = GetItemRequest.builder.key(keyAttributeMap.toJava).tableName(req.dataset).build
+      val tableName = resolveTableName(req.dataset)
+      val getItemReq = GetItemRequest.builder.key(keyAttributeMap.toJava).tableName(tableName).build
       val startTs = System.currentTimeMillis()
       (req, dynamoDbClient.getItem(getItemReq), startTs)
     }
@@ -175,6 +237,7 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
     val defaultTimestamp = Instant.now().toEpochMilli
 
     queryLookups.map { req =>
+      val resolvedDataset = resolveTableName(req.dataset)
       val tileComponents = extractTileKeyComponents(req.keyBytes)
       val endTs = req.endTsMillis.getOrElse(System.currentTimeMillis())
       val partitionKeys = generateTimeSeriesKeys(
@@ -186,7 +249,7 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
 
       // Optimize for the common case of a single partition key (queries within one day)
       if (partitionKeys.length == 1) {
-        queryPartition(req.dataset, partitionKeys.head, req.startTsMillis.get, req.endTsMillis)
+        queryPartition(resolvedDataset, partitionKeys.head, req.startTsMillis.get, req.endTsMillis)
           .transform {
             case Success(response) =>
               val timedValues = extractTimedValues(response.items(), defaultTimestamp).getOrElse(Seq.empty)
@@ -197,7 +260,7 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
       } else {
         // Multi-day query: fan out to multiple partition keys
         val queryFutures = partitionKeys.map { partitionKeyBytes =>
-          queryPartition(req.dataset, partitionKeyBytes, req.startTsMillis.get, req.endTsMillis)
+          queryPartition(resolvedDataset, partitionKeyBytes, req.startTsMillis.get, req.endTsMillis)
         }
 
         Future.sequence(queryFutures).transform {
@@ -297,6 +360,9 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
     *   - Partition column and value: ds={partition}
     *
     * Full path: s3://{spark.chronon.table_write.upload.root_path}/{sourceOfflineTable}/ds={partition}/
+    *
+    * Creates a date-suffixed physical table (e.g. MY_GROUPBY_BATCH_2026_02_17) and registers the
+    * mapping from logical dataset name to physical table in CHRONON_BATCH_TABLE_REGISTRY.
     */
   override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit = {
     val rootPath = conf.get(IonPathConfig.UploadLocationKey)
@@ -305,13 +371,14 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
     // Use shared IonWriter path resolution to ensure consistency between producer and consumer
     val path = IonWriter.resolvePartitionPath(sourceOfflineTable, partitionColumn, partition, rootPath)
     val s3Source = toS3BucketSource(path)
-    val groupBy = new GroupBy().setMetaData(new MetaData().setName(destinationOnlineDataSet))
-    val tableName = groupBy.batchDataset
-    logger.info(s"Starting DynamoDB import for table: $tableName from S3: $s3Source")
+    val logicalTableName = destinationOnlineDataSet
+    val physicalTableName = logicalTableName.sanitize.toUpperCase + "_" + partition.replace("-", "_")
+    logger.info(
+      s"Starting DynamoDB import for table: $physicalTableName (logical: $logicalTableName) from S3: $s3Source")
 
     val tableParams = TableCreationParameters
       .builder()
-      .tableName(tableName)
+      .tableName(physicalTableName)
       .keySchema(
         KeySchemaElement.builder().attributeName(partitionKeyColumn).keyType(KeyType.HASH).build()
       )
@@ -329,23 +396,31 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
       .tableCreationParameters(tableParams)
       .build()
 
+    // If the table already exists (e.g. from a previous failed/successful import attempt),
+    // delete it first so ImportTable can recreate it. This makes bulkPut idempotent.
+    deleteTableIfExists(physicalTableName)
+
     try {
       val startTs = System.currentTimeMillis()
       val importResponse = dynamoDbClient.importTable(importRequest).join()
       val importArn = importResponse.importTableDescription().importArn()
 
-      logger.info(s"DynamoDB import initiated with ARN: $importArn for table: $tableName")
+      logger.info(s"DynamoDB import initiated with ARN: $importArn for table: $physicalTableName")
 
-      // Wait for import to complete
-      waitForImportCompletion(importArn, tableName)
+      waitForImportCompletion(importArn, physicalTableName)
+
+      // Register the physical table name in the batch table registry
+      ensureRegistryTable()
+      val registryKey = logicalTableName.sanitize.toUpperCase + batchSuffix
+      writeRegistryEntry(registryKey, physicalTableName)
 
       val duration = System.currentTimeMillis() - startTs
-      logger.info(s"DynamoDB import completed for table: $tableName in ${duration}ms")
+      logger.info(s"DynamoDB import completed for table: $physicalTableName in ${duration}ms")
       metricsContext.increment("bulkPut.successes")
       metricsContext.distribution("bulkPut.latency", duration)
     } catch {
       case e: Exception =>
-        logger.error(s"Failed to import data to DynamoDB table: $tableName", e)
+        logger.error(s"Failed to import data to DynamoDB table: $physicalTableName", e)
         metricsContext.increment("bulkPut.failures")
         throw e
     }
@@ -361,32 +436,68 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
       .build()
   }
 
-  /** Waits for a DynamoDB import to complete by polling the import status. */
+  private def deleteTableIfExists(tableName: String): Unit = {
+    val describeRequest = DescribeTableRequest.builder().tableName(tableName).build()
+    try {
+      dynamoDbClient.describeTable(describeRequest).join()
+      logger.warn(s"Table $tableName already exists from a previous attempt. Deleting before re-import.")
+      val deleteRequest = DeleteTableRequest.builder().tableName(tableName).build()
+      dynamoDbClient
+        .deleteTable(deleteRequest)
+        .thenCompose(_ => dynamoDbClient.waiter().waitUntilTableNotExists(describeRequest))
+        .join()
+      logger.info(s"Table $tableName deleted successfully.")
+    } catch {
+      case e: java.util.concurrent.CompletionException if e.getCause.isInstanceOf[ResourceNotFoundException] =>
+    }
+  }
+
   private def waitForImportCompletion(importArn: String, tableName: String): Unit = {
     val maxWaitTimeMs = 30 * 60 * 1000L // 30 minutes
     val pollIntervalMs = 10 * 1000L // 10 seconds
     val startTime = System.currentTimeMillis()
 
     var status: ImportStatus = ImportStatus.IN_PROGRESS
+    var lastDescription: ImportTableDescription = null
     while (status == ImportStatus.IN_PROGRESS && (System.currentTimeMillis() - startTime) < maxWaitTimeMs) {
       Thread.sleep(pollIntervalMs)
+
       try {
         val describeRequest = DescribeImportRequest.builder().importArn(importArn).build()
         val describeResponse = dynamoDbClient.describeImport(describeRequest).join()
-        status = describeResponse.importTableDescription().importStatus()
+        lastDescription = describeResponse.importTableDescription()
+        status = lastDescription.importStatus()
+
+        val elapsed = (System.currentTimeMillis() - startTime) / 1000
+        logger.info(
+          s"DynamoDB import status for $tableName: $status " +
+            s"(${elapsed}s elapsed, processed: ${lastDescription.processedItemCount()} items, " +
+            s"imported: ${lastDescription.importedItemCount()} items, " +
+            s"errors: ${lastDescription.errorCount()})")
       } catch {
         case e: Exception =>
           logger.error(s"Error polling import status for $tableName", e)
           throw e
       }
-      logger.info(s"DynamoDB import status for $tableName: $status")
     }
 
     status match {
       case ImportStatus.COMPLETED =>
-        logger.info(s"DynamoDB import completed successfully for table: $tableName")
+        logger.info(
+          s"DynamoDB import completed successfully for table: $tableName " +
+            s"(imported: ${lastDescription.importedItemCount()} items, errors: ${lastDescription.errorCount()})")
       case ImportStatus.FAILED | ImportStatus.CANCELLED =>
-        throw new RuntimeException(s"DynamoDB import failed with status: $status for table: $tableName")
+        val diagnostics =
+          s"""DynamoDB import failed for table: $tableName
+             |  Status: $status
+             |  Failure Code: ${lastDescription.failureCode()}
+             |  Failure Message: ${lastDescription.failureMessage()}
+             |  Error Count: ${lastDescription.errorCount()}
+             |  Processed Items: ${lastDescription.processedItemCount()}
+             |  Imported Items: ${lastDescription.importedItemCount()}
+             |  Import ARN: $importArn""".stripMargin
+        logger.error(diagnostics)
+        throw new RuntimeException(diagnostics)
       case ImportStatus.IN_PROGRESS =>
         throw new RuntimeException(s"DynamoDB import timed out after ${maxWaitTimeMs}ms for table: $tableName")
       case _ =>
@@ -470,6 +581,13 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
 }
 
 object DynamoDBKVStoreConstants {
+  // Batch table registry constants
+  val batchTableRegistry = "CHRONON_BATCH_TABLE_REGISTRY"
+  val registryKeyColumn = "dataset"
+  val registryValueColumn = "tableName"
+  val registryTimestampColumn = "updatedAt"
+  val batchSuffix = "_BATCH"
+
   // Optional field that indicates if this table is meant to be time sorted in Dynamo or not
   val isTimedSorted = "is-time-sorted"
 
