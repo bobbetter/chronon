@@ -5,7 +5,7 @@ import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
 import ai.chronon.online.serde._
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration
-import software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient
+import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
 
 import java.net.URI
 import java.time.Duration
@@ -56,14 +56,10 @@ class AwsApiImpl(conf: Map[String, String]) extends Api(conf) {
         s"connectionTimeout: $connectionTimeout, apiCallTimeout: $apiCallTimeout, " +
         s"apiCallAttemptTimeout: $apiCallAttemptTimeout")
 
-    val httpClient = AwsCrtAsyncHttpClient
+    val httpClient = NettyNioAsyncHttpClient
       .builder()
       .maxConcurrency(maxConcurrency)
       .connectionTimeout(connectionTimeout)
-      .connectionHealthConfiguration(config =>
-        config
-          .minimumThroughputInBps(DefaultMinConnectionThroughputBps)
-          .minimumThroughputTimeout(DefaultMinThroughputTimeout))
       .build()
 
     val clientConfig = ClientOverrideConfiguration
@@ -126,8 +122,6 @@ object AwsApiImpl {
   private val DefaultConnectionTimeout = Duration.ofMillis(1000L)
   private val DefaultApiTimeout = Duration.ofMillis(500L)
   private val DefaultTotalTimeout = Duration.ofMillis(3000L)
-  private val DefaultMinConnectionThroughputBps = 1L
-  private val DefaultMinThroughputTimeout = Duration.ofSeconds(30)
   private val DefaultMaxConcurrency = 100
 
   private[aws] val DynamoMaxConcurrency = "DYNAMO_MAX_CONCURRENCY"

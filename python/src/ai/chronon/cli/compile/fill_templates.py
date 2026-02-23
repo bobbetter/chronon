@@ -1,7 +1,6 @@
-from gen_thrift.api.ttypes import Join, Team
-
 from ai.chronon import utils
 from ai.chronon.cli.compile.compile_context import CompileContext
+from gen_thrift.api.ttypes import Join, Team
 
 
 def _fill_template(table, obj, namespace):

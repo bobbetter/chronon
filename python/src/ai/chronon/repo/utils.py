@@ -1,7 +1,9 @@
 import json
 import os
 import re
+import shutil
 import subprocess
+import tempfile
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
@@ -65,7 +67,7 @@ def get_customer_id() -> str:
 
 
 def extract_filename_from_path(path):
-    return path.split("/")[-1]
+    return os.path.basename(path)
 
 
 def check_call(cmd):
@@ -95,7 +97,7 @@ def download_only_once(url, path, skip_download=False):
         content_output = check_output("curl -sI " + url).decode("utf-8")
         content_length = re.search("(content-length:\\s)(\\d+)", content_output.lower())
         remote_size = int(content_length.group().split()[-1])
-        local_size = int(check_output("wc -c " + path).split()[0])
+        local_size = os.path.getsize(path)
         LOG.info(
             """Files sizes of {url} vs. {path}
     Remote size: {remote_size}
@@ -157,7 +159,7 @@ def download_jar(
                 jar_type=jar_type,
             )
         )
-        jar_path = os.path.join("/tmp", extract_filename_from_path(jar_url))
+        jar_path = os.path.join(tempfile.gettempdir(), extract_filename_from_path(jar_url))
         download_only_once(jar_url, jar_path, skip_download)
     return jar_path
 
@@ -448,6 +450,67 @@ def get_metadata_name_from_conf(repo_path, conf_path):
     with open(os.path.join(repo_path, conf_path), "r") as conf_file:
         data = json.load(conf_file)
         return data.get("metaData", {}).get("name", None)
+
+
+def upload_to_blob_store(local_path: str, remote_uri: str) -> str:
+    """Upload a local file to GCS, S3, or Azure Blob Storage based on URI scheme.
+
+    Returns the remote URI.
+    """
+    if remote_uri.startswith("gs://"):
+        return _upload_to_gcs(local_path, remote_uri)
+    elif remote_uri.startswith("s3://"):
+        return _upload_to_s3(local_path, remote_uri)
+    elif "blob.core.windows.net" in remote_uri:
+        return _upload_to_azure_blob(local_path, remote_uri)
+    else:
+        # Local filesystem path
+        os.makedirs(os.path.dirname(remote_uri), exist_ok=True)
+        shutil.copy2(local_path, remote_uri)
+        LOG.info(f"Copied {local_path} -> {remote_uri}")
+        return remote_uri
+
+
+def _upload_to_gcs(local_path: str, gcs_uri: str) -> str:
+    from google.cloud import storage
+
+    parts = gcs_uri[len("gs://"):].split("/", 1)
+    bucket_name, blob_name = parts[0], parts[1] if len(parts) > 1 else ""
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+    blob.upload_from_filename(local_path)
+    LOG.info(f"Uploaded {local_path} -> {gcs_uri}")
+    return gcs_uri
+
+
+def _upload_to_s3(local_path: str, s3_uri: str) -> str:
+    import boto3
+
+    parts = s3_uri[len("s3://"):].split("/", 1)
+    bucket_name, key = parts[0], parts[1] if len(parts) > 1 else ""
+    boto3.client("s3").upload_file(local_path, bucket_name, key)
+    LOG.info(f"Uploaded {local_path} -> {s3_uri}")
+    return s3_uri
+
+
+def _upload_to_azure_blob(local_path: str, azure_uri: str) -> str:
+    from urllib.parse import urlparse
+
+    from azure.identity import DefaultAzureCredential
+    from azure.storage.blob import BlobServiceClient
+
+    parsed = urlparse(azure_uri)
+    account_url = f"{parsed.scheme}://{parsed.netloc}"
+    path_parts = parsed.path.lstrip("/").split("/", 1)
+    container = path_parts[0]
+    blob_name = path_parts[1] if len(path_parts) > 1 else ""
+    blob_service = BlobServiceClient(account_url=account_url, credential=DefaultAzureCredential())
+    blob_client = blob_service.get_blob_client(container=container, blob=blob_name)
+    with open(local_path, "rb") as f:
+        blob_client.upload_blob(f, overwrite=True)
+    LOG.info(f"Uploaded {local_path} -> {azure_uri}")
+    return azure_uri
 
 
 def print_possible_confs(conf, repo, *args, **kwargs):

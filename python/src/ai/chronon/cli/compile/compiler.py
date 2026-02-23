@@ -4,18 +4,17 @@ import traceback
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-from gen_thrift.api.ttypes import ConfType
-
 import ai.chronon.cli.compile.display.compiled_obj
 import ai.chronon.cli.compile.parse_configs as parser
 import ai.chronon.cli.logger as logger
 from ai.chronon.cli.compile import serializer
 from ai.chronon.cli.compile.compile_context import CompileContext, ConfigInfo
 from ai.chronon.cli.compile.display.compiled_obj import CompiledObj
-from ai.chronon.cli.compile.display.console import console
 from ai.chronon.cli.compile.parse_teams import merge_team_execution_info
 from ai.chronon.cli.formatter import Format, PromptException
+from ai.chronon.cli.theme import console
 from ai.chronon.types import MetaData
+from gen_thrift.api.ttypes import ConfType
 
 logger = logger.get_logger()
 
@@ -87,7 +86,7 @@ class Compiler:
                     shutil.rmtree(output_dir)
                 shutil.move(staging_dir, output_dir)
             else:
-                print(
+                console.print(
                     f"Staging directory {staging_dir} does not exist. "
                     "Happens when every chronon config fails to compile or when no chronon configs exist."
                 )

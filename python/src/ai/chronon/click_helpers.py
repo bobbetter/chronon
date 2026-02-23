@@ -2,8 +2,8 @@ import functools
 import sys
 
 import click
-from click import style
 
+from ai.chronon.cli.theme import print_error
 from ai.chronon.repo.compile import __compile
 
 
@@ -33,7 +33,7 @@ def handle_conf_not_found(log_error=True, callback=None):
                 return func(*args, **kwargs)
             except FileNotFoundError as e:
                 if log_error:
-                    print(style(f"File not found in {func.__name__}: {e}", fg="red"))
+                    print_error(f"File not found in {func.__name__}: {e}")
                 if callback:
                     callback(*args, **kwargs)
                 return

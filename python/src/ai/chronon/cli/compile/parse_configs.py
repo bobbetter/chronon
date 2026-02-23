@@ -4,13 +4,12 @@ import importlib
 import os
 from typing import Any, List
 
-from gen_thrift.api.ttypes import GroupBy, Join
-
 from ai.chronon import airflow_helpers
 from ai.chronon.cli.compile import parse_teams, serializer
 from ai.chronon.cli.compile.compile_context import CompileContext
 from ai.chronon.cli.compile.display.compiled_obj import CompiledObj
 from ai.chronon.cli.logger import get_logger
+from gen_thrift.api.ttypes import GroupBy, Join
 
 logger = get_logger()
 

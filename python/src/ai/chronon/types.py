@@ -2,13 +2,12 @@
 importing ai.chronon.types will bring in all the api's needed to create any chronon object
 """
 
-import gen_thrift.api.ttypes as ttypes
-import gen_thrift.common.ttypes as common
-
 import ai.chronon.group_by as group_by
 import ai.chronon.join as join
 import ai.chronon.query as query
 import ai.chronon.source as source
+import gen_thrift.api.ttypes as ttypes
+import gen_thrift.common.ttypes as common
 
 # source related concepts
 Query = query.Query

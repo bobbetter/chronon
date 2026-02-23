@@ -3,6 +3,7 @@ from typing import List, Tuple
 from rich.text import Text
 
 from ai.chronon.cli.compile.version_utils import parse_name_and_version
+from ai.chronon.cli.theme import STYLE_DIM, STYLE_ERROR, STYLE_INFO, STYLE_SUCCESS, STYLE_WARNING
 
 
 class DiffResult:
@@ -63,16 +64,16 @@ class DiffResult:
         remaining_deleted, remaining_added = self.detect_version_changes(deleted_names)
 
         def added_signage():
-            return Text("➕ Added", style="dim green")
+            return Text("➕ Added", style=f"{STYLE_DIM} {STYLE_SUCCESS}")
 
         def updated_signage():
-            return Text("❗ Changed in place (no version change)", style="dim yellow")
+            return Text("❗ Changed in place (no version change)", style=f"{STYLE_DIM} {STYLE_WARNING}")
 
         def deleted_signage():
-            return Text("🗑️ Deleted", style="red")
+            return Text("🗑️ Deleted", style=STYLE_ERROR)
 
         def version_bumped_signage():
-            return Text("⬆️ Version changed", style="dim blue")
+            return Text("⬆️ Version changed", style=f"{STYLE_DIM} {STYLE_INFO}")
 
         added = [(added_signage(), name) for name in remaining_added]
         updated = [(updated_signage(), name) for name in self.updated]

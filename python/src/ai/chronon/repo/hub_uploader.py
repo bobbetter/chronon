@@ -3,14 +3,14 @@ import hashlib
 import json
 import os
 
-from gen_thrift.api.ttypes import Conf
-
 from ai.chronon.cli.formatter import Format, format_print
+from ai.chronon.cli.theme import print_info, print_step, print_success
 from ai.chronon.repo import (
     FOLDER_NAME_TO_CLASS,
     FOLDER_NAME_TO_CONF_TYPE,
 )
 from ai.chronon.repo.zipline_hub import ZiplineHub
+from gen_thrift.api.ttypes import Conf
 
 
 def build_local_repo_hashmap(root_dir: str):
@@ -78,17 +78,17 @@ def compute_and_upload_diffs(
     # Determine which confs are different from the ZiplineHub
     # Call Zipline hub with `names_and_hashes` as the argument to get back
     names_to_hashes = {name: local_conf.hash for name, local_conf in local_repo_confs.items()}
-    format_print(f"\n 🧮 Computed hashes for {len(names_to_hashes)} local files.", format=format)
+    print_step(f"🧮 Computed hashes for {len(names_to_hashes)} local files.", format=format)
 
     changed_conf_names = zipline_hub.call_diff_api(names_to_hashes)["diff"]
 
     if not changed_conf_names:
-        format_print(f" ✅ Remote contains all local files. No need to upload '{branch}'.", format=format)
+        print_success(f"Remote contains all local files. No need to upload '{branch}'.", format=format)
         diffed_confs = {}
     else:
         unchanged = len(names_to_hashes) - len(changed_conf_names)
-        format_print(
-            f" 🔍 Detected {len(changed_conf_names)} changes on local branch '{branch}'. {unchanged} unchanged.",
+        print_info(
+            f"🔍 Detected {len(changed_conf_names)} changes on local branch '{branch}'. {unchanged} unchanged.",
             format=format
         )
 
@@ -104,9 +104,9 @@ def compute_and_upload_diffs(
 
         # Make PUT request to ZiplineHub
         zipline_hub.call_upload_api(branch=branch, diff_confs=diff_confs)
-        format_print(f" ⬆️ Uploaded {len(diffed_confs)} changed confs to branch '{branch}'.", format=format)
+        print_step(f"⬆️ Uploaded {len(diffed_confs)} changed confs to branch '{branch}'.", format=format)
 
     zipline_hub.call_sync_api(branch=branch, names_to_hashes=names_to_hashes)
 
-    format_print(f" ✅ {len(names_to_hashes)} hashes updated on branch '{branch}'.\n", format=format)
+    print_success(f"{len(names_to_hashes)} hashes updated on branch '{branch}'.", format=format)
     return diffed_confs

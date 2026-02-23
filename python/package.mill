@@ -92,15 +92,39 @@ object `package` extends PythonModule with RuffModule with PublishModule {
 
       val generatedPath = build.python.generatedSources().head.path.toString
       val sourcePath = (moduleDir / os.up / "src").toString
+      val testPath = (moduleDir / os.up / "test").toString
       // Note: samplePath removed from global PYTHONPATH to avoid conflicts with canary/
       super.forkEnv() ++ Map(
-        "PYTHONPATH" -> s"$generatedPath:$sourcePath",
+        "PYTHONPATH" -> s"$generatedPath:$sourcePath:$testPath",
       )
 
     }
 
   }
 
+  object test_integration extends PythonTests, TestModule.Pytest {
+
+    def pythonRequirementFiles = Task.Sources(moduleDir / os.up / "requirements" / "integration.txt")
+
+    override def sources = Task.Sources(moduleDir / os.up / "test" / "integration")
+
+    def clientEnv: T[Map[String, String]] = Task.Input {
+      Task.env
+    }
+
+    override def forkEnv: T[Map[String, String]] = Task {
+      val generatedPath = build.python.generatedSources().head.path.toString
+      val sourcePath = (moduleDir / os.up / "src").toString
+      val testPath = (moduleDir / os.up / "test").toString
+      clientEnv() ++ Map(
+        "PYTHONPATH" -> s"$generatedPath:$sourcePath:$testPath",
+      )
+    }
+
+    override def testCachedArgs = Task {
+      Seq("-o", "addopts=", "-s", "-v", "--log-cli-level=INFO")
+    }
+  }
 
   // Generate Python thrift files
   def generatedSources: T[Seq[PathRef]] = Task {

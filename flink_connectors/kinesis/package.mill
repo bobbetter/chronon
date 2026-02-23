@@ -20,6 +20,7 @@ trait KinesisConnectorModule extends Cross.Module[String] with build.BaseModule 
     mvn"com.google.protobuf:protobuf-java:3.25.1",
     mvn"io.netty:netty-codec-http2:4.1.129.Final",
     mvn"org.apache.flink:flink-connector-kinesis:4.2.0-1.17",
+    mvn"software.amazon.glue:schema-registry-serde:1.1.27",
   )
 
   object test extends build.BaseTestModule {

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import platform
 import shutil
 
 import click
@@ -8,16 +9,54 @@ from importlib_resources import files
 from rich.prompt import Prompt
 from rich.syntax import Syntax
 
-from ai.chronon.cli.compile.display.console import console
+from ai.chronon.cli.theme import console, print_success
+from ai.chronon.repo.constants import VALID_CLOUDS
+
+
+def _detect_shell_config():
+    """Detect the user's shell and return (shell_name, config_file_path).
+    Returns (shell_name, None) for unsupported shells.
+    """
+    shell = os.environ.get("SHELL", "")
+    shell_name = os.path.basename(shell)
+    home = os.path.expanduser("~")
+    if shell_name == "zsh":
+        return shell_name, os.path.join(home, ".zshrc")
+    elif shell_name == "bash":
+        if platform.system() == "Darwin":
+            return shell_name, os.path.join(home, ".bash_profile")
+        else:
+            return shell_name, os.path.join(home, ".bashrc")
+    else:
+        return shell_name, None
+
+
+def _add_to_shell_config(config_path, export_line):
+    """Append export_line to config_path if not already present.
+    Returns True if the line was added, False if already present.
+    """
+    if os.path.exists(config_path):
+        with open(config_path) as f:
+            if export_line in f.read():
+                return False
+    with open(config_path, "a") as f:
+        f.write(f"\n{export_line}\n")
+    return True
+
+
+def _apply_pythonpath(target_path):
+    """Apply PYTHONPATH to the current process environment."""
+    current = os.environ.get("PYTHONPATH", "")
+    os.environ["PYTHONPATH"] = f"{target_path}:{current}" if current else target_path
 
 
 @click.command(name="init")
 @click.option(
-    "--cloud-provider",
+    "--cloud",
     envvar="CLOUD_PROVIDER",
     help="Cloud provider to use.",
     required=True,
-    type=click.Choice(["aws", "gcp", "azure"], case_sensitive=False),
+    type=click.Choice(VALID_CLOUDS, case_sensitive=False),
 )
 @click.option(
     "--chronon-root",
@@ -26,8 +65,8 @@ from ai.chronon.cli.compile.display.console import console
     type=click.Path(file_okay=False, writable=True),
 )
 @click.pass_context
-def main(ctx, chronon_root, cloud_provider):
-    template_path = files("ai.chronon").joinpath("resources", cloud_provider.lower())
+def main(ctx, chronon_root, cloud):
+    template_path = files("ai.chronon").joinpath("resources", cloud.lower())
     target_path = os.path.abspath(chronon_root)
 
     if os.path.exists(target_path) and os.listdir(target_path):
@@ -43,15 +82,44 @@ def main(ctx, chronon_root, cloud_provider):
 
     try:
         shutil.copytree(template_path, target_path, dirs_exist_ok=True)
-        console.print("[bold green] Project scaffolding created successfully! 🎉\n")
-        export_cmd = Syntax(
-            f"`export PYTHONPATH={target_path}:$PYTHONPATH`",
-            "bash",
-            theme="github-dark",
-            line_numbers=False,
-        )
-        console.print("Please copy the following command to your shell config:")
-        console.print(export_cmd)
+        print_success("Project scaffolding created successfully! 🎉")
+        export_line = f'export PYTHONPATH="{target_path}:$PYTHONPATH"'
+        shell_name, config_path = _detect_shell_config()
+        if config_path is not None:
+            choice = Prompt.ask(
+                f"Add PYTHONPATH to {config_path}?",
+                choices=["y", "n"],
+                default="y",
+            )
+            if choice == "y":
+                added = _add_to_shell_config(config_path, export_line)
+                _apply_pythonpath(target_path)
+                if added:
+                    console.print(f"Added to {config_path} and applied to current session.")
+                else:
+                    console.print(f"Already in {config_path}, applied to current session.")
+            else:
+                _apply_pythonpath(target_path)
+                export_cmd = Syntax(
+                    export_line,
+                    "bash",
+                    theme="github-dark",
+                    line_numbers=False,
+                )
+                console.print("Please copy the following command to your shell config:")
+                console.print(export_cmd)
+                console.print("Applied to current session only.")
+        else:
+            _apply_pythonpath(target_path)
+            export_cmd = Syntax(
+                export_line,
+                "bash",
+                theme="github-dark",
+                line_numbers=False,
+            )
+            console.print(f"Unsupported shell ({shell_name}). Please add the following to your shell config:")
+            console.print(export_cmd)
+            console.print("Applied to current session only.")
     except Exception:
         console.print_exception()
 

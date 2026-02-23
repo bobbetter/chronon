@@ -308,17 +308,32 @@ class KyuubiClient(
 
 object KyuubiClient {
 
+  /** Normalize a SPARK_CLUSTER_NAME value into a full URL.
+    * Accepts "host:port", "http://host:port", or "https://host:port".
+    */
+  def resolveUrl(clusterName: String): String = {
+    if (clusterName.startsWith("http://") || clusterName.startsWith("https://")) {
+      clusterName
+    } else {
+      s"https://$clusterName"
+    }
+  }
+
   /** Factory method to create a KyuubiClient.
     *
     * @param baseUrl The base URL of the Kyuubi server
     * @param auth Authentication configuration
     * @return A new KyuubiClient instance
     */
-  def apply(baseUrl: String, auth: KyuubiAuth = KyuubiAuth.NoAuth): KyuubiClient = {
+  def apply(baseUrl: String, auth: KyuubiAuth = KyuubiAuth.NoAuth, trustAll: Boolean = false): KyuubiClient = {
     val vertx = Vertx.vertx()
+    val isHttps = baseUrl.toLowerCase.startsWith("https://")
     val options = new WebClientOptions()
       .setConnectTimeout(30000) // 30 second connection timeout
       .setIdleTimeout(300) // 5 minute idle timeout
+      .setSsl(isHttps)
+      .setTrustAll(trustAll)
+      .setVerifyHost(!trustAll)
     val client = WebClient.create(vertx, options)
     new KyuubiClient(baseUrl, auth, client)
   }

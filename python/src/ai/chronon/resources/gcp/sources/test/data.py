@@ -1,6 +1,5 @@
-from gen_thrift.api.ttypes import EventSource, Source
-
 from ai.chronon.query import Query, selects
+from gen_thrift.api.ttypes import EventSource, Source
 
 """
 Example: Defining a Chronon Source from a Batch Table

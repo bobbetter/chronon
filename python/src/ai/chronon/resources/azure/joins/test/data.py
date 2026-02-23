@@ -1,8 +1,8 @@
-from gen_thrift.api.ttypes import EventSource, Source
 from group_bys.test.data import group_by_v1
 
 from ai.chronon.join import Join, JoinPart
 from ai.chronon.query import Query, selects
+from gen_thrift.api.ttypes import EventSource, Source
 
 """
 This is the "left side" of the join that will comprise our training set. It is responsible for providing the primary keys
