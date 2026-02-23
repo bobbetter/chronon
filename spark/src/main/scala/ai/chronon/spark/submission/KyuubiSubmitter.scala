@@ -566,20 +566,15 @@ object KyuubiSubmitter {
     * @param args Command-line arguments
     */
   def main(args: Array[String]): Unit = {
-    // Read the Kyuubi server URL from SPARK_CLUSTER_NAME env var
     val clusterName = sys.env
       .getOrElse(
         SparkClusterNameEnvVar,
         throw new Exception(
           s"$SparkClusterNameEnvVar is not set. " +
-            s"Please set $SparkClusterNameEnvVar to the Kyuubi server address (e.g., 'kyuubi-server:10099').")
+            s"Please set $SparkClusterNameEnvVar to the Kyuubi server URL (e.g., 'https://kyuubi-server:10099').")
       )
 
-    val baseUrl = if (clusterName.startsWith("http://") || clusterName.startsWith("https://")) {
-      clusterName
-    } else {
-      s"https://$clusterName"
-    }
+    val baseUrl = KyuubiClient.resolveUrl(clusterName)
 
     logger.info(s"Connecting to Kyuubi server at: $baseUrl")
 

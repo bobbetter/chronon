@@ -51,6 +51,7 @@ import java.time.Instant
 import java.util
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
+import scala.compat.java8.FutureConverters
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Failure
@@ -395,46 +396,41 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
 
   private def handleDynamoDbOperation[T](context: Context, dataset: String, startTs: Long)(
       completableFuture: CompletableFuture[T]): Future[T] = {
-    val promise = scala.concurrent.Promise[T]()
-
-    completableFuture.whenComplete { (result, exception) =>
-      if (exception != null) {
+    FutureConverters.toScala(completableFuture).transform {
+      case Success(result) =>
+        context.distribution("latency", System.currentTimeMillis() - startTs)
+        Success(result)
+      case Failure(exception) =>
         exception match {
           case e: ProvisionedThroughputExceededException =>
             logger.error(s"Provisioned throughput exceeded as we are low on IOPS on $dataset", e)
             context.increment("iops_error")
-            promise.failure(e)
+            Failure(e)
           case e: ResourceNotFoundException =>
             logger.error(s"Unable to trigger operation on $dataset as its not found", e)
             context.increment("missing_table")
-            promise.failure(e)
+            Failure(e)
           case e: CompletionException =>
             e.getCause match {
               case ce: ProvisionedThroughputExceededException =>
                 logger.error(s"Provisioned throughput exceeded as we are low on IOPS on $dataset", ce)
                 context.increment("iops_error")
-                promise.failure(ce)
+                Failure(ce)
               case ce: ResourceNotFoundException =>
                 logger.error(s"Unable to trigger operation on $dataset as its not found", ce)
                 context.increment("missing_table")
-                promise.failure(ce)
+                Failure(ce)
               case _ =>
                 logger.error("Error interacting with DynamoDB", e.getCause)
                 context.increment("dynamodb_error")
-                promise.failure(e.getCause)
+                Failure(e.getCause)
             }
           case e: Exception =>
             logger.error("Error interacting with DynamoDB", e)
             context.increment("dynamodb_error")
-            promise.failure(e)
+            Failure(e)
         }
-      } else {
-        context.distribution("latency", System.currentTimeMillis() - startTs)
-        promise.success(result)
-      }
     }
-
-    promise.future
   }
 
   private def extractTimedValues(ddbResponseList: util.List[util.Map[String, AttributeValue]],

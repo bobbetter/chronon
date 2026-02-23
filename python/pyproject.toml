@@ -20,7 +20,7 @@ exclude = [
 line-length = 100
 
 # Target Python version
-target-version = "py39"
+target-version = "py311"
 
 [tool.ruff.lint]
 # Rules to enable
@@ -38,7 +38,16 @@ ignore = [
     #"E402",  # module level import not at top of file
 ]
 
+[tool.ruff.lint.isort]
+known-first-party = ["ai", "gen_thrift"]
+
 # Ignore specific files or patterns
 [tool.ruff.lint.per-file-ignores]
 "**/constants.py" = ["F401", "I001"]  # Ignore unused imports and import sorting in constants.py
 "**/ttypes.py" = ["F401", "I001"]     # Ignore unused imports and import sorting in ttypes.py
+
+[tool.pytest.ini_options]
+norecursedirs = ["integration"]
+markers = [
+    "integration: marks tests as integration tests (require a running Hub)",
+]

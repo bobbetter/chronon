@@ -4,7 +4,6 @@ from typing import Dict, List, Optional, Union
 
 import gen_thrift.api.ttypes as ttypes
 import gen_thrift.common.ttypes as common
-
 from ai.chronon import utils
 from ai.chronon import windows as window_utils
 from ai.chronon.data_types import DataType, FieldsType

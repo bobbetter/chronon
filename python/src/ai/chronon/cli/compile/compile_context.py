@@ -2,6 +2,13 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Type
 
+import ai.chronon.cli.compile.parse_teams as teams
+from ai.chronon.cli.compile.conf_validator import ConfValidator
+from ai.chronon.cli.compile.display.compile_status import CompileStatus
+from ai.chronon.cli.compile.display.compiled_obj import CompiledObj
+from ai.chronon.cli.compile.serializer import file2thrift
+from ai.chronon.cli.formatter import Format
+from ai.chronon.cli.logger import get_logger, require
 from gen_thrift.api.ttypes import (
     ConfType,
     GroupBy,
@@ -12,14 +19,6 @@ from gen_thrift.api.ttypes import (
     StagingQuery,
     Team,
 )
-
-import ai.chronon.cli.compile.parse_teams as teams
-from ai.chronon.cli.compile.conf_validator import ConfValidator
-from ai.chronon.cli.compile.display.compile_status import CompileStatus
-from ai.chronon.cli.compile.display.compiled_obj import CompiledObj
-from ai.chronon.cli.compile.serializer import file2thrift
-from ai.chronon.cli.formatter import Format
-from ai.chronon.cli.logger import get_logger, require
 
 logger = get_logger()
 

@@ -7,6 +7,7 @@ from rich.text import Text
 from ai.chronon.cli.compile.display.class_tracker import ClassTracker
 from ai.chronon.cli.compile.display.compiled_obj import CompiledObj
 from ai.chronon.cli.formatter import Format
+from ai.chronon.cli.theme import STYLE_ACCENT
 
 
 class CompileStatus:
@@ -69,7 +70,7 @@ class CompileStatus:
             if obj_type == "MetaData":
                 continue
 
-            text.append(f"\n{obj_type}-s:\n", style="cyan")
+            text.append(f"\n{obj_type}-s:\n", style=STYLE_ACCENT)
 
             status = tracker.to_status()
             if status:

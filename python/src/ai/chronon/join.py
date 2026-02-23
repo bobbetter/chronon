@@ -19,11 +19,10 @@ import logging
 from collections import Counter
 from typing import Dict, List, Optional, Union
 
-import gen_thrift.api.ttypes as api
-import gen_thrift.common.ttypes as common
-
 import ai.chronon.repo.extract_objects as eo
 import ai.chronon.utils as utils
+import gen_thrift.api.ttypes as api
+import gen_thrift.common.ttypes as common
 from ai.chronon.cli.compile import parse_teams
 from ai.chronon.data_types import DataType, FieldsType
 

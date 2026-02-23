@@ -14,6 +14,7 @@ from ai.chronon.repo.utils import (
     extract_filename_from_path,
     get_customer_id,
     split_date_range,
+    upload_to_blob_store,
 )
 
 LOG = get_logger()
@@ -42,19 +43,6 @@ class AwsRunner(Runner):
         self.version = args.get("version", "latest")
 
         super().__init__(args, os.path.expanduser(jar_path))
-
-    @staticmethod
-    def upload_s3_file(bucket_name: str, source_file_name: str, destination_blob_name: str):
-        """Uploads a file to the bucket."""
-        obj = boto3.client("s3")
-        try:
-            obj.upload_file(source_file_name, bucket_name, destination_blob_name)
-            print(
-                f"File {source_file_name} uploaded to {destination_blob_name} in bucket {bucket_name}."
-            )
-            return f"s3://{bucket_name}/{destination_blob_name}"
-        except Exception as e:
-            raise RuntimeError(f"Failed to upload {source_file_name}: {str(e)}") from e
 
     @staticmethod
     def download_zipline_aws_jar(
@@ -140,8 +128,8 @@ class AwsRunner(Runner):
             # upload to `metadata` folder
             destination_file_path = f"metadata/{extract_filename_from_path(source_file)}"
             s3_files.append(
-                AwsRunner.upload_s3_file(
-                    customer_warehouse_bucket_name, source_file, destination_file_path
+                upload_to_blob_store(
+                    source_file, f"s3://{customer_warehouse_bucket_name}/{destination_file_path}"
                 )
             )
 

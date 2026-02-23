@@ -153,6 +153,7 @@ RENDER_INFO_DEFAULT_SCRIPT = "scripts/render_info.py"
 ZIPLINE_DIRECTORY = "/tmp/zipline"
 
 CLOUD_PROVIDER_KEYWORD = "CLOUD_PROVIDER"
+VALID_CLOUDS = ("gcp", "aws", "azure")
 
 # cloud provider
 AWS = "AWS"

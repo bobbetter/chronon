@@ -17,17 +17,15 @@
 package ai.chronon.spark.other
 
 import ai.chronon.api.{Constants, Operation}
+import ai.chronon.online.InMemoryKvStore
 import ai.chronon.spark.AvroKvEncoder
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.{EnhancedStatsCompute, EnhancedStatsStore}
-import ai.chronon.online.InMemoryKvStore
-import ai.chronon.spark.utils.{MockApi, OnlineUtils, SparkTestBase}
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import ai.chronon.spark.utils.{MockApi, SparkTestBase}
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.LongType
 import org.slf4j.{Logger, LoggerFactory}
-
-import java.time.{LocalDate, ZoneId}
 
 class EnhancedStatsComputeTest extends SparkTestBase {
   @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
@@ -38,27 +36,25 @@ class EnhancedStatsComputeTest extends SparkTestBase {
     "spark.driver.bindAddress" -> "127.0.0.1"
   )
 
-  /** Helper to load the ratings CSV and prepare it for testing */
-  def loadRatingsData(): DataFrame = {
-    // Use classloader to find the resource
+  // Sample to ~100K rows (5%) to keep tests fast while preserving cardinality patterns
+  // (13K users, 16K movies, 10 ratings → all remain distinguishable at any threshold).
+  // Cached so the CSV is only read once across all tests.
+  lazy val ratingsData: DataFrame = {
     val csvPath = getClass.getClassLoader.getResource("local_data_csv/rating.csv.gz").getPath
-
-    // Read CSV with schema
-    val df = spark.read
+    spark.read
       .option("header", "true")
       .option("inferSchema", "true")
       .csv(csvPath)
-
-    // Add a partition column (required by StatsCompute)
-    // Convert timestamp to partition format
-    df.withColumn(tableUtils.partitionColumn,
-        date_format(to_timestamp(col("timestamp")), "yyyy-MM-dd"))
+      .sample(0.05)
+      .withColumn(tableUtils.partitionColumn,
+          date_format(to_timestamp(col("timestamp")), "yyyy-MM-dd"))
       .withColumn(Constants.TimeColumn,
-        unix_timestamp(to_timestamp(col("timestamp"))).cast(LongType) * 1000)
+          unix_timestamp(to_timestamp(col("timestamp"))).cast(LongType) * 1000)
+      .cache()
   }
 
   it should "detect cardinality correctly for ratings data" in {
-    val df = loadRatingsData()
+    val df = ratingsData
 
     logger.info(s"Loaded ${df.count()} rating records")
     df.show(10, truncate = false)
@@ -103,7 +99,7 @@ class EnhancedStatsComputeTest extends SparkTestBase {
   }
 
   it should "generate enhanced metrics based on cardinality" in {
-    val df = loadRatingsData()
+    val df = ratingsData
 
     val enhancedStats = new EnhancedStatsCompute(
       inputDf = df,
@@ -137,7 +133,7 @@ class EnhancedStatsComputeTest extends SparkTestBase {
   }
 
   it should "compute daily enhanced summary statistics" in {
-    val df = loadRatingsData()
+    val df = ratingsData
 
     val enhancedStats = new EnhancedStatsCompute(
       inputDf = df,
@@ -175,7 +171,7 @@ class EnhancedStatsComputeTest extends SparkTestBase {
   }
 
   it should "verify statistics are correct for numeric columns" in {
-    val df = loadRatingsData()
+    val df = ratingsData
 
     val enhancedStats = new EnhancedStatsCompute(
       inputDf = df,
@@ -216,7 +212,7 @@ class EnhancedStatsComputeTest extends SparkTestBase {
   }
 
   it should "handle mixed cardinality columns appropriately" in {
-    val df = loadRatingsData()
+    val df = ratingsData
 
     // Test with different thresholds to see how it affects metric generation
     val thresholds = Seq(10, 100, 1000)
@@ -245,7 +241,7 @@ class EnhancedStatsComputeTest extends SparkTestBase {
   }
 
   it should "generate IR bytes that can be uploaded to KV store" in {
-    val df = loadRatingsData()
+    val df = ratingsData
 
     val enhancedStats = new EnhancedStatsCompute(
       inputDf = df,
@@ -296,11 +292,11 @@ class EnhancedStatsComputeTest extends SparkTestBase {
 
   it should "upload to InMemoryKVStore and fetch back successfully" in {
     import java.util.concurrent.Executors
-    import scala.concurrent.ExecutionContext
+      import scala.concurrent.ExecutionContext
 
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
 
-    val df = loadRatingsData()
+    val df = ratingsData
     val tableName = "ratings_full_cycle_test"
 
     logger.info(s"\n=== Full Cycle Test: Compute → Upload → Fetch ===")
@@ -354,9 +350,10 @@ class EnhancedStatsComputeTest extends SparkTestBase {
 
     // Step 5: Verify data was uploaded by checking KV store directly
     import ai.chronon.online.KVStore.GetRequest
-    import java.nio.charset.StandardCharsets
-    import scala.concurrent.Await
-    import scala.concurrent.duration._
+
+      import java.nio.charset.StandardCharsets
+      import scala.concurrent.Await
+      import scala.concurrent.duration._
 
     // Check that schemas were stored
     val keySchemaKey = s"$tableName${Constants.TimedKvRDDKeySchemaKey}"

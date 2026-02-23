@@ -28,9 +28,9 @@ Chronon is a unified platform for **feature engineering**, enabling **online and
 To get started, make sure you have the following set up:
 
 - ✅ **Python** 3.11 or higher
-- ✅ **Zipline CLI** — Only for **upgrades or downgrades**, install via:
+- ✅ **Zipline CLI** — Install or upgrade via:
   ```bash
-  ./zipline-cli-install.sh
+  pip install --upgrade zipline-ai
 - ✅ gcloud CLI — authenticated and configured with the correct GCP project
 - ✅ Google Cloud credentials — either:
   - Application Default Credentials (ADC)

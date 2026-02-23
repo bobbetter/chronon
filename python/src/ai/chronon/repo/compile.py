@@ -3,19 +3,19 @@ import os
 import sys
 
 import click
-from gen_thrift.api.ttypes import ConfType
 
 from ai.chronon.cli.compile.compile_context import CompileContext
 from ai.chronon.cli.compile.compiler import Compiler, CompileResult
-from ai.chronon.cli.compile.display.console import console
 from ai.chronon.cli.formatter import Format, jsonify_exceptions_if_json_format
+from ai.chronon.cli.theme import STYLE_INFO, console
+from gen_thrift.api.ttypes import ConfType
 
 
 @click.command(name="compile")
 @click.option(
     "--chronon-root",
     envvar="CHRONON_ROOT",
-    help="Path to the root chronon folder",
+    help="Path to the root Chronon folder.",
     default=os.getcwd(),
 )
 @click.option(
@@ -26,9 +26,10 @@ from ai.chronon.cli.formatter import Format, jsonify_exceptions_if_json_format
 )
 @click.option(
     "--format",
-    help="Format of the response",
+    help="Output format.",
     default=Format.TEXT,
-    type=click.Choice(Format, case_sensitive=False)
+    type=click.Choice(Format, case_sensitive=False),
+    show_default=True,
 )
 @click.option(
     "--force",
@@ -43,11 +44,11 @@ def compile(chronon_root, ignore_python_errors, format, force):
     if chronon_root not in sys.path:
         if format != Format.JSON:
             console.print(
-                f"\nAdding [cyan italic]{chronon_root}[/cyan italic] to python path, during compile."
+                f"\nAdding [{STYLE_INFO} italic]{chronon_root}[/{STYLE_INFO} italic] to python path, during compile."
             )
         sys.path.insert(0, chronon_root)
     elif format != Format.JSON:
-        console.print(f"\n[cyan italic]{chronon_root}[/cyan italic] already on python path.")
+        console.print(f"\n[{STYLE_INFO} italic]{chronon_root}[/{STYLE_INFO} italic] already on python path.")
 
     compiled_result, has_errors = __compile(chronon_root, ignore_python_errors, format=format, force=force)
 

@@ -1,6 +1,7 @@
 package build.cloud_aws
 import mill.api._
 import mill.scalalib._
+import mill.scalalib.Assembly
 
 // Cloud AWS module - supports both cloud_aws.test AND cloud_aws[2.13.17].test
 object `package` extends Cross[CloudAwsModule](build.Constants.scalaVersions) with CloudAwsModule {
@@ -9,6 +10,8 @@ object `package` extends Cross[CloudAwsModule](build.Constants.scalaVersions) wi
 }
 
 trait CloudAwsModule extends Cross.Module[String] with build.BaseModule {
+  private val avroVersion = build.Constants.avroVersion
+
   def moduleDeps = Seq(build.spark(crossValue), build.aggregator(crossValue), build.api(crossValue), build.online(crossValue))
 
   def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingApiDeps ++ build.Constants.utilityDeps ++ build.Constants.sparkDeps ++ Seq(
@@ -21,10 +24,46 @@ trait CloudAwsModule extends Cross.Module[String] with build.BaseModule {
     mvn"software.amazon.awssdk:utils:2.30.13",
     mvn"software.amazon.awssdk:auth:2.30.13",
     mvn"software.amazon.awssdk:url-connection-client:2.30.13",
+    mvn"software.amazon.awssdk:netty-nio-client:2.30.13",
     mvn"software.amazon.awssdk:identity-spi:2.30.13",
-    mvn"org.apache.hudi::hudi-spark3.5-bundle:1.0.0",
+    mvn"org.apache.iceberg::iceberg-spark-runtime-3.5:1.10.0",
   )
   
+  override def assemblyRules = super.assemblyRules ++ Seq(
+    // iceberg-spark-runtime embeds stale avro pom.properties (1.12.0) that override
+    // the correct version during assembly merge. Exclude and patch back below.
+    Assembly.Rule.ExcludePattern("META-INF/maven/org\\.apache\\.avro/.*"),
+  )
+
+  // Patch correct avro version back into the assembly jar after stripping stale metadata.
+  private val patchedMetadata: Seq[(String, String, String)] = Seq(
+    ("org.apache.avro", "avro", avroVersion),
+  )
+
+  private def patchAssemblyMetadata(jar: os.Path): Unit = {
+    val uri = java.net.URI.create("jar:" + jar.toIO.toURI)
+    val env = new java.util.HashMap[String, String]()
+    val fs = java.nio.file.FileSystems.newFileSystem(uri, env)
+    try {
+      patchedMetadata.foreach { case (groupId, artifactId, version) =>
+        val entry = fs.getPath(s"META-INF/maven/$groupId/$artifactId/pom.properties")
+        java.nio.file.Files.createDirectories(entry.getParent)
+        val content = s"artifactId=$artifactId\ngroupId=$groupId\nversion=$version\n"
+        java.nio.file.Files.write(entry, content.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+      }
+    } finally {
+      fs.close()
+    }
+  }
+
+  override def assembly = Task {
+    val result = super.assembly()
+    val out = Task.dest / "out.jar"
+    os.copy(result.path, out)
+    patchAssemblyMetadata(out)
+    PathRef(out)
+  }
+
   object test extends build.BaseTestModule {
     def scalaVersion = crossValue
 

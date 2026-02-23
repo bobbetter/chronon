@@ -35,7 +35,8 @@ class Format(Enum):
 def format_print(lines, format: Format = Format.TEXT):
     """ Format aware print. """
     if format != Format.JSON:
-        print(lines)
+        from ai.chronon.cli.theme import console
+        console.print(lines)
 
 
 def jsonify_exceptions_if_json_format(func):

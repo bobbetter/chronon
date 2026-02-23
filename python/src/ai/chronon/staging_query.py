@@ -3,10 +3,9 @@ import json
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 
+import ai.chronon.airflow_helpers as airflow_helpers
 import gen_thrift.api.ttypes as ttypes
 import gen_thrift.common.ttypes as common
-
-import ai.chronon.airflow_helpers as airflow_helpers
 from ai.chronon import query_utils, utils
 from ai.chronon.constants import AIRFLOW_DEPENDENCIES_KEY
 
