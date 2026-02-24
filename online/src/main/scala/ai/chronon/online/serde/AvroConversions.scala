@@ -32,7 +32,6 @@ import com.linkedin.avro.fastserde.BufferBackedPrimitiveFloatList
 import org.slf4j.{Logger, LoggerFactory}
 
 object AvroConversions {
-  private val logger: Logger = LoggerFactory.getLogger(getClass)
 
   def toAvroValue(value: AnyRef, schema: Schema): Object =
     schema.getType match {
@@ -173,10 +172,6 @@ object AvroConversions {
       case DecimalType(precision, scale) =>
         LogicalTypes.decimal(precision, scale).addToSchema(Schema.create(Schema.Type.BYTES))
       case _ =>
-        logger.error(
-          s"fromChrononSchema: unsupported Chronon type for Avro conversion " +
-            s"dataType=$dataType fieldPath=$fieldPath nameSetSize=${nameSet.size}"
-        )
         throw new UnsupportedOperationException(
           s"Cannot convert chronon type $dataType to avro type. Cast it to string please")
     }
