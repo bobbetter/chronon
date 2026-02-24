@@ -30,7 +30,9 @@ from ai.chronon.repo import FOLDER_NAME_TO_CLASS
 ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
 
 # Common type definition for any source type used across the codebase
-ANY_SOURCE_TYPE = Union[api.Source, api.EventSource, api.EntitySource, api.JoinSource, api.ModelTransforms]
+ANY_SOURCE_TYPE = Union[
+    api.Source, api.EventSource, api.EntitySource, api.JoinSource, api.ModelTransforms
+]
 
 chronon_root_path = ""  # passed from compile.py
 

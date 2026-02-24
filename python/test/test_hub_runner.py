@@ -70,8 +70,8 @@ class TestHubRunner:
         runner = CliRunner()
         result = self._run_and_print(runner, hub, [
             'backfill',
+            online_join_conf,
             '--repo', canary,
-            '--conf', online_join_conf,
             '--no-use-auth',
             '--start-ds', '2024-01-15',
             '--end-ds', '2024-02-15',
@@ -115,8 +115,8 @@ class TestHubRunner:
         runner = CliRunner()
         result = self._run_and_print(runner, hub, [
             'run-adhoc',
+            online_join_conf,
             '--repo', canary,
-            '--conf', online_join_conf,
             '--no-use-auth',
             '--start-ds', '2024-01-15',
             '--end-ds', '2024-02-15',
@@ -126,8 +126,8 @@ class TestHubRunner:
         assert result.exit_code != 0
         result = self._run_and_print(runner, hub, [
             'run-adhoc',
+            online_join_conf,
             '--repo', canary,
-            '--conf', online_join_conf,
             '--no-use-auth',
             '--end-ds', '2024-02-15',
         ])
@@ -168,8 +168,8 @@ class TestHubRunner:
         runner = CliRunner(catch_exceptions=False)
         result = self._run_and_print(runner, hub, [
             'schedule',
+            online_join_conf,
             '--repo', canary,
-            '--conf', online_join_conf,
             '--no-use-auth',
         ])
 
@@ -211,8 +211,8 @@ class TestHubRunner:
         workflow_id = "test-workflow-123"
         result = self._run_and_print(runner, hub, [
             'cancel',
+            workflow_id,
             '--repo', canary,
-            '--workflow-id', workflow_id,
             '--no-use-auth',
             '--cloud', 'gcp',
         ])
@@ -250,8 +250,8 @@ class TestHubRunner:
         customer_id = "test-customer-123"
         result = self._run_and_print(runner, hub, [
             'cancel',
+            workflow_id,
             '--repo', canary,
-            '--workflow-id', workflow_id,
             '--no-use-auth',
             '--cloud', 'azure',
             '--customer-id', customer_id,
@@ -289,8 +289,8 @@ class TestHubRunner:
         workflow_id = "test-workflow-789"
         result = self._run_and_print(runner, hub, [
             'cancel',
+            workflow_id,
             '--repo', canary,
-            '--workflow-id', workflow_id,
             '--no-use-auth',
             '--cloud', 'azure',
             # Intentionally not providing --customer-id

@@ -7,8 +7,9 @@ from click.testing import CliRunner
 
 from integration.helpers.cli import compile_configs
 from integration.helpers.templates import (
-    GCP_CONFIGS,
     AWS_CONFIGS,
+    AZURE_CONFIGS,
+    GCP_CONFIGS,
     _apply_test_id,
     cleanup_test_configs,
     generate_test_configs,
@@ -86,6 +87,9 @@ class TestCompiledConfsExist:
     def test_aws_confs(self):
         self._compile_and_check("aws")
 
+    def test_azure_confs(self):
+        self._compile_and_check("azure")
+
 
 class TestConfigSourcesExist:
     """Ensure every ConfigTemplate.source points to a real file in the canary dir."""
@@ -126,6 +130,17 @@ class TestConfigSourcesExist:
         path = os.path.join(_canary_root, cfg.source)
         assert os.path.isfile(path), self._SOURCE_MISSING_MSG.format(
             source=cfg.source, path=path, cloud="AWS",
+        )
+
+    @pytest.mark.parametrize(
+        "cfg",
+        AZURE_CONFIGS,
+        ids=[c.source for c in AZURE_CONFIGS],
+    )
+    def test_azure_source_exists(self, cfg):
+        path = os.path.join(_canary_root, cfg.source)
+        assert os.path.isfile(path), self._SOURCE_MISSING_MSG.format(
+            source=cfg.source, path=path, cloud="AZURE",
         )
 
 

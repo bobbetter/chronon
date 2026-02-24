@@ -67,7 +67,9 @@ class DiffResult:
             return Text("➕ Added", style=f"{STYLE_DIM} {STYLE_SUCCESS}")
 
         def updated_signage():
-            return Text("❗ Changed in place (no version change)", style=f"{STYLE_DIM} {STYLE_WARNING}")
+            return Text(
+                "❗ Changed in place (no version change)", style=f"{STYLE_DIM} {STYLE_WARNING}"
+            )
 
         def deleted_signage():
             return Text("🗑️ Deleted", style=STYLE_ERROR)

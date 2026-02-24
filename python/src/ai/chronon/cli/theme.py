@@ -30,6 +30,7 @@ STYLE_KEY = "bold"
 
 # ── Icon / label constants ────────────────────────────────────────────
 
+
 class Icons:
     SUCCESS = f"[{STYLE_SUCCESS}]✅ SUCCESS[/]"
     ERROR = f"[{STYLE_ERROR}]❌ ERROR[/]"

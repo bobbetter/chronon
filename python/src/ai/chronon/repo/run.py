@@ -107,17 +107,21 @@ def validate_additional_jars(ctx, param, value):
     name="run",
     context_settings=dict(allow_extra_args=True, ignore_unknown_options=True),
 )
+@click.argument("conf")
 @click.option(
-    "--conf", required=True, help="Conf param - required for every mode"
-)  # TODO: @davidhan - we should be able to infer this in the future
-@click.option(
+    "-e",
     "--env",
     required=False,
     default="dev",
-    help="Running environment - default to be dev",
+    show_default=True,
+    help="Running environment.",
 )
 @click.option(
-    "--mode", type=click.Choice([str(k) for k in MODE_ARGS.keys()]), default=str(RunMode.BACKFILL)
+    "-m",
+    "--mode",
+    type=click.Choice([str(k) for k in MODE_ARGS.keys()]),
+    default=str(RunMode.BACKFILL),
+    show_default=True,
 )
 @click.option("--ds", help="the end partition to backfill the data")
 @click.option("--app-name", help="app name. Default to {}".format(APP_NAME_TEMPLATE))
@@ -133,7 +137,7 @@ def validate_additional_jars(ctx, param, value):
     help="break down the backfill range into this number of tasks in parallel. "
     "Please use it along with --start-ds and --end-ds and only in manual mode",
 )
-@click.option("--repo", help="Path to chronon repo", default=".")
+@click.option("-r", "--repo", help="Path to chronon repo", default=".", show_default=True)
 @click.option(
     "--online-jar",
     help="Jar containing Online KvStore & Deserializer Impl. "
@@ -144,7 +148,12 @@ def validate_additional_jars(ctx, param, value):
     help="Class name of Online Impl. Used for streaming and metadata-upload mode.",
 )
 @click.option("--version", required=False, help="Chronon version to use.")
-@click.option("--spark-version", default="2.4.0", help="Spark version to use for downloading jar.")
+@click.option(
+    "--spark-version",
+    default="2.4.0",
+    show_default=True,
+    help="Spark version to use for downloading jar.",
+)
 @click.option("--spark-submit-path", help="Path to spark-submit")
 @click.option("--spark-streaming-submit-path", help="Path to spark-submit for streaming")
 @click.option(
@@ -203,7 +212,12 @@ def validate_additional_jars(ctx, param, value):
     is_flag=True,
     help="Validate the catalyst util Spark expression evaluation logic",
 )
-@click.option("--validate-rows", default="10000", help="Number of rows to  run the validation on")
+@click.option(
+    "--validate-rows",
+    default="10000",
+    show_default=True,
+    help="Number of rows to run the validation on",
+)
 @click.option("--join-part-name", help="Name of the join part to use for join-part-job")
 @click.option(
     "--artifact-prefix",
@@ -213,9 +227,9 @@ def validate_additional_jars(ctx, param, value):
     "--warehouse-bucket",
     help="GCS or S3 bucket to use as warehouse for staging metadata/configs.",
 )
-@click.option("--disable-cloud-logging", is_flag=True, default=False, help="Disables cloud logging")
+@click.option("--no-cloud-logging", is_flag=True, default=False, help="Disables cloud logging")
 @click.option(
-    "--enable-debug",
+    "--debug",
     is_flag=True,
     default=False,
     help="Enables verbose debug logging in run modes that support it",
@@ -263,11 +277,15 @@ def main(
     join_part_name,
     artifact_prefix,
     warehouse_bucket,
-    disable_cloud_logging,
+    no_cloud_logging,
     additional_jars,
-    enable_debug,
+    debug,
     uploader,
 ):
+    """Run a Zipline pipeline.
+
+    CONF is the path to the compiled conf (e.g. compiled/joins/team/my_join).
+    """
     unknown_args = ctx.args
     click.echo("Running with args: {}".format(ctx.params))
 

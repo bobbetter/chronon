@@ -38,8 +38,8 @@ def submit_backfill(runner, chronon_root, hub_url, conf, start_ds, end_ds):
         zipline,
         [
             "hub", "backfill",
+            conf,
             f"--repo={chronon_root}",
-            f"--conf={conf}",
             f"--hub-url={hub_url}",
             f"--start-ds={start_ds}",
             f"--end-ds={end_ds}",
@@ -57,8 +57,8 @@ def submit_run_adhoc(runner, chronon_root, hub_url, conf, end_ds):
         zipline,
         [
             "hub", "run-adhoc",
+            conf,
             f"--repo={chronon_root}",
-            f"--conf={conf}",
             f"--hub-url={hub_url}",
             f"--end-ds={end_ds}",
             "--format=json",
@@ -75,14 +75,71 @@ def cancel_workflow(runner, chronon_root, hub_url, workflow_id):
         zipline,
         [
             "hub", "cancel",
+            workflow_id,
             f"--repo={chronon_root}",
             f"--hub-url={hub_url}",
-            f"--workflow-id={workflow_id}",
             "--format=json",
         ],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, f"cancel failed:\n{result.output}"
+
+
+# ---------------------------------------------------------------------------
+# Direct ``zipline run`` helpers (Dataproc path, no orchestrator)
+# ---------------------------------------------------------------------------
+
+
+def submit_run(runner, chronon_root, conf, version, mode="backfill", start_ds=None, end_ds=None, extra_args=None):
+    """Invoke ``zipline run`` and assert success."""
+    args = ["run", conf, f"--repo={chronon_root}", f"--version={version}", f"--mode={mode}"]
+    if start_ds:
+        args.append(f"--start-ds={start_ds}")
+    if end_ds:
+        args.append(f"--end-ds={end_ds}")
+    if extra_args:
+        args.extend(extra_args)
+    result = runner.invoke(zipline, args, catch_exceptions=False)
+    assert result.exit_code == 0, f"zipline run failed:\n{result.output}"
+    return result
+
+
+def submit_check_partitions(runner, chronon_root, conf, version, partition_names):
+    """Invoke ``zipline run`` in metastore check-partitions mode."""
+    return submit_run(
+        runner, chronon_root, conf, version,
+        mode="metastore",
+        extra_args=["check-partitions", f"--partition-names={partition_names}"],
+    )
+
+
+def submit_upload(runner, chronon_root, conf, version, ds):
+    """Invoke ``zipline run`` in upload mode."""
+    return submit_run(runner, chronon_root, conf, version, mode="upload", extra_args=[f"--ds={ds}"])
+
+
+def submit_upload_to_kv(runner, chronon_root, conf, version, ds):
+    """Invoke ``zipline run`` in upload-to-kv mode."""
+    return submit_run(runner, chronon_root, conf, version, mode="upload-to-kv", extra_args=[f"--ds={ds}"])
+
+
+def submit_metadata_upload(runner, chronon_root, conf, version):
+    """Invoke ``zipline run`` in metadata-upload mode."""
+    return submit_run(runner, chronon_root, conf, version, mode="metadata-upload")
+
+
+def submit_fetch(runner, chronon_root, conf, version, keys, name):
+    """Invoke ``zipline run`` in fetch mode and return the result for assertion."""
+    return submit_run(
+        runner, chronon_root, conf, version,
+        mode="fetch",
+        extra_args=["-k", keys, "--name", name],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Hub/Orchestrator helpers
+# ---------------------------------------------------------------------------
 
 
 def submit_schedule(runner, chronon_root, hub_url, conf):
@@ -91,8 +148,8 @@ def submit_schedule(runner, chronon_root, hub_url, conf):
         zipline,
         [
             "hub", "schedule",
+            conf,
             f"--repo={chronon_root}",
-            f"--conf={conf}",
             f"--hub-url={hub_url}",
             "--format=json",
         ],

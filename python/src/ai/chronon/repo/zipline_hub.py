@@ -10,13 +10,24 @@ from ai.chronon.cli.theme import print_error, print_info, print_warning
 
 
 class ZiplineHub:
-    def __init__(self, base_url, sa_name=None, use_auth=False, eval_url=None, cloud_provider=None, scope=None, format: Format = Format.TEXT):
+    def __init__(
+        self,
+        base_url,
+        sa_name=None,
+        use_auth=False,
+        eval_url=None,
+        cloud_provider=None,
+        scope=None,
+        format: Format = Format.TEXT,
+    ):
         if not base_url:
             raise ValueError("Base URL for ZiplineHub cannot be empty.")
         self.base_url = base_url
         self.eval_url = eval_url
         self.format = format
-        self.cloud_provider = cloud_provider.lower() if cloud_provider is not None else cloud_provider
+        self.cloud_provider = (
+            cloud_provider.lower() if cloud_provider is not None else cloud_provider
+        )
         if self.base_url.startswith("https") and use_auth:
             if self.cloud_provider == "gcp":
                 self.use_auth = True
@@ -35,7 +46,10 @@ class ZiplineHub:
                     self.use_auth = False
                     self.id_token = None
                     self.sa = None
-                    print_warning("No ID_TOKEN found in environment for non-GCP cloud provider. Disabling authentication.", format=format)
+                    print_warning(
+                        "No ID_TOKEN found in environment for non-GCP cloud provider. Disabling authentication.",
+                        format=format,
+                    )
                 else:
                     self.use_auth = True
                     print_info("Using authentication for ZiplineHub.", format=format)
@@ -77,7 +91,9 @@ class ZiplineHub:
         from azure.identity import AzureCliCredential, CredentialUnavailableError
 
         print_info("Using Azure authentication for ZiplineHub.", format=self.format)
-        print_info(f"Acquiring token from CLI credentials for scope: {scope}...", format=self.format)
+        print_info(
+            f"Acquiring token from CLI credentials for scope: {scope}...", format=self.format
+        )
         try:
             credential = AzureCliCredential()
 
@@ -87,7 +103,10 @@ class ZiplineHub:
 
             print_info("Token acquired.", format=self.format)
         except (ClientAuthenticationError, CredentialUnavailableError) as e:
-            print_error(f"Could not acquire token. Make sure you are logged in via 'az login'. Details: {e}", format=self.format)
+            print_error(
+                f"Could not acquire token. Make sure you are logged in via 'az login'. Details: {e}",
+                format=self.format,
+            )
             self.use_auth = False
             self.id_token = None
             return
@@ -191,7 +210,9 @@ class ZiplineHub:
 
         diff_request = {"namesToHashes": names_to_hashes}
         try:
-            response = requests.post(url, json=diff_request, headers=self.auth_headers(self.base_url))
+            response = requests.post(
+                url, json=diff_request, headers=self.auth_headers(self.base_url)
+            )
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -208,7 +229,9 @@ class ZiplineHub:
         }
 
         try:
-            response = requests.post(url, json=upload_request, headers=self.auth_headers(self.base_url))
+            response = requests.post(
+                url, json=upload_request, headers=self.auth_headers(self.base_url)
+            )
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -227,7 +250,9 @@ class ZiplineHub:
         }
 
         try:
-            response = requests.post(url, json=schedule_request, headers=self.auth_headers(self.base_url))
+            response = requests.post(
+                url, json=schedule_request, headers=self.auth_headers(self.base_url)
+            )
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -256,7 +281,9 @@ class ZiplineHub:
         }
 
         try:
-            response = requests.post(url, json=sync_request, headers=self.auth_headers(self.base_url))
+            response = requests.post(
+                url, json=sync_request, headers=self.auth_headers(self.base_url)
+            )
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -269,9 +296,11 @@ class ZiplineHub:
         conf_name,
         conf_hash_map,
         parameters=None,
-        ):
+    ):
         if not self.eval_url:
-            raise ValueError("Eval URL not specified. Specify EVAL_URL in teams.py, environment variables, or use --eval-url.")
+            raise ValueError(
+                "Eval URL not specified. Specify EVAL_URL in teams.py, environment variables, or use --eval-url."
+            )
         _request = {
             "confName": conf_name,
             "confHashMap": conf_hash_map,
@@ -279,7 +308,9 @@ class ZiplineHub:
         if parameters:
             _request["parameters"] = parameters
         try:
-            response = requests.post(self.eval_url + "/eval", json=_request, headers=self.auth_headers(self.eval_url))
+            response = requests.post(
+                self.eval_url + "/eval", json=_request, headers=self.auth_headers(self.eval_url)
+            )
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -292,16 +323,20 @@ class ZiplineHub:
         table_name,
         engine_type,
         execution_info,
-        ):
+    ):
         if not self.eval_url:
-            raise ValueError("Eval URL not specified. Specify EVAL_URL in teams.py, environment variables, or use --eval-url.")
+            raise ValueError(
+                "Eval URL not specified. Specify EVAL_URL in teams.py, environment variables, or use --eval-url."
+            )
         _request = {
             "tableName": table_name,
             "engineType": engine_type,
             "executionInfo": execution_info,
         }
         try:
-            response = requests.post(self.eval_url + "/schema", json=_request, headers=self.auth_headers(self.eval_url))
+            response = requests.post(
+                self.eval_url + "/schema", json=_request, headers=self.auth_headers(self.eval_url)
+            )
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -338,7 +373,9 @@ class ZiplineHub:
             "skipLongRunningNodes": skip_long_running,
         }
         try:
-            response = requests.post(url, json=workflow_request, headers=self.auth_headers(self.base_url))
+            response = requests.post(
+                url, json=workflow_request, headers=self.auth_headers(self.base_url)
+            )
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:

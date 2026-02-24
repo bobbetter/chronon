@@ -18,12 +18,10 @@ default = Team(
             "spark.driver.cores": "1",
             "spark.executor.memory": "1g",
             "spark.executor.cores": "1",
-
             # Setup iceberg
             "spark.sql.catalog.spark_catalog": "org.apache.iceberg.spark.SparkCatalog",
             "spark.sql.catalog.spark_catalog.type": "rest",
             "spark.sql.catalog.spark_catalog.header.X-Iceberg-Access-Delegation": "vended-credentials",
-
             # TODO: Please fill in the following values
             "spark.sql.catalog.spark_catalog.uri": "<URI>",
             "spark.sql.catalog.spark_catalog.credential": "<CLIENT_ID>:<SECRET>",
@@ -38,7 +36,7 @@ default = Team(
             "CLOUD_PROVIDER": "azure",
             # TODO: Please fill in the following values
             "CUSTOMER_ID": "<customer_id>",
-            "ARTIFACT_PREFIX": "<customer-artifact-bucket>", # ex: "abfss://dev-zipline-artifacts@ziplineai2.dfs.core.windows.net"
+            "ARTIFACT_PREFIX": "<customer-artifact-bucket>",  # ex: "abfss://dev-zipline-artifacts@ziplineai2.dfs.core.windows.net"
             "VERSION": "<version>",  # ex: "Chronon engine version"
             "SNOWFLAKE_JDBC_URL": "<jdbc-url>",  # ex: "jdbc:snowflake://<account_identifier>.snowflakecomputing.com"
             "SNOWFLAKE_VAULT_URI": "<vault-uri>",  # ex: "https://<your-vault-name>.vault.azure.net/"

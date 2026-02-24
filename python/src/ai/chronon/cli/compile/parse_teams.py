@@ -121,7 +121,6 @@ def update_metadata(obj: Any, team_dict: Dict[str, Team]):
     if not metadata.outputNamespace:
         metadata.outputNamespace = team_dict[team].outputNamespace
 
-
     def set_join_part_or_models_metadata(part: Union[JoinPart, Model], output_namespace):
         if part is not None:
             if part.metaData:
@@ -136,9 +135,7 @@ def update_metadata(obj: Any, team_dict: Dict[str, Team]):
                 part.metaData.outputNamespace = output_namespace
                 part.metaData.team = team
 
-            merge_team_execution_info(
-                part.metaData, team_dict, part.metaData.team
-            )
+            merge_team_execution_info(part.metaData, team_dict, part.metaData.team)
 
     if isinstance(obj, Join):
         join_namespace = obj.metaData.outputNamespace
