@@ -10,6 +10,7 @@ import ai.chronon.spark.submission.JobSubmitterConstants._
 import ai.chronon.spark.submission.{JobSubmitter, JobType, SparkJob => TypeSparkJob}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import software.amazon.awssdk.core.exception.SdkException
 import software.amazon.awssdk.services.ec2.Ec2Client
 import software.amazon.awssdk.services.ec2.model.{DescribeSecurityGroupsRequest, DescribeSubnetsRequest, Filter}
 import software.amazon.awssdk.services.emr.EmrClient
@@ -452,7 +453,43 @@ class EmrSubmitter(customerId: String, emrClient: EmrClient, ec2Client: Ec2Clien
     responseStepId
   }
 
-  override def status(jobId: String): JobStatusType = ???
+  override def status(jobId: String): JobStatusType = {
+    val (clusterId, stepId) = if (jobId.contains(":")) {
+      val parts = jobId.split(":")
+      (parts(0), parts(1))
+    } else {
+      throw new IllegalArgumentException(s"Job ID must be in format 'clusterId:stepId', got: $jobId")
+    }
+
+    try {
+      val state = emrClient
+        .describeStep(
+          DescribeStepRequest
+            .builder()
+            .clusterId(clusterId)
+            .stepId(stepId)
+            .build()
+        )
+        .step()
+        .status()
+        .state()
+
+      state match {
+        case StepState.PENDING        => JobStatusType.PENDING
+        case StepState.CANCEL_PENDING => JobStatusType.PENDING
+        case StepState.RUNNING        => JobStatusType.RUNNING
+        case StepState.COMPLETED      => JobStatusType.SUCCEEDED
+        case StepState.CANCELLED      => JobStatusType.FAILED
+        case StepState.FAILED         => JobStatusType.FAILED
+        case StepState.INTERRUPTED    => JobStatusType.FAILED
+        case _                        => JobStatusType.UNKNOWN
+      }
+    } catch {
+      case e: SdkException =>
+        logger.error(s"Failed to get status for job $jobId: ${e.getMessage}", e)
+        JobStatusType.UNKNOWN
+    }
+  }
 
   override def kill(stepId: String): scala.Unit = {
     val resp = emrClient.cancelSteps(CancelStepsRequest.builder().stepIds(stepId).build())
@@ -473,7 +510,6 @@ object EmrSubmitter {
   private val ClusterInstanceTypeArgKeyword = "--cluster-instance-type"
   private val ClusterInstanceCountArgKeyword = "--cluster-instance-count"
   private val ClusterIdleTimeoutArgKeyword = "--cluster-idle-timeout"
-
   private val DefaultClusterInstanceType = "m5.xlarge"
   private val DefaultClusterInstanceCount = 3
   private val DefaultClusterIdleTimeout = 60 * 60 * 1 // 1h in seconds
