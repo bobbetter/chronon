@@ -383,7 +383,6 @@ def cancel(workflow_id, repo, hub_url, use_auth, format, cloud, customer_id):
             root_dir=repo,
             cloud_provider=cloud,
             customer_id=customer_id,
-            format=format,
         ),
         use_auth,
         format,
@@ -554,8 +553,7 @@ def eval(
             hub_conf.artifact_prefix.rstrip("/") if hub_conf.artifact_prefix else ""
         )
         if not zipline_artifact_prefix:
-            print_error("Zipline artifact prefix is not set.", format=format)
-            sys.exit(1)
+            raise click.UsageError("Zipline artifact prefix is not set.")
         url = f"eval/test_data/{os.path.basename(test_data_path)}"
         upload_to_blob_store(test_data_path, f"{zipline_artifact_prefix}/{url}")
         parameters["testDataPath"] = f"{zipline_artifact_prefix}/{url}"
@@ -698,7 +696,6 @@ def get_hub_conf_from_metadata_conf(
     root_dir=".",
     cloud_provider: Optional[str] = None,
     customer_id: Optional[str] = None,
-    format: Format = Format.TEXT,
 ):
     """
     Get the hub configuration from the config file or environment variables.
@@ -716,19 +713,15 @@ def get_hub_conf_from_metadata_conf(
     cloud_provider = cloud_provider or common_env_map.get("CLOUD_PROVIDER")
 
     if not cloud_provider:
-        print_error(
-            "Cloud provider is not set. Use --cloud or define CLOUD_PROVIDER in team env.",
-            format=format,
+        raise click.UsageError(
+            "Cloud provider is not set. Use --cloud or define CLOUD_PROVIDER in team env."
         )
-        sys.exit(1)
 
     customer_id = customer_id or common_env_map.get("CUSTOMER_ID")
     if cloud_provider == "azure" and not customer_id:
-        print_error(
-            "Customer ID is not set for Azure. Use --customer-id or define CUSTOMER_ID in team env.",
-            format=format,
+        raise click.UsageError(
+            "Customer ID is not set for Azure. Use --customer-id or define CUSTOMER_ID in team env."
         )
-        sys.exit(1)
 
     return HubConfig(
         hub_url=hub_url,

@@ -31,7 +31,7 @@ def test_run_adhoc_and_cancel(confs, chronon_root, hub_url, cloud):
         hub_url, workflow_id, target_statuses={"SUCCEEDED"}, timeout=300, interval=15,
     )
 
-    cancel_workflow(runner, chronon_root, hub_url, workflow_id)
+    cancel_workflow(runner, chronon_root, hub_url, workflow_id, cloud)
 
     poll_workflow_until(
         hub_url, workflow_id, target_statuses={"CANCELLED"}, timeout=300, interval=15,
