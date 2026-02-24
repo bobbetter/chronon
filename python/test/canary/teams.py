@@ -43,14 +43,14 @@ gcp = Team(
     env=EnvironmentVariables(
         common={
             "CLOUD_PROVIDER": "gcp",
-            "CUSTOMER_ID": "dev",
+            "CUSTOMER_ID": "canary",
             "VERSION": "latest",
             "GCP_PROJECT_ID": "canary-443022",
             "GCP_REGION": "us-central1",
             "SPARK_CLUSTER_NAME": "zipline-canary-cluster",
             "GCP_BIGTABLE_INSTANCE_ID": "zipline-canary-instance",
             "ENABLE_PUBSUB": "true",
-            "ARTIFACT_PREFIX": "gs://zipline-artifacts-dev",
+            "ARTIFACT_PREFIX": "gs://zipline-artifacts-canary",
             "FLINK_STATE_URI": "gs://zipline-warehouse-canary/flink-state",
             "CHRONON_ONLINE_ARGS": " -Ztasks=4",
             "FRONTEND_URL": "http://localhost:3000",

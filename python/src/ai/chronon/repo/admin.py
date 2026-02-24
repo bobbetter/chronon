@@ -71,12 +71,21 @@ def _parse_registry(registry):
 # ── CLI commands ──────────────────────────────────────────────────────
 
 
-@click.group(help="Administrative commands for initializing repos, loading images, and verifying deployments.")
+@click.group(
+    help="Administrative commands for initializing repos, loading images, and verifying deployments."
+)
 def admin():
     pass
 
 
-@admin.command("install", help="Install Zipline images into a private registry or the local Docker daemon.")
+@admin.command("install")
+@click.argument("cloud", type=click.Choice(VALID_CLOUDS, case_sensitive=False))
+@click.option(
+    "--registry",
+    default="local",
+    show_default=True,
+    help="Target registry URL (e.g. us-docker.pkg.dev/project/repo) or 'local' for the local Docker daemon.",
+)
 @click.option(
     "--api-token",
     envvar="ZIPLINE_API_TOKEN",
@@ -84,17 +93,8 @@ def admin():
     help="Zipline API token for Docker Hub access. Can also be set via ZIPLINE_API_TOKEN env var. "
     "Optional when using --bundle or when already authenticated to Docker Hub.",
 )
-@click.option("--release", default="latest", show_default=True, help="Zipline release to load (e.g. 0.1.42).")
 @click.option(
-    "--cloud",
-    required=True,
-    type=click.Choice(VALID_CLOUDS, case_sensitive=False),
-    help="Cloud provider variant.",
-)
-@click.option(
-    "--registry",
-    required=True,
-    help='Target registry URL (e.g. us-docker.pkg.dev/project/repo) or "local" for the local Docker daemon.',
+    "--release", default="latest", show_default=True, help="Zipline release to load (e.g. 0.1.42)."
 )
 @click.option(
     "--artifact-store",
@@ -107,8 +107,11 @@ def admin():
     type=click.Path(exists=True),
     help="Path to air-gap tarball (alternative to pulling from Docker Hub).",
 )
-def load(api_token, release, cloud, registry, artifact_store, bundle):
-    """Load Zipline images into a private container registry or the local Docker daemon."""
+def install(cloud, registry, api_token, release, artifact_store, bundle):
+    """Install Zipline images into a private registry or the local Docker daemon.
+
+    CLOUD is the cloud provider variant (gcp, aws, or azure).
+    """
     for name in ("urllib3", "ai.chronon.logger"):
         logging.getLogger(name).setLevel(logging.WARNING)
 
@@ -128,7 +131,9 @@ def load(api_token, release, cloud, registry, artifact_store, bundle):
 
         if artifact_store:
             if bundle:
-                jar_results = _extract_engine_jars_from_bundle(bundle, cloud, release, artifact_store, progress)
+                jar_results = _extract_engine_jars_from_bundle(
+                    bundle, cloud, release, artifact_store, progress
+                )
             else:
                 hub_client = RegistryClient()
                 _authenticate_docker_hub(hub_client, api_token)
@@ -215,7 +220,9 @@ def _load_from_docker_hub(target, api_token, release, cloud, progress):
                 text=True,
             )
             if proc.returncode != 0:
-                console.print(f"[yellow]Warning: docker login failed: {proc.stderr.strip()}[/yellow]")
+                console.print(
+                    f"[yellow]Warning: docker login failed: {proc.stderr.strip()}[/yellow]"
+                )
         # OCI client for querying image sizes (anonymous access suffices for public images)
         hub_client = RegistryClient()
         try:
@@ -236,14 +243,20 @@ def _load_from_docker_hub(target, api_token, release, cloud, progress):
         if size_client:
             try:
                 if target.is_local:
-                    total_bytes, layer_sizes = size_client.get_layer_sizes(DOCKER_HUB_REGISTRY, repo, release)
+                    total_bytes, layer_sizes = size_client.get_layer_sizes(
+                        DOCKER_HUB_REGISTRY, repo, release
+                    )
                 else:
-                    total_bytes = size_client.get_total_image_size(DOCKER_HUB_REGISTRY, repo, release)
+                    total_bytes = size_client.get_total_image_size(
+                        DOCKER_HUB_REGISTRY, repo, release
+                    )
             except RegistryError:
                 pass
 
         task_id = progress.add_task(f"{action} {label}", total=total_bytes)
-        img_target = _make_target_with_progress(target, progress, task_id, f"{action} {label}", layer_sizes)
+        img_target = _make_target_with_progress(
+            target, progress, task_id, f"{action} {label}", layer_sizes
+        )
 
         try:
             digest = img_target.copy_from_hub(repo, release)
@@ -289,7 +302,9 @@ def _load_from_bundle(target, bundle_path, release, cloud, progress):
             image_name = repo.split("/")[-1]
             archive_path = os.path.join(tmpdir, f"{image_name}.tar")
             if not os.path.exists(archive_path):
-                results.append((image_name, "", "", f"FAILED: {image_name}.tar not found in bundle"))
+                results.append(
+                    (image_name, "", "", f"FAILED: {image_name}.tar not found in bundle")
+                )
                 continue
 
             action = "Pushing" if not target.is_local else "Loading"
@@ -356,7 +371,9 @@ def _extract_jars_from_oci_archive(archive_path, release, artifact_store):
             archive_manifests = json.load(f)
 
         if not archive_manifests:
-            results.append(("engine-jars", artifact_store, "", "FAILED: no manifests in engine archive"))
+            results.append(
+                ("engine-jars", artifact_store, "", "FAILED: no manifests in engine archive")
+            )
             return results
 
         entry = archive_manifests[0]
@@ -368,7 +385,9 @@ def _extract_jars_from_oci_archive(archive_path, release, artifact_store):
             layer_path = os.path.join(oci_dir, layer_file_rel)
             _extract_jars_from_layer(layer_path, jars_tmpdir)
 
-        results.extend(_upload_jars_to_store(os.path.join(jars_tmpdir, "jars"), release, artifact_store))
+        results.extend(
+            _upload_jars_to_store(os.path.join(jars_tmpdir, "jars"), release, artifact_store)
+        )
 
     return results
 
@@ -385,7 +404,14 @@ def _extract_engine_jars_from_bundle(bundle_path, cloud, release, artifact_store
         engine_archive = os.path.join(tmpdir, f"engine-{cloud}.tar")
         if not os.path.exists(engine_archive):
             _finish_task(progress, task_id, label, ok=False)
-            return [("engine-jars", artifact_store, "", f"FAILED: engine-{cloud}.tar not found in bundle")]
+            return [
+                (
+                    "engine-jars",
+                    artifact_store,
+                    "",
+                    f"FAILED: engine-{cloud}.tar not found in bundle",
+                )
+            ]
 
         results = _extract_jars_from_oci_archive(engine_archive, release, artifact_store)
 
@@ -414,7 +440,10 @@ def _upload_engine_jars_to_store(client, registry, release, cloud, artifact_stor
             layer_digest = layer["digest"]
             layer_path = os.path.join(tmpdir, "layer.tar")
             client.extract_blob_to_file(
-                registry, engine_repo, layer_digest, layer_path,
+                registry,
+                engine_repo,
+                layer_digest,
+                layer_path,
                 on_progress=partial(_advance_progress, progress, task_id),
             )
             _extract_jars_from_layer(layer_path, tmpdir)
@@ -432,11 +461,15 @@ def _upload_engine_jars_to_store(client, registry, release, cloud, artifact_stor
 def _check_docker_available():
     """Verify that the Docker CLI is on PATH and the daemon is running."""
     if not shutil.which("docker"):
-        raise click.UsageError("Docker CLI not found on PATH. Install Docker to use --registry local.")
+        raise click.UsageError(
+            "Docker CLI not found on PATH. Install Docker to use --registry local."
+        )
     try:
         subprocess.run(["docker", "info"], capture_output=True, check=True)
     except subprocess.CalledProcessError as exc:
-        raise click.UsageError("Docker daemon is not running. Start Docker to use --registry local.") from exc
+        raise click.UsageError(
+            "Docker daemon is not running. Start Docker to use --registry local."
+        ) from exc
 
 
 def _authenticate_docker_hub(client, api_token):
@@ -532,9 +565,13 @@ def _authenticate_target_registry(client, registry):
             result = subprocess.run(
                 ["gcloud", "auth", "print-access-token"], capture_output=True, text=True, check=True
             )
-            client.authenticate(registry, username="oauth2accesstoken", password=result.stdout.strip())
+            client.authenticate(
+                registry, username="oauth2accesstoken", password=result.stdout.strip()
+            )
         except (subprocess.CalledProcessError, FileNotFoundError):
-            console.print("[yellow]Warning: Could not get gcloud access token. Target registry auth may fail.[/yellow]")
+            console.print(
+                "[yellow]Warning: Could not get gcloud access token. Target registry auth may fail.[/yellow]"
+            )
     elif ".dkr.ecr." in registry:
         try:
             import base64
@@ -548,7 +585,9 @@ def _authenticate_target_registry(client, registry):
             username, password = decoded.split(":", 1)
             client.authenticate(registry, username=username, password=password)
         except Exception:
-            console.print("[yellow]Warning: Could not get ECR auth token. Target registry auth may fail.[/yellow]")
+            console.print(
+                "[yellow]Warning: Could not get ECR auth token. Target registry auth may fail.[/yellow]"
+            )
     elif ".azurecr.io" in registry:
         try:
             result = subprocess.run(
@@ -559,10 +598,14 @@ def _authenticate_target_registry(client, registry):
             )
             token_data = json.loads(result.stdout)
             client.authenticate(
-                registry, username="00000000-0000-0000-0000-000000000000", password=token_data["accessToken"]
+                registry,
+                username="00000000-0000-0000-0000-000000000000",
+                password=token_data["accessToken"],
             )
         except (subprocess.CalledProcessError, FileNotFoundError):
-            console.print("[yellow]Warning: Could not get ACR token. Target registry auth may fail.[/yellow]")
+            console.print(
+                "[yellow]Warning: Could not get ACR token. Target registry auth may fail.[/yellow]"
+            )
 
 
 # ── Output ────────────────────────────────────────────────────────────
@@ -571,7 +614,11 @@ def _authenticate_target_registry(client, registry):
 def _print_summary(results, release, cloud, registry):
     """Print a summary table of the load operation."""
     is_local = registry == "local"
-    title = f"Zipline {release} ({cloud}) -> local Docker" if is_local else f"Zipline {release} ({cloud}) -> {registry}"
+    title = (
+        f"Zipline {release} ({cloud}) -> local Docker"
+        if is_local
+        else f"Zipline {release} ({cloud}) -> {registry}"
+    )
     table = Table(title=title)
     table.add_column("Type", style="cyan")
     table.add_column("Reference", style="white")
@@ -606,11 +653,14 @@ def _print_summary(results, release, cloud, registry):
         raise SystemExit(1)
 
 
-@admin.command(help="Verify a running Zipline deployment.")
-@click.option("--hub-url", required=True, help="URL of the running Zipline hub (e.g. https://hub.example.com).")
+@admin.command("verify")
+@click.argument("hub_url")
 @click.option("--expected-version", default=None, help="Expected Zipline version (optional).")
 def verify(hub_url, expected_version):
-    """Check that a Zipline hub is reachable and healthy."""
+    """Check that a Zipline hub is reachable and healthy.
+
+    HUB_URL is the URL of the running Zipline hub (e.g. https://hub.example.com).
+    """
     import urllib3
 
     http = urllib3.PoolManager()
@@ -627,9 +677,14 @@ def verify(hub_url, expected_version):
             results.append(("Hub Health", f"{hub_url}/debug", "ok", f"version={actual_version}"))
 
             if expected_version and actual_version != expected_version:
-                results.append((
-                    "Version Check", "", "WARN", f"Expected {expected_version}, got {actual_version}"
-                ))
+                results.append(
+                    (
+                        "Version Check",
+                        "",
+                        "WARN",
+                        f"Expected {expected_version}, got {actual_version}",
+                    )
+                )
             elif expected_version:
                 results.append(("Version Check", "", "ok", f"matches {expected_version}"))
         else:
@@ -641,9 +696,13 @@ def verify(hub_url, expected_version):
     try:
         resp = http.request("POST", f"{hub_url}/upload/v2/diff", timeout=10.0, body=b"{}")
         if resp.status < 500:
-            results.append(("Upload API", f"{hub_url}/upload/v2/diff", "ok", f"HTTP {resp.status} (reachable)"))
+            results.append(
+                ("Upload API", f"{hub_url}/upload/v2/diff", "ok", f"HTTP {resp.status} (reachable)")
+            )
         else:
-            results.append(("Upload API", f"{hub_url}/upload/v2/diff", "FAIL", f"HTTP {resp.status}"))
+            results.append(
+                ("Upload API", f"{hub_url}/upload/v2/diff", "FAIL", f"HTTP {resp.status}")
+            )
     except Exception as e:
         results.append(("Upload API", f"{hub_url}/upload/v2/diff", "FAIL", str(e)))
 

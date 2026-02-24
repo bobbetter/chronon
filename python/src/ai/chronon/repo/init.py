@@ -51,12 +51,8 @@ def _apply_pythonpath(target_path):
 
 
 @click.command(name="init")
-@click.option(
-    "--cloud",
-    envvar="CLOUD_PROVIDER",
-    help="Cloud provider to use.",
-    required=True,
-    type=click.Choice(VALID_CLOUDS, case_sensitive=False),
+@click.argument(
+    "cloud", type=click.Choice(VALID_CLOUDS, case_sensitive=False), envvar="CLOUD_PROVIDER"
 )
 @click.option(
     "--chronon-root",
@@ -65,7 +61,11 @@ def _apply_pythonpath(target_path):
     type=click.Path(file_okay=False, writable=True),
 )
 @click.pass_context
-def main(ctx, chronon_root, cloud):
+def main(ctx, cloud, chronon_root):
+    """Initialize a new Zipline project with scaffolding.
+
+    CLOUD is the cloud provider to use (gcp, aws, or azure).
+    """
     template_path = files("ai.chronon").joinpath("resources", cloud.lower())
     target_path = os.path.abspath(chronon_root)
 
@@ -117,7 +117,9 @@ def main(ctx, chronon_root, cloud):
                 theme="github-dark",
                 line_numbers=False,
             )
-            console.print(f"Unsupported shell ({shell_name}). Please add the following to your shell config:")
+            console.print(
+                f"Unsupported shell ({shell_name}). Please add the following to your shell config:"
+            )
             console.print(export_cmd)
             console.print("Applied to current session only.")
     except Exception:

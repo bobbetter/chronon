@@ -8,7 +8,7 @@ Usage::
         ./mill python.test_integration
 
     # Run a specific test:
-    PYTEST_ADDOPTS="-k test_gcp_backfill_no_data" \\
+    PYTEST_ADDOPTS="-k test_backfill_no_data" \\
         GCP_ID_TOKEN=$(gcloud auth print-identity-token) \\
         HUB_URL=https://canary-orch.zipline.ai \\
         ./mill python.test_integration
@@ -18,11 +18,10 @@ import logging
 import os
 import random
 import string
-import sys
 
 import pytest
 
-from .helpers.cleanup import AWSCleanup, GCPCleanup
+from .helpers.cleanup import AWSCleanup, AzureCleanup, GCPCleanup
 from .helpers.templates import cleanup_test_configs, generate_test_configs, get_confs
 
 logger = logging.getLogger(__name__)
@@ -36,13 +35,8 @@ def pytest_addoption(parser):
     parser.addoption(
         "--cloud",
         default=os.environ.get("CLOUD", "gcp"),
-        choices=("gcp", "aws"),
+        choices=("gcp", "aws", "azure"),
         help="Cloud provider (env: CLOUD)",
-    )
-    parser.addoption(
-        "--environment",
-        default=os.environ.get("ENVIRONMENT", "canary"),
-        help="Deployment environment, e.g. canary / dev (env: ENVIRONMENT)",
     )
 
 
@@ -60,13 +54,12 @@ def cloud(request) -> str:
     return request.config.getoption("--cloud")
 
 
-@pytest.fixture
-def environment(request) -> str:
-    """Per-test environment. Override with @pytest.mark.environment("dev")."""
-    marker = request.node.get_closest_marker("environment")
-    if marker:
-        return marker.args[0]
-    return request.config.getoption("--environment")
+@pytest.fixture(scope="session")
+def version() -> str:
+    """Zipline version for ``zipline run`` commands (env: VERSION)."""
+    v = os.environ.get("VERSION")
+    assert v, "VERSION env var is required for quickstart tests"
+    return v
 
 
 @pytest.fixture(scope="session")
@@ -80,18 +73,18 @@ def chronon_root() -> str:
 # ---------------------------------------------------------------------------
 
 ARTIFACT_PREFIXES = {
-    "gcp": "gs://zipline-artifacts-{environment}",
-    "aws": "s3://zipline-artifacts-{environment}",
+    "gcp": "gs://zipline-artifacts-canary",
+    "aws": "s3://zipline-artifacts-canary",
+    "azure": "abfss://zipline-artifacts-canary",
 }
 
 
 @pytest.fixture(autouse=True)
-def chronon_env(monkeypatch, chronon_root, cloud, environment):
+def chronon_env(monkeypatch, chronon_root, cloud):
     """Set up the environment variables and sys.path needed by canary configs."""
-    prefix = ARTIFACT_PREFIXES[cloud].format(environment=environment)
     monkeypatch.setenv("PYTHONPATH", chronon_root)
-    monkeypatch.setenv("ARTIFACT_PREFIX", prefix)
-    monkeypatch.setenv("CUSTOMER_ID", environment)
+    monkeypatch.setenv("ARTIFACT_PREFIX", ARTIFACT_PREFIXES[cloud])
+    monkeypatch.setenv("CUSTOMER_ID", "canary")
     monkeypatch.syspath_prepend(chronon_root)
 
 
@@ -106,7 +99,7 @@ def confs(test_id, cloud) -> dict[str, str]:
 
 
 @pytest.fixture
-def test_id(request, chronon_root, cloud, environment):
+def test_id(request, chronon_root, cloud):
     """Generate a unique test_id, render templates, and clean up afterwards."""
     tid = _random_suffix()
     logger.info("test_id=%s for %s", tid, request.node.name)
@@ -126,5 +119,8 @@ def test_id(request, chronon_root, cloud, environment):
         elif cloud == "aws":
             database = os.environ.get("AWS_GLUE_DATABASE", "default")
             AWSCleanup(database).cleanup_tables(tid)
+        elif cloud == "azure":
+            catalog = os.environ.get("AZURE_CATALOG", "default")
+            AzureCleanup(catalog).cleanup_tables(tid)
     except Exception:
         logger.exception("Table cleanup failed for test_id=%s", tid)

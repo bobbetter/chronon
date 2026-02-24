@@ -32,21 +32,45 @@ class ConfigTemplate:
 
 
 GCP_CONFIGS = [
-    ConfigTemplate(source="staging_queries/gcp/purchases_import.py"),
-    ConfigTemplate(source="staging_queries/gcp/purchases_notds_import.py"),
-    ConfigTemplate(source="staging_queries/gcp/checkouts_import.py"),
-    ConfigTemplate(source="staging_queries/gcp/checkouts_notds_import.py"),
+    ConfigTemplate(
+        source="staging_queries/gcp/purchases_import.py",
+        confs=["compiled/staging_queries/gcp/purchases_import.v1__0"],
+    ),
+    ConfigTemplate(
+        source="staging_queries/gcp/purchases_notds_import.py",
+        confs=["compiled/staging_queries/gcp/purchases_notds_import.v1__0"],
+    ),
+    ConfigTemplate(
+        source="staging_queries/gcp/checkouts_import.py",
+        confs=["compiled/staging_queries/gcp/checkouts_import.v1__0"],
+    ),
+    ConfigTemplate(
+        source="staging_queries/gcp/checkouts_notds_import.py",
+        confs=["compiled/staging_queries/gcp/checkouts_notds_import.v1__0"],
+    ),
     ConfigTemplate(
         source="staging_queries/gcp/exports.py",
-        confs=["compiled/staging_queries/gcp/exports.user_activities__0"],
+        confs=[
+            "compiled/staging_queries/gcp/exports.user_activities__0",
+            "compiled/staging_queries/gcp/exports.checkouts__0",
+        ],
     ),
     ConfigTemplate(
         source="group_bys/gcp/purchases.py",
         renames=["purchases_import", "purchases_notds_import"],
+        confs=[
+            "compiled/group_bys/gcp/purchases.v1_test__0",
+            "compiled/group_bys/gcp/purchases.v1_dev__0",
+        ],
     ),
     ConfigTemplate(
         source="joins/gcp/training_set.py",
         renames=["purchases", "checkouts_import", "checkouts_notds_import"],
+        confs=[
+            "compiled/joins/gcp/training_set.v1_test__0",
+            "compiled/joins/gcp/training_set.v1_dev__0",
+            "compiled/joins/gcp/training_set.v1_dev_notds__0",
+        ],
     ),
     ConfigTemplate(
         source="joins/gcp/demo.py",
@@ -58,15 +82,67 @@ GCP_CONFIGS = [
 ]
 
 AWS_CONFIGS = [
-    ConfigTemplate(source="staging_queries/aws/exports.py"),
-    ConfigTemplate(source="group_bys/aws/purchases.py"),
+    ConfigTemplate(
+        source="staging_queries/aws/exports.py",
+        confs=[
+            "compiled/staging_queries/aws/exports.user_activities__0",
+            "compiled/staging_queries/aws/exports.checkouts__0",
+        ],
+    ),
+    ConfigTemplate(
+        source="group_bys/aws/purchases.py",
+        confs=[
+            "compiled/group_bys/aws/purchases.v1_test__0",
+            "compiled/group_bys/aws/purchases.v1_dev__0",
+        ],
+    ),
     ConfigTemplate(
         source="joins/aws/training_set.py",
         renames=["purchases"],
+        confs=[
+            "compiled/joins/aws/training_set.v1_test__0",
+            "compiled/joins/aws/training_set.v1_dev__0",
+        ],
     ),
     ConfigTemplate(
         source="joins/aws/demo.py",
-        confs=["compiled/joins/aws/demo.derivations_v1__2"],
+        confs=[
+            "compiled/joins/aws/demo.v1__1",
+            "compiled/joins/aws/demo.derivations_v1__2",
+        ],
+    ),
+]
+
+AZURE_CONFIGS = [
+    ConfigTemplate(
+        source="staging_queries/azure/exports.py",
+        confs=[
+            "compiled/staging_queries/azure/exports.user_activities__0",
+            "compiled/staging_queries/azure/exports.checkouts__0",
+        ],
+    ),
+    ConfigTemplate(
+        source="group_bys/azure/purchases.py",
+        confs=[
+            "compiled/group_bys/azure/purchases.v1_test__0",
+            "compiled/group_bys/azure/purchases.v1_dev__0",
+        ],
+    ),
+    ConfigTemplate(
+        source="joins/azure/training_set.py",
+        renames=["purchases"],
+        confs=[
+            "compiled/joins/azure/training_set.v1_test__0",
+            "compiled/joins/azure/training_set.v1_dev__0",
+            "compiled/joins/azure/training_set.v1_dev_notds__0",
+        ],
+    ),
+    ConfigTemplate(
+        source="joins/azure/demo.py",
+        confs=[
+            "compiled/joins/azure/demo.v2",
+            "compiled/joins/azure/demo.derivations_v3",
+        ],
     ),
 ]
 
@@ -76,6 +152,8 @@ def _get_configs(cloud: str) -> list[ConfigTemplate]:
         return GCP_CONFIGS
     if cloud == "aws":
         return AWS_CONFIGS
+    if cloud == "azure":
+        return AZURE_CONFIGS
     raise ValueError(f"Unsupported cloud: {cloud}")
 
 

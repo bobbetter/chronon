@@ -54,7 +54,9 @@ class ClassTracker:
                     n=2,
                 )
 
-                format_print(f"Updated object: {compiled.name} in file {compiled.file}", format=self.format)
+                format_print(
+                    f"Updated object: {compiled.name} in file {compiled.file}", format=self.format
+                )
                 format_print("".join(diff), format=self.format)
                 format_print("\n", format=self.format)
 
@@ -101,5 +103,8 @@ class ClassTracker:
     def diff(self, ignore_python_errors: bool = False) -> Text:
         # Don't show diff if there are compile errors - it's confusing
         if self.files_to_errors and not ignore_python_errors:
-            return Text("\n❗Please fix python errors then retry compilation.\n", style=f"dim {STYLE_ACCENT}")
+            return Text(
+                "\n❗Please fix python errors then retry compilation.\n",
+                style=f"dim {STYLE_ACCENT}",
+            )
         return self.diff_result.render(deleted_names=self.deleted_names)

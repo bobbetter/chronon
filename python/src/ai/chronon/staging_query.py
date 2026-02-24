@@ -130,7 +130,15 @@ def StagingQuery(
     assert version is None or isinstance(version, int), (
         f"Version must be an integer or None, but found {type(version).__name__}"
     )
-    tables_in_query = [query_utils.normalize_table_name(t) for t in query_utils.tables_in_query(query, dialect=ttypes.EngineType._VALUES_TO_NAMES[engine_type].lower() if engine_type else "spark")]
+    tables_in_query = [
+        query_utils.normalize_table_name(t)
+        for t in query_utils.tables_in_query(
+            query,
+            dialect=ttypes.EngineType._VALUES_TO_NAMES[engine_type].lower()
+            if engine_type
+            else "spark",
+        )
+    ]
     if tables_in_query:
         assert dependencies is not None, "Dependencies must be specified if tables are in the query"
         spec_names = set()
@@ -145,7 +153,6 @@ def StagingQuery(
             # So it's better to avoid this validation until views are handled for both Eval and / or Hub
             # raise ValueError(f"Tables in query but not in dependencies: {mismatch}\nDependencies: {spec_names}\nTables in query: {tables_in_query}")
             pass
-
 
     # Create execution info
     exec_info = common.ExecutionInfo(

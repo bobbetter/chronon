@@ -20,8 +20,12 @@ def _set_package_version():
     return package_version
 
 
+CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+
+
 @click.group(
-    help="The Zipline CLI. A tool for compiling and running Zipline pipelines. For more information, see: https://zipline.ai/docs"
+    help="The Zipline CLI. A tool for compiling and running Zipline pipelines. For more information, see: https://zipline.ai/docs",
+    context_settings=CONTEXT_SETTINGS,
 )
 @click.version_option(version=_set_package_version())
 @click.pass_context

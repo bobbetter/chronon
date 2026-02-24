@@ -363,12 +363,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ build_artifacts, push_to_aws ]
 
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
     permissions:
       id-token: write
       contents: read
 
     steps:
-
       - name: Checkout repo
         uses: actions/checkout@v4
 
@@ -378,12 +383,15 @@ jobs:
           role-to-assume: arn:aws:iam::${{secrets.AWS_ACCOUNT_ID}}:role/github_actions
           aws-region: ${{secrets.AWS_REGION}}
 
-      - name: Run Quickstart Integration Tests
-        id: aws_integration_tests
+      - name: Run Integration Tests
         shell: bash
+        env:
+          CLOUD: aws
+          VERSION: ${{ needs.build_artifacts.outputs.version }}
+          PYTEST_ADDOPTS: "-k test_run_quickstart"
         run: |
           set -xo pipefail
-          ./scripts/distribution/run_aws_quickstart.sh --canary --version ${{ needs.build_artifacts.outputs.version }}
+          ./mill python.test_integration
 
       - name: On Fail Notify Slack
         id: notify_slack
@@ -519,12 +527,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ build_artifacts, push_to_gcp ]
 
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
     permissions:
       id-token: write
       contents: read
 
     steps:
-      # Checkout the canary-confs repo with the branch with Zipline specific team.json
       - name: Checkout repo
         uses: actions/checkout@v4
 
@@ -538,12 +551,15 @@ jobs:
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Run Quickstart Integration Tests
+      - name: Run Integration Tests
         shell: bash
-        id: gcp_integration_tests
+        env:
+          CLOUD: gcp
+          VERSION: ${{ needs.build_artifacts.outputs.version }}
+          PYTEST_ADDOPTS: "-k test_run_quickstart"
         run: |
           set -xo pipefail
-          ./scripts/distribution/run_gcp_template_quickstart.sh --canary --version ${{ needs.build_artifacts.outputs.version }}
+          ./mill python.test_integration
 
       - name: On Fail Notify Slack
         id: notify_slack

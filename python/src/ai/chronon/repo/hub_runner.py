@@ -39,7 +39,9 @@ def _resolve_data_type_kinds(obj):
         return [_resolve_data_type_kinds(item) for item in obj]
     return obj
 
+
 DEFAULT_TEAM_METADATA_CONF = "compiled/teams_metadata/default/default_team_metadata"
+
 
 @dataclass
 class HubConfig:
@@ -59,28 +61,51 @@ class ScheduleModes:
     offline_schedule: str
     online_schedule: str
 
+
 @click.group(help="Manage Zipline Hub workflows, schedules, and evaluations.")
 def hub():
     pass
 
+
 def repo_option(func):
-    return click.option("--repo", help="Path to the Chronon repo root.", default=".", show_default=True)(func)
+    return click.option(
+        "-r", "--repo", help="Path to the Chronon repo root.", default=".", show_default=True
+    )(func)
+
+
 def use_auth_option(func):
     return click.option(
-        "--use-auth/--no-use-auth", help="Use authentication when connecting to Zipline Hub", default=True
+        "--use-auth/--no-use-auth",
+        help="Use authentication when connecting to Zipline Hub",
+        default=True,
     )(func)
+
+
 def hub_url_option(func):
     return click.option(
         "--hub-url", help="Zipline Hub address, e.g. http://localhost:3903", default=None
     )(func)
+
+
 def format_option(func):
     return click.option(
-        "--format", help="Output format.", default=Format.TEXT, type=click.Choice(Format, case_sensitive=False), show_default=True
+        "-f",
+        "--format",
+        help="Output format.",
+        default=Format.TEXT,
+        type=click.Choice(Format, case_sensitive=False),
+        show_default=True,
     )(func)
+
+
 def force_option(func):
     return click.option(
-        "--force", help="Force compile even if there are version changes to existing confs", is_flag=True
+        "--force",
+        help="Force compile even if there are version changes to existing confs",
+        is_flag=True,
     )(func)
+
+
 def cloud_provider_option(func):
     return click.option(
         "--cloud",
@@ -89,6 +114,8 @@ def cloud_provider_option(func):
         required=False,
         default=None,
     )(func)
+
+
 def customer_id_option(func):
     return click.option(
         "--customer-id",
@@ -113,10 +140,10 @@ def get_conf_type(conf):
     else:
         raise ValueError(f"Unsupported conf type: {conf}")
 
+
 #### Common click options
 def common_options(func):
     func = repo_option(func)
-    func = click.option("--conf", required=True, help="Path to the compiled conf (e.g. compiled/joins/team/my_join).")(func)
     func = hub_url_option(func)
     func = use_auth_option(func)
     func = format_option(func)
@@ -124,9 +151,14 @@ def common_options(func):
     return func
 
 
+def conf_argument(func):
+    return click.argument("conf")(func)
+
+
 def ds_option(func):
     return click.option(
-        "--date", "--ds",
+        "--date",
+        "--ds",
         "ds",
         help="End date for the backfill (format: YYYY-MM-DD).",
         type=click.DateTime(formats=ALLOWED_DATE_FORMATS),
@@ -135,7 +167,8 @@ def ds_option(func):
 
 def start_ds_option(func):
     return click.option(
-        "--start-date", "--start-ds",
+        "--start-date",
+        "--start-ds",
         "start_ds",
         type=click.DateTime(formats=ALLOWED_DATE_FORMATS),
         help="Start date override for a range backfill (format: YYYY-MM-DD). "
@@ -143,18 +176,11 @@ def start_ds_option(func):
         "May leave holes in the output table due to the overridden date range.",
     )(func)
 
-def workflow_id_option(func):
-    return click.option(
-        "--workflow-id",
-        help="Workflow ID to cancel.",
-        type=str,
-        required=True,
-    )(func)
-
 
 def end_ds_option(func):
     return click.option(
-        "--end-date", "--end-ds",
+        "--end-date",
+        "--end-ds",
         "end_ds",
         help="End date for a range backfill (format: YYYY-MM-DD).",
         type=click.DateTime(formats=ALLOWED_DATE_FORMATS),
@@ -162,19 +188,32 @@ def end_ds_option(func):
         show_default=True,
     )(func)
 
-def _get_zipline_hub(hub_url: Optional[str], hub_conf: Optional[HubConfig], use_auth: bool, format: Format = Format.TEXT):
+
+def _get_zipline_hub(
+    hub_url: Optional[str],
+    hub_conf: HubConfig,
+    use_auth: bool,
+    format: Format = Format.TEXT,
+):
     scope = ""
     if hub_conf.auth_scope is not None:
         scope = hub_conf.auth_scope
     elif hub_conf.cloud_provider == "azure" and hub_conf.customer_id is not None:
         scope = f"api://{hub_conf.customer_id}-zipline-auth"
-    if hub_url is not None:
-        zipline_hub = ZiplineHub(base_url=hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, cloud_provider=hub_conf.cloud_provider, scope=scope, format=format)
-    else:
-        zipline_hub = ZiplineHub(base_url=hub_conf.hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, cloud_provider=hub_conf.cloud_provider, scope=scope, format=format)
-    return zipline_hub
+    base_url = hub_url if hub_url is not None else hub_conf.hub_url
+    return ZiplineHub(
+        base_url=base_url,
+        sa_name=hub_conf.sa_name,
+        use_auth=use_auth,
+        cloud_provider=hub_conf.cloud_provider,
+        scope=scope,
+        format=format,
+    )
 
-def submit_workflow(repo, conf, mode, start_ds, end_ds, hub_url=None, use_auth=True, format: Format = Format.TEXT):
+
+def submit_workflow(
+    repo, conf, mode, start_ds, end_ds, hub_url=None, use_auth=True, format: Format = Format.TEXT
+):
     hub_conf = get_hub_conf(conf, root_dir=repo)
     zipline_hub = _get_zipline_hub(hub_url, hub_conf, use_auth, format)
 
@@ -211,12 +250,7 @@ def submit_workflow(repo, conf, mode, start_ds, end_ds, hub_url=None, use_auth=T
     print_key_value("📦 Conf", conf_name, format=format)
     print_key_value("⚙️  Mode", mode, format=format)
     print_wf_url(
-        conf=conf,
-        conf_name=conf_name,
-        mode=mode,
-        workflow_id=workflow_id,
-        repo=repo,
-        format=format
+        conf=conf, conf_name=conf_name, mode=mode, workflow_id=workflow_id, repo=repo, format=format
     )
 
 
@@ -260,67 +294,112 @@ def submit_schedule(repo, conf, hub_url=None, use_auth=True, format: Format = Fo
     print_key_value("🗓️  Schedules", readable_schedules, format=format)
 
 
-# zipline hub backfill --conf=compiled/joins/join
+# zipline hub backfill compiled/joins/join
 # adhoc backfills
 @hub.command()
+@conf_argument
 @common_options
 @start_ds_option
 @end_ds_option
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
 @handle_compile
 @jsonify_exceptions_if_json_format
-def backfill(repo, conf, hub_url, use_auth, format, force, start_ds, end_ds, skip_compile):
-    """Submit a backfill job to Zipline Hub."""
+def backfill(conf, repo, hub_url, use_auth, format, force, start_ds, end_ds, skip_compile):
+    """Submit a backfill job to Zipline Hub.
+
+    CONF is the path to the compiled conf (e.g. compiled/joins/team/my_join).
+    """
     submit_workflow(
-        repo, conf, RunMode.BACKFILL.value, start_ds, end_ds, hub_url=hub_url, use_auth=use_auth, format=format
+        repo,
+        conf,
+        RunMode.BACKFILL.value,
+        start_ds,
+        end_ds,
+        hub_url=hub_url,
+        use_auth=use_auth,
+        format=format,
     )
 
 
-# zipline hub run-adhoc --conf=compiled/joins/join
+# zipline hub run-adhoc compiled/joins/join
 # currently only supports one-off deploy node submission
 @hub.command()
+@conf_argument
 @common_options
 @end_ds_option
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
 @handle_compile
 @jsonify_exceptions_if_json_format
-def run_adhoc(repo, conf, hub_url, use_auth, format, force, end_ds, skip_compile):
-    """Submit a one-off deploy job to test a conf online."""
-    submit_workflow(repo, conf, RunMode.DEPLOY.value, end_ds, end_ds, hub_url=hub_url, use_auth=use_auth, format=format)
+def run_adhoc(conf, repo, hub_url, use_auth, format, force, end_ds, skip_compile):
+    """Submit a one-off deploy job to test a conf online.
+
+    CONF is the path to the compiled conf (e.g. compiled/joins/team/my_join).
+    """
+    submit_workflow(
+        repo,
+        conf,
+        RunMode.DEPLOY.value,
+        end_ds,
+        end_ds,
+        hub_url=hub_url,
+        use_auth=use_auth,
+        format=format,
+    )
 
 
-# zipline hub schedule --conf=compiled/joins/join
+# zipline hub schedule compiled/joins/join
 @hub.command()
+@conf_argument
 @common_options
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
 @handle_compile
 @jsonify_exceptions_if_json_format
-def schedule(repo, conf, hub_url, use_auth, format, force, skip_compile):
-    """Deploy a recurring schedule for a conf."""
+def schedule(conf, repo, hub_url, use_auth, format, force, skip_compile):
+    """Deploy a recurring schedule for a conf.
+
+    CONF is the path to the compiled conf (e.g. compiled/joins/team/my_join).
+    """
     submit_schedule(repo, conf, hub_url=hub_url, use_auth=use_auth, format=format)
 
+
 @hub.command()
+@click.argument("workflow_id")
 @repo_option
 @hub_url_option
 @use_auth_option
 @format_option
-@workflow_id_option
 @jsonify_exceptions_if_json_format
 @cloud_provider_option
 @customer_id_option
-def cancel(repo, hub_url, use_auth, format, workflow_id, cloud, customer_id):
-    """Cancel a running workflow."""
-    zipline_hub = _get_zipline_hub(hub_url, get_hub_conf_from_metadata_conf(DEFAULT_TEAM_METADATA_CONF, root_dir=repo, cloud_provider=cloud, customer_id=customer_id, format=format), use_auth, format)
+def cancel(workflow_id, repo, hub_url, use_auth, format, cloud, customer_id):
+    """Cancel a running workflow.
+
+    WORKFLOW_ID is the ID of the workflow to cancel.
+    """
+    zipline_hub = _get_zipline_hub(
+        hub_url,
+        get_hub_conf_from_metadata_conf(
+            DEFAULT_TEAM_METADATA_CONF,
+            root_dir=repo,
+            cloud_provider=cloud,
+            customer_id=customer_id,
+            format=format,
+        ),
+        use_auth,
+        format,
+    )
     response_json = zipline_hub.call_cancel_api(workflow_id)
     if format == Format.JSON:
         print(json.dumps(response_json, indent=4))
         sys.exit(0)
     print_success(f"Workflow cancelled: {workflow_id}", format=format)
 
+
 def load_json(file_path):
     with open(file_path, "r") as f:
         data = json.load(f)
     return data
+
 
 def get_metadata_map(file_path):
     data = load_json(file_path)
@@ -329,41 +408,48 @@ def get_metadata_map(file_path):
 
 
 def get_common_env_map(file_path, skip_metadata_extraction=False):
-    metadata_map = get_metadata_map(file_path) if not skip_metadata_extraction else load_json(file_path)
+    metadata_map = (
+        get_metadata_map(file_path) if not skip_metadata_extraction else load_json(file_path)
+    )
     common_env_map = metadata_map["executionInfo"]["env"]["common"]
     return common_env_map
 
 
-# zipline hub fetch --conf=compiled/joins/join
+# zipline hub fetch compiled/joins/join
 # call the zipline fetcher from the hub
 @hub.command()
+@conf_argument
 @common_options
 @click.option(
     "--fetcher-url",
     help="Fetcher server address (e.g. http://localhost:3904).",
     type=str,
-    default=None
+    default=None,
 )
 @click.option(
     "--schema",
     help="Get only the schema",
     is_flag=True,
 )
-@click.option(
-    "--key-json",
-    help="Json of the keys to fetch",
-    type=str,
-    default=None
-)
+@click.option("--key-json", help="Json of the keys to fetch", type=str, default=None)
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
 @jsonify_exceptions_if_json_format
-def fetch(repo, conf, hub_url, use_auth, format, force, fetcher_url, schema, key_json):
-    """Fetch data from the Zipline fetcher server."""
+def fetch(conf, repo, hub_url, use_auth, format, force, fetcher_url, schema, key_json):
+    """Fetch data from the Zipline fetcher server.
+
+    CONF is the path to the compiled conf (e.g. compiled/joins/team/my_join).
+    """
     hub_conf = get_hub_conf(conf, root_dir=repo)
     fetcher_url = fetcher_url or hub_conf.fetcher_url
+    if not fetcher_url:
+        raise ValueError(
+            "Fetcher URL is not set. Provide --fetcher-url or set fetcher_url in your hub config."
+        )
     r = requests.get(f"{fetcher_url}/ping", timeout=100)
     if r.status_code != 200:
-        raise RuntimeError(f"Fetcher server is not running. Please start the fetcher server and try again. Url: {fetcher_url}/ping Status code: {r.status_code}")
+        raise RuntimeError(
+            f"Fetcher server is not running. Please start the fetcher server and try again. Url: {fetcher_url}/ping Status code: {r.status_code}"
+        )
     # Figure out if it's a group by or join
     conf_type = get_conf_type(conf)
     target = utils.get_metadata_name_from_conf(repo, conf)
@@ -387,7 +473,9 @@ def fetch(repo, conf, hub_url, use_auth, format, force, fetcher_url, schema, key
             key_json = json.loads(key_json)
             response = requests.post(url, headers=headers, json=key_json, timeout=100)
         if response.status_code != 200:
-            raise requests.RequestException(f"Request failed: {url} with status code: {response.status_code}\nResponse: {response.text}")
+            raise requests.RequestException(
+                f"Request failed: {url} with status code: {response.status_code}\nResponse: {response.text}"
+            )
         print(json.dumps(response.json(), indent=4))
     except requests.RequestException as e:
         raise RuntimeError(f"""
@@ -399,33 +487,46 @@ def fetch(repo, conf, hub_url, use_auth, format, force, fetcher_url, schema, key
         Error: {e}
         """) from e
 
-# zipline hub eval --conf=compiled/joins/join
+
+# zipline hub eval compiled/joins/join
 # localSparkSession evaluation of conf
 @hub.command()
+@conf_argument
 @common_options
 @click.option(
-    "--eval-url",
-    help="Eval server address (e.g. http://localhost:3904).",
-    type=str,
-    default=None
+    "--eval-url", help="Eval server address (e.g. http://localhost:3904).", type=str, default=None
 )
 @click.option(
     "--generate-test-config",
     help="Generate a test config for data testing.",
     is_flag=True,
-    default=None
+    default=False,
 )
 @click.option(
     "--test-data-path",
     help="Path to the test data yaml file to upload and use for evaluation.",
     type=str,
-    default=None
+    default=None,
 )
 @handle_conf_not_found(log_error=True, callback=print_possible_confs)
 @handle_compile
 @jsonify_exceptions_if_json_format
-def eval(repo, conf, hub_url, use_auth, format, force, eval_url, generate_test_config, test_data_path, skip_compile):
-    """Validate a conf against source tables and schemas."""
+def eval(
+    conf,
+    repo,
+    hub_url,
+    use_auth,
+    format,
+    force,
+    eval_url,
+    generate_test_config,
+    test_data_path,
+    skip_compile,
+):
+    """Validate a conf against source tables and schemas.
+
+    CONF is the path to the compiled conf (e.g. compiled/joins/team/my_join).
+    """
     parameters = {}
     hub_conf = get_hub_conf(conf, root_dir=repo)
     scope = ""
@@ -433,7 +534,15 @@ def eval(repo, conf, hub_url, use_auth, format, force, eval_url, generate_test_c
         scope = hub_conf.auth_scope
     elif hub_conf.cloud_provider == "azure" and hub_conf.customer_id is not None:
         scope = f"api://{hub_conf.customer_id}-zipline-auth"
-    zipline_hub = ZiplineHub(base_url=hub_url or hub_conf.hub_url, sa_name=hub_conf.sa_name, use_auth=use_auth, eval_url=eval_url or hub_conf.eval_url, cloud_provider=hub_conf.cloud_provider, scope=scope, format=format)
+    zipline_hub = ZiplineHub(
+        base_url=hub_url or hub_conf.hub_url,
+        sa_name=hub_conf.sa_name,
+        use_auth=use_auth,
+        eval_url=eval_url or hub_conf.eval_url,
+        cloud_provider=hub_conf.cloud_provider,
+        scope=scope,
+        format=format,
+    )
     conf_name_to_hash_dict = hub_uploader.build_local_repo_hashmap(root_dir=repo)
     branch = get_current_branch()
     if test_data_path:
@@ -441,7 +550,9 @@ def eval(repo, conf, hub_url, use_auth, format, force, eval_url, generate_test_c
         if hub_conf.cloud_provider != "gcp":
             raise RuntimeError("Test data path is only supported for GCP.")
         # import here to avoid dependency for other clouds.
-        zipline_artifact_prefix = hub_conf.artifact_prefix.rstrip("/") if hub_conf.artifact_prefix else ""
+        zipline_artifact_prefix = (
+            hub_conf.artifact_prefix.rstrip("/") if hub_conf.artifact_prefix else ""
+        )
         if not zipline_artifact_prefix:
             print_error("Zipline artifact prefix is not set.", format=format)
             sys.exit(1)
@@ -474,21 +585,26 @@ def eval(repo, conf, hub_url, use_auth, format, force, eval_url, generate_test_c
         sys.exit(1)
 
 
-# zipline hub eval-table --table=data.loggable_response
+# zipline hub eval-table data.loggable_response
 # evaluate table schema using eval API
 @hub.command()
+@click.argument("table")
 @repo_option
-@click.option("--table", required=True, help="Table name for schema evaluation (e.g., data.loggable_response)")
-@click.option("--conf", required=False, help="Optional conf to use for executionInfo. Takes precedence over --team.")
-@click.option("--team", required=False, help="Optional team name to use for executionInfo. If not specified, uses default team metadata.")
+@click.option(
+    "--conf",
+    required=False,
+    help="Optional conf to use for executionInfo. Takes precedence over --team.",
+)
+@click.option(
+    "--team",
+    required=False,
+    help="Optional team name to use for executionInfo. If not specified, uses default team metadata.",
+)
 @hub_url_option
 @use_auth_option
 @format_option
 @click.option(
-    "--eval-url",
-    help="Eval server address (e.g. http://localhost:3904).",
-    type=str,
-    default=None
+    "--eval-url", help="Eval server address (e.g. http://localhost:3904).", type=str, default=None
 )
 @click.option(
     "--engine-type",
@@ -498,8 +614,11 @@ def eval(repo, conf, hub_url, use_auth, format, force, eval_url, generate_test_c
     show_default=True,
 )
 @jsonify_exceptions_if_json_format
-def eval_table(repo, table, conf, team, hub_url, use_auth, format, eval_url, engine_type):
-    """Validate a table's schema."""
+def eval_table(table, repo, conf, team, hub_url, use_auth, format, eval_url, engine_type):
+    """Validate a table's schema.
+
+    TABLE is the table name for schema evaluation (e.g. data.loggable_response).
+    """
     # Use conf for executionInfo if provided (highest priority)
     conf_execution_info, team_execution_info, default_execution_info = None, None, None
     team = team or os.environ.get("TEAM")
@@ -519,8 +638,10 @@ def eval_table(repo, table, conf, team, hub_url, use_auth, format, eval_url, eng
             default_execution_info = json.load(f).get("executionInfo")
     execution_info = conf_execution_info or team_execution_info or default_execution_info
     common_env = execution_info["env"]["common"]
-    common_env.update(os.environ) # Override conf with env vars if set
-    hub_conf = HubConfig(**{k: common_env.get(k.upper()) for k in HubConfig.__dataclass_fields__.keys()})
+    common_env.update(os.environ)  # Override conf with env vars if set
+    hub_conf = HubConfig(
+        **{k: common_env.get(k.upper()) for k in HubConfig.__dataclass_fields__.keys()}
+    )
     scope = ""
     if hub_conf.auth_scope is not None:
         scope = hub_conf.auth_scope
@@ -534,7 +655,7 @@ def eval_table(repo, table, conf, team, hub_url, use_auth, format, eval_url, eng
         eval_url=eval_url or hub_conf.eval_url,
         cloud_provider=hub_conf.cloud_provider,
         scope=scope,
-        format=format
+        format=format,
     )
 
     execution_info = conf_execution_info or team_execution_info or default_execution_info
@@ -567,11 +688,18 @@ def get_hub_conf(conf_path, root_dir="."):
     """
     file_path = os.path.join(root_dir, conf_path)
     common_env_map = get_common_env_map(file_path)
-    common_env_map.update(os.environ) # Override config with cli args
+    common_env_map.update(os.environ)  # Override config with cli args
     kwargs = {k: common_env_map.get(k.upper()) for k in HubConfig.__dataclass_fields__.keys()}
     return HubConfig(**kwargs)
 
-def get_hub_conf_from_metadata_conf(metadata_path, root_dir=".", cloud_provider: Optional[str]=None, customer_id: Optional[str]=None, format: Format = Format.TEXT):
+
+def get_hub_conf_from_metadata_conf(
+    metadata_path,
+    root_dir=".",
+    cloud_provider: Optional[str] = None,
+    customer_id: Optional[str] = None,
+    format: Format = Format.TEXT,
+):
     """
     Get the hub configuration from the config file or environment variables.
     This method is used when the args are not provided.
@@ -579,7 +707,7 @@ def get_hub_conf_from_metadata_conf(metadata_path, root_dir=".", cloud_provider:
     """
     file_path = os.path.join(root_dir, metadata_path)
     common_env_map = get_common_env_map(file_path, skip_metadata_extraction=True)
-    common_env_map.update(os.environ) # Override config with cli args
+    common_env_map.update(os.environ)  # Override config with cli args
     hub_url = common_env_map.get("HUB_URL")
     frontend_url = common_env_map.get("FRONTEND_URL")
     sa_name = common_env_map.get("SA_NAME")
@@ -588,15 +716,28 @@ def get_hub_conf_from_metadata_conf(metadata_path, root_dir=".", cloud_provider:
     cloud_provider = cloud_provider or common_env_map.get("CLOUD_PROVIDER")
 
     if not cloud_provider:
-        print_error("Cloud provider is not set. Use --cloud or define CLOUD_PROVIDER in team env.", format=format)
+        print_error(
+            "Cloud provider is not set. Use --cloud or define CLOUD_PROVIDER in team env.",
+            format=format,
+        )
         sys.exit(1)
 
     customer_id = customer_id or common_env_map.get("CUSTOMER_ID")
     if cloud_provider == "azure" and not customer_id:
-        print_error("Customer ID is not set for Azure. Use --customer-id or define CUSTOMER_ID in team env.", format=format)
+        print_error(
+            "Customer ID is not set for Azure. Use --customer-id or define CUSTOMER_ID in team env.",
+            format=format,
+        )
         sys.exit(1)
 
-    return HubConfig(hub_url=hub_url, frontend_url=frontend_url, sa_name=sa_name, eval_url=eval_url, cloud_provider=cloud_provider, customer_id=customer_id)
+    return HubConfig(
+        hub_url=hub_url,
+        frontend_url=frontend_url,
+        sa_name=sa_name,
+        eval_url=eval_url,
+        cloud_provider=cloud_provider,
+        customer_id=customer_id,
+    )
 
 
 def get_schedule_modes(conf_path):
@@ -639,6 +780,7 @@ def print_wf_url(conf, conf_name, mode, workflow_id, repo=".", format: Format = 
     workflow_url = f"{frontend_url.rstrip('/')}/{hub_conf_type}/{conf_name}/{_mode_string()}?workflowId={workflow_id}"
 
     print_url("🔗 Workflow", workflow_url, format=format)
+
 
 if __name__ == "__main__":
     hub()

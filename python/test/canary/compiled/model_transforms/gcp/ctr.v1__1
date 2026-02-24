@@ -72,10 +72,10 @@
       },
       "env": {
         "common": {
-          "ARTIFACT_PREFIX": "gs://zipline-artifacts-dev",
+          "ARTIFACT_PREFIX": "gs://zipline-artifacts-canary",
           "CHRONON_ONLINE_ARGS": " -Ztasks=4",
           "CLOUD_PROVIDER": "gcp",
-          "CUSTOMER_ID": "dev",
+          "CUSTOMER_ID": "canary",
           "ENABLE_PUBSUB": "true",
           "FLINK_STATE_URI": "gs://zipline-warehouse-canary/flink-state",
           "FRONTEND_URL": "http://localhost:3000",
@@ -88,10 +88,10 @@
         },
         "modeEnvironments": {
           "upload": {
-            "ARTIFACT_PREFIX": "gs://zipline-artifacts-dev",
+            "ARTIFACT_PREFIX": "gs://zipline-artifacts-canary",
             "CHRONON_ONLINE_ARGS": " -Ztasks=4",
             "CLOUD_PROVIDER": "gcp",
-            "CUSTOMER_ID": "dev",
+            "CUSTOMER_ID": "canary",
             "ENABLE_PUBSUB": "true",
             "FLINK_STATE_URI": "gs://zipline-warehouse-canary/flink-state",
             "FRONTEND_URL": "http://localhost:3000",
@@ -182,10 +182,10 @@
           },
           "env": {
             "common": {
-              "ARTIFACT_PREFIX": "gs://zipline-artifacts-dev",
+              "ARTIFACT_PREFIX": "gs://zipline-artifacts-canary",
               "CHRONON_ONLINE_ARGS": " -Ztasks=4",
               "CLOUD_PROVIDER": "gcp",
-              "CUSTOMER_ID": "dev",
+              "CUSTOMER_ID": "canary",
               "ENABLE_PUBSUB": "true",
               "FLINK_STATE_URI": "gs://zipline-warehouse-canary/flink-state",
               "FRONTEND_URL": "http://localhost:3000",
@@ -198,10 +198,10 @@
             },
             "modeEnvironments": {
               "upload": {
-                "ARTIFACT_PREFIX": "gs://zipline-artifacts-dev",
+                "ARTIFACT_PREFIX": "gs://zipline-artifacts-canary",
                 "CHRONON_ONLINE_ARGS": " -Ztasks=4",
                 "CLOUD_PROVIDER": "gcp",
-                "CUSTOMER_ID": "dev",
+                "CUSTOMER_ID": "canary",
                 "ENABLE_PUBSUB": "true",
                 "FLINK_STATE_URI": "gs://zipline-warehouse-canary/flink-state",
                 "FRONTEND_URL": "http://localhost:3000",
