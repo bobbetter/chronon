@@ -29,7 +29,6 @@ import scala.collection.JavaConverters._
 import scala.collection.{AbstractIterator, mutable}
 import com.linkedin.avro.fastserde.{primitive => fastavro}
 import com.linkedin.avro.fastserde.BufferBackedPrimitiveFloatList
-import org.slf4j.{Logger, LoggerFactory}
 
 object AvroConversions {
 
