@@ -219,7 +219,7 @@ jobs:
         run: |
           set -eo pipefail
 
-          for customer_id in "canary" "etsy" "base" "dev"; do
+          for customer_id in "canary" "base"; do
             echo "Uploading wheel to GCS for customer_id: $customer_id"
             gcloud storage cp ${{ needs.build_python_wheel.outputs.wheel_file }} gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/wheels/${{ needs.build_python_wheel.outputs.wheel_file }}
             gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/wheels/${{ needs.build_python_wheel.outputs.wheel_file }} --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
