@@ -80,7 +80,12 @@ def admin():
 
 @admin.command("install")
 @click.argument("cloud", type=click.Choice(VALID_CLOUDS, case_sensitive=False))
-@click.argument("registry", default="local")
+@click.option(
+    "--registry",
+    default="local",
+    show_default=True,
+    help="Target registry URL (e.g. us-docker.pkg.dev/project/repo) or 'local' for the local Docker daemon.",
+)
 @click.option(
     "--api-token",
     envvar="ZIPLINE_API_TOKEN",
@@ -106,9 +111,6 @@ def install(cloud, registry, api_token, release, artifact_store, bundle):
     """Install Zipline images into a private registry or the local Docker daemon.
 
     CLOUD is the cloud provider variant (gcp, aws, or azure).
-
-    REGISTRY is the target registry URL (e.g. us-docker.pkg.dev/project/repo)
-    or "local" for the local Docker daemon.  [default: local]
     """
     for name in ("urllib3", "ai.chronon.logger"):
         logging.getLogger(name).setLevel(logging.WARNING)
