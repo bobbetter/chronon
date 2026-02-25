@@ -70,9 +70,12 @@ class AWSCleanup:
 
         Returns a list of deleted table names.
         """
+        import os
+
         import boto3
 
-        client = boto3.client("glue")
+        region = os.environ.get("AWS_REGION", "us-west-2")
+        client = boto3.client("glue", region_name=region)
         deleted: list[str] = []
 
         paginator = client.get_paginator("get_tables")

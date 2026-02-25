@@ -69,7 +69,7 @@ def submit_run_adhoc(runner, chronon_root, hub_url, conf, end_ds):
     return _extract_workflow_id(result.output)
 
 
-def cancel_workflow(runner, chronon_root, hub_url, workflow_id):
+def cancel_workflow(runner, chronon_root, hub_url, workflow_id, cloud):
     """Cancel a workflow via the CLI."""
     result = runner.invoke(
         zipline,
@@ -78,6 +78,7 @@ def cancel_workflow(runner, chronon_root, hub_url, workflow_id):
             workflow_id,
             f"--repo={chronon_root}",
             f"--hub-url={hub_url}",
+            f"--cloud={cloud}",
             "--format=json",
         ],
         catch_exceptions=False,

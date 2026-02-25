@@ -296,6 +296,6 @@ class TestHubRunner:
             # Intentionally not providing --customer-id
         ])
 
-        # Should fail with exit code 1
-        assert result.exit_code == 1
+        # click.UsageError exits with code 2
+        assert result.exit_code == 2
         assert "Customer ID is not set for Azure" in result.output

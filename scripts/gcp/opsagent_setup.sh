@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# Set up opsagent to expose prometheus metrics for flink and spark jobs
 # Detect dataproc image version from its various names
 if (! test -v DATAPROC_IMAGE_VERSION) && test -v DATAPROC_VERSION; then
   DATAPROC_IMAGE_VERSION="${DATAPROC_VERSION}"
@@ -13,10 +13,9 @@ fi
 curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
 bash add-google-cloud-ops-agent-repo.sh --also-install
 
-cat <<EOF > /etc/google-cloud-ops-agent/config.yaml
+cat <<EOF >> /etc/google-cloud-ops-agent/config.yaml
 metrics:
   receivers:
-    # Keep your flink scrapers
     prometheus_flink:
       type: prometheus
       config:
@@ -25,28 +24,39 @@ metrics:
             scrape_interval: 15s
             metrics_path: /metrics
             static_configs:
-              - targets: ['localhost:9250', 'localhost:9251', 'localhost:9252', 'localhost:9253', 'localhost:9254', 'localhost:9255', 'localhost:9256', 'localhost:9257', 'localhost:9258', 'localhost:9259', 'localhost:9260']
+              - targets: [
+                'localhost:9250',
+                'localhost:9251',
+                'localhost:9252',
+                'localhost:9253',
+                'localhost:9254',
+                'localhost:9255',
+                'localhost:9256',
+                'localhost:9257',
+                'localhost:9258',
+                'localhost:9259',
+                'localhost:9260'
+              ]
                 labels:
                   component: flink
-    # Explicitly define OTLP receiver for metrics
-    otlp_metrics:
-      type: otlp
+
   service:
     pipelines:
       flink:
         receivers: [prometheus_flink]
-      otlp_pipeline:
-        receivers: [otlp_metrics]
+      otlp:
+        receivers: [otlp]   # pipeline for OTLP metrics
+
+combined:
+  receivers:
+    otlp:
+      type: otlp
 
 traces:
-  receivers:
-    # Explicitly define OTLP receiver for traces
-    otlp_traces:
-      type: otlp
   service:
     pipelines:
-      otlp_pipeline:
-        receivers: [otlp_traces]
+      otlp:
+        receivers: [otlp]
 EOF
 
 systemctl restart google-cloud-ops-agent
