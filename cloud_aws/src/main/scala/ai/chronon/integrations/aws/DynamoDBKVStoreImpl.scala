@@ -54,7 +54,7 @@ import java.util
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
 import scala.compat.java8.FutureConverters
-import scala.concurrent.Future
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.util.Failure
 import scala.util.Success
@@ -68,12 +68,13 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
   // TTLCache: resolves logical batch dataset names to physical date-suffixed table names
   private val batchTableCache: TTLCache[String, String] = new TTLCache[String, String](
     f = { dataset =>
+      val keyMap = Map(partitionKeyColumn -> AttributeValue.builder.b(SdkBytes.fromByteArray(dataset.getBytes)).build)
       val request = GetItemRequest.builder
         .tableName(batchTableRegistry)
-        .key(Map(registryKeyColumn -> AttributeValue.builder.s(dataset).build).toJava)
+        .key(keyMap.toJava)
         .build
       val item = dynamoDbClient.getItem(request).join().item().toScala
-      item.get(registryValueColumn).map(_.s()).getOrElse(dataset)
+      item.get("valueBytes").map(v => new String(v.b().asByteArray())).getOrElse(dataset)
     },
     contextBuilder = { _ => metricsContext.withSuffix("batch_table_cache") }
   )
@@ -81,47 +82,6 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
   private[aws] def resolveTableName(dataset: String): String = {
     if (dataset.endsWith(batchSuffix)) batchTableCache(dataset)
     else dataset
-  }
-
-  private def ensureRegistryTable(): Unit = {
-    val request = CreateTableRequest.builder
-      .tableName(batchTableRegistry)
-      .attributeDefinitions(
-        AttributeDefinition.builder.attributeName(registryKeyColumn).attributeType(ScalarAttributeType.S).build
-      )
-      .keySchema(
-        KeySchemaElement.builder.attributeName(registryKeyColumn).keyType(KeyType.HASH).build
-      )
-      .billingMode(BillingMode.PAY_PER_REQUEST)
-      .build
-
-    try {
-      dynamoDbClient.createTable(request).join()
-      val tableRequest = DescribeTableRequest.builder.tableName(batchTableRegistry).build
-      val waiterResponse = dynamoDbClient.waiter.waitUntilTableExists(tableRequest).join()
-      if (waiterResponse.matched.exception().isPresent)
-        throw waiterResponse.matched.exception().get()
-      logger.info(s"Registry table $batchTableRegistry created successfully")
-    } catch {
-      case _: ResourceInUseException =>
-        logger.info(s"Registry table $batchTableRegistry already exists")
-      case e: CompletionException if e.getCause.isInstanceOf[ResourceInUseException] =>
-        logger.info(s"Registry table $batchTableRegistry already exists")
-      case e: Exception =>
-        logger.error(s"Error creating registry table $batchTableRegistry", e)
-        throw e
-    }
-  }
-
-  private def writeRegistryEntry(logicalName: String, physicalName: String): Unit = {
-    val item = Map(
-      registryKeyColumn -> AttributeValue.builder.s(logicalName).build,
-      registryValueColumn -> AttributeValue.builder.s(physicalName).build,
-      registryTimestampColumn -> AttributeValue.builder.n(System.currentTimeMillis().toString).build
-    )
-    val putRequest = PutItemRequest.builder.tableName(batchTableRegistry).item(item.toJava).build()
-    dynamoDbClient.putItem(putRequest).join()
-    logger.info(s"Registry updated: $logicalName -> $physicalName")
   }
 
   override def create(dataset: String): Unit = create(dataset, Map.empty)
@@ -410,9 +370,13 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
       waitForImportCompletion(importArn, physicalTableName)
 
       // Register the physical table name in the batch table registry
-      ensureRegistryTable()
+      create(batchTableRegistry)
       val registryKey = logicalTableName.sanitize.toUpperCase + batchSuffix
-      writeRegistryEntry(registryKey, physicalTableName)
+      Await.result(
+        multiPut(Seq(KVStore.PutRequest(registryKey.getBytes, physicalTableName.getBytes, batchTableRegistry))),
+        30.seconds
+      )
+      logger.info(s"Registry updated: $registryKey -> $physicalTableName")
 
       val duration = System.currentTimeMillis() - startTs
       logger.info(s"DynamoDB import completed for table: $physicalTableName in ${duration}ms")
@@ -581,11 +545,7 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
 }
 
 object DynamoDBKVStoreConstants {
-  // Batch table registry constants
   val batchTableRegistry = "CHRONON_BATCH_TABLE_REGISTRY"
-  val registryKeyColumn = "dataset"
-  val registryValueColumn = "tableName"
-  val registryTimestampColumn = "updatedAt"
   val batchSuffix = "_BATCH"
 
   // Optional field that indicates if this table is meant to be time sorted in Dynamo or not

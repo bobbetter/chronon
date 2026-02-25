@@ -1,6 +1,5 @@
 package ai.chronon.integrations.aws
 
-import ai.chronon.api.ScalaJavaConversions._
 import ai.chronon.online.KVStore.{GetRequest, PutRequest}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.flatspec.AnyFlatSpec
@@ -10,22 +9,9 @@ import org.testcontainers.utility.DockerImageName
 import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, StaticCredentialsProvider}
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient
-import software.amazon.awssdk.services.dynamodb.model.{
-  AttributeDefinition,
-  AttributeValue,
-  CreateTableRequest,
-  DescribeTableRequest,
-  KeySchemaElement,
-  KeyType,
-  ProvisionedThroughput,
-  PutItemRequest,
-  ResourceInUseException,
-  ScalarAttributeType
-}
 
 import java.net.URI
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.CompletionException
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 
@@ -62,18 +48,15 @@ class DynamoDBBatchTableRegistryTest extends AnyFlatSpec with BeforeAndAfterAll 
   it should "resolve batch dataset to physical table via registry" in {
     val kvStore = new DynamoDBKVStoreImpl(client)
 
-    createStringKeyTable(batchTableRegistry)
+    kvStore.create(batchTableRegistry)
 
     val logicalName = "MY_GROUPBY_BATCH"
     val physicalName = "MY_GROUPBY_BATCH_2026_02_17"
 
-    // Write registry entry
-    val item = Map(
-      registryKeyColumn -> AttributeValue.builder.s(logicalName).build,
-      registryValueColumn -> AttributeValue.builder.s(physicalName).build,
-      registryTimestampColumn -> AttributeValue.builder.n(System.currentTimeMillis().toString).build
+    Await.result(
+      kvStore.multiPut(Seq(PutRequest(logicalName.getBytes(StandardCharsets.UTF_8), physicalName.getBytes(StandardCharsets.UTF_8), batchTableRegistry))),
+      1.minute
     )
-    client.putItem(PutItemRequest.builder.tableName(batchTableRegistry).item(item.toJava).build()).join()
 
     val resolved = kvStore.resolveTableName(logicalName)
     resolved shouldBe physicalName
@@ -90,29 +73,25 @@ class DynamoDBBatchTableRegistryTest extends AnyFlatSpec with BeforeAndAfterAll 
   it should "return cached value on subsequent lookups" in {
     val kvStore = new DynamoDBKVStoreImpl(client)
 
-    createStringKeyTable(batchTableRegistry)
+    kvStore.create(batchTableRegistry)
 
     val logicalName = "CACHED_GROUPBY_BATCH"
     val physicalName = "CACHED_GROUPBY_BATCH_2026_02_17"
 
-    val item = Map(
-      registryKeyColumn -> AttributeValue.builder.s(logicalName).build,
-      registryValueColumn -> AttributeValue.builder.s(physicalName).build,
-      registryTimestampColumn -> AttributeValue.builder.n(System.currentTimeMillis().toString).build
+    Await.result(
+      kvStore.multiPut(Seq(PutRequest(logicalName.getBytes(StandardCharsets.UTF_8), physicalName.getBytes(StandardCharsets.UTF_8), batchTableRegistry))),
+      1.minute
     )
-    client.putItem(PutItemRequest.builder.tableName(batchTableRegistry).item(item.toJava).build()).join()
 
     // First lookup populates the cache
     val resolved1 = kvStore.resolveTableName(logicalName)
     resolved1 shouldBe physicalName
 
     // Update the registry to a different value
-    val updatedItem = Map(
-      registryKeyColumn -> AttributeValue.builder.s(logicalName).build,
-      registryValueColumn -> AttributeValue.builder.s("CACHED_GROUPBY_BATCH_2026_02_18").build,
-      registryTimestampColumn -> AttributeValue.builder.n(System.currentTimeMillis().toString).build
+    Await.result(
+      kvStore.multiPut(Seq(PutRequest(logicalName.getBytes(StandardCharsets.UTF_8), "CACHED_GROUPBY_BATCH_2026_02_18".getBytes(StandardCharsets.UTF_8), batchTableRegistry))),
+      1.minute
     )
-    client.putItem(PutItemRequest.builder.tableName(batchTableRegistry).item(updatedItem.toJava).build()).join()
 
     // Second lookup should still return cached value (TTL hasn't expired)
     val resolved2 = kvStore.resolveTableName(logicalName)
@@ -122,18 +101,16 @@ class DynamoDBBatchTableRegistryTest extends AnyFlatSpec with BeforeAndAfterAll 
   it should "resolve batch table names in multiGet for get lookups" in {
     val kvStore = new DynamoDBKVStoreImpl(client)
 
-    createStringKeyTable(batchTableRegistry)
+    kvStore.create(batchTableRegistry)
 
     val logicalName = "MULTIGET_GROUPBY_BATCH"
     val physicalName = "MULTIGET_GROUPBY_BATCH_2026_02_17"
 
     // Write registry entry
-    val registryItem = Map(
-      registryKeyColumn -> AttributeValue.builder.s(logicalName).build,
-      registryValueColumn -> AttributeValue.builder.s(physicalName).build,
-      registryTimestampColumn -> AttributeValue.builder.n(System.currentTimeMillis().toString).build
+    Await.result(
+      kvStore.multiPut(Seq(PutRequest(logicalName.getBytes(StandardCharsets.UTF_8), physicalName.getBytes(StandardCharsets.UTF_8), batchTableRegistry))),
+      1.minute
     )
-    client.putItem(PutItemRequest.builder.tableName(batchTableRegistry).item(registryItem.toJava).build()).join()
 
     // Create the physical table and insert data
     kvStore.create(physicalName, Map.empty)
@@ -170,31 +147,4 @@ class DynamoDBBatchTableRegistryTest extends AnyFlatSpec with BeforeAndAfterAll 
     returnedValue shouldBe "direct-value"
   }
 
-  /** Helper to create the registry table with a String partition key (idempotent). */
-  private def createStringKeyTable(tableName: String): Unit = {
-    try {
-      client.createTable(
-        CreateTableRequest.builder
-          .tableName(tableName)
-          .attributeDefinitions(
-            AttributeDefinition.builder.attributeName(registryKeyColumn).attributeType(ScalarAttributeType.S).build
-          )
-          .keySchema(
-            KeySchemaElement.builder.attributeName(registryKeyColumn).keyType(KeyType.HASH).build
-          )
-          .provisionedThroughput(
-            ProvisionedThroughput.builder.readCapacityUnits(5L).writeCapacityUnits(5L).build
-          )
-          .build
-      ).join()
-      val waiterResponse = client.waiter.waitUntilTableExists(
-        DescribeTableRequest.builder.tableName(tableName).build
-      ).join()
-      if (waiterResponse.matched.exception().isPresent)
-        throw waiterResponse.matched.exception().get()
-    } catch {
-      case _: ResourceInUseException => // table already exists
-      case e: CompletionException if e.getCause.isInstanceOf[ResourceInUseException] => // table already exists
-    }
-  }
 }
