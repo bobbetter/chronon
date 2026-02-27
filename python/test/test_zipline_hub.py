@@ -53,5 +53,5 @@ class TestZiplineHub:
                 "end": expected_end,
                 "skipLongRunningNodes": False
             },
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json", "X-Zipline-Version": "unknown"}
         )

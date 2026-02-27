@@ -144,6 +144,7 @@ object JobSubmitterConstants {
   val JarURI = "jarUri"
   val FlinkMainJarURI = "flinkMainJarUri"
   val FlinkPubSubConnectorJarURI = "flinkPubSubConnectorJarUri"
+  val FlinkKinesisConnectorJarURI = "flinkKinesisConnectorJarUri"
   val FlinkJarsUri = "flinkJarsUri"
   val AdditionalJars = "additionalJars"
   val SavepointUri = "savepointUri"
@@ -169,11 +170,16 @@ object JobSubmitterConstants {
   val SubnetId = "subnetId"
   val SecurityGroupId = "securityGroupId"
 
+  // EKS (Flink on EKS) specific properties
+  val EksServiceAccount = "eksServiceAccount"
+  val EksNamespace = "eksNamespace"
+
   val JarUriArgKeyword = "--jar-uri"
   val JobTypeArgKeyword = "--job-type"
   val MainClassKeyword = "--main-class"
   val FlinkMainJarUriArgKeyword = "--flink-main-jar-uri"
   val FlinkPubSubJarUriArgKeyword = "--flink-pubsub-jar-uri"
+  val FlinkKinesisJarUriArgKeyword = "--flink-kinesis-jar-uri"
   val FlinkJarsUriArgKeyword = "--flink-jars-uri"
   val AdditionalJarsUriArgKeyword = "--additional-jars"
   val FlinkGroupByNameArgKeyword = "--groupby-name"
@@ -198,6 +204,8 @@ object JobSubmitterConstants {
   val StreamingNoSavepointArgKeyword = "--no-savepoint"
 
   val JobIdArgKeyword = "--job-id"
+  val EksServiceAccountArgKeyword = "--eks-service-account"
+  val EksNamespaceArgKeyword = "--eks-namespace"
 
   val SharedInternalArgs: Set[String] = Set(
     JarUriArgKeyword,
@@ -205,6 +213,7 @@ object JobSubmitterConstants {
     MainClassKeyword,
     FlinkMainJarUriArgKeyword,
     FlinkPubSubJarUriArgKeyword,
+    FlinkKinesisJarUriArgKeyword,
     FlinkJarsUriArgKeyword,
     AdditionalJarsUriArgKeyword,
     LocalConfPathArgKeyword,
@@ -218,7 +227,9 @@ object JobSubmitterConstants {
     StreamingNoSavepointArgKeyword,
     StreamingCheckpointPathArgKeyword,
     StreamingVersionCheckDeploy,
-    JobIdArgKeyword
+    JobIdArgKeyword,
+    EksServiceAccountArgKeyword,
+    EksNamespaceArgKeyword
   )
 
   // Generic spark cluster name environment variable - works across all cloud providers
@@ -244,4 +255,34 @@ object JobSubmitterConstants {
 
   // We use incremental checkpoints and we cap how many we keep around
   val MaxRetainedCheckpoints: String = "10"
+
+  // Flink jobs built with thin jars need Spark catalyst/SQL deps on the classpath.
+  // When FlinkJarsUri is provided, these filenames are resolved against that base path.
+  val FlinkAdditionalJarNames: Array[String] = Array(
+    "commons-collections4-4.4.jar",
+    "commons-compiler-3.1.9.jar",
+    "janino-3.1.9.jar",
+    "json4s-ast_2.12-3.7.0-M11.jar",
+    "json4s-core_2.12-3.7.0-M11.jar",
+    "kryo-shaded-4.0.2.jar",
+    "metrics-core-4.2.19.jar",
+    "metrics-json-4.2.19.jar",
+    "spark-catalyst_2.12-3.5.3.jar",
+    "spark-common-utils_2.12-3.5.3.jar",
+    "spark-core_2.12-3.5.3.jar",
+    "spark-kvstore_2.12-3.5.3.jar",
+    "spark-launcher_2.12-3.5.3.jar",
+    "spark-hive_2.12-3.5.3.jar",
+    "spark-network-common_2.12-3.5.3.jar",
+    "spark-network-shuffle_2.12-3.5.3.jar",
+    "spark-sql-api_2.12-3.5.3.jar",
+    "spark-sql_2.12-3.5.3.jar",
+    "spark-unsafe_2.12-3.5.3.jar",
+    "xbean-asm9-shaded-4.23.jar"
+  )
+
+  def additionalFlinkJars(flinkJarsBasePath: String): Array[String] = {
+    val base = if (flinkJarsBasePath.endsWith("/")) flinkJarsBasePath else flinkJarsBasePath + "/"
+    FlinkAdditionalJarNames.map(base + _)
+  }
 }

@@ -185,6 +185,14 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
       Column("views", IntType, 10,  nullRate = 1.0), // always null
     )
     val eventDf = DataFrameGen.events(spark, eventSchema, count = 1000, partitions = 18)
+
+    // Check the input data is as expected
+    eventDf.show(10, truncate = false)
+    val listEventNotNullCount = eventDf.filter("list_event IS NOT NULL").count()
+    val viewsNotNullCount = eventDf.filter("views IS NOT NULL").count()
+    listEventNotNullCount shouldBe 0
+    viewsNotNullCount shouldBe 0
+
     eventDf.save(s"$namespace.$eventsTable")
 
     // Count how many "user" keys there are in the eventDf
@@ -225,6 +233,14 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
       Column("views", IntType, 10,  nullRate = 0.0), // never null
     )
     val eventDf = DataFrameGen.events(spark, eventSchema, count = 1000, partitions = 18)
+
+    // Check the input data is as expected
+    eventDf.show(10, truncate = false)
+    val listEventNullCount = eventDf.filter("list_event IS NULL").count()
+    val viewsNullCount = eventDf.filter("views IS NULL").count()
+    listEventNullCount shouldBe 0
+    viewsNullCount shouldBe 0
+
     eventDf.save(s"$namespace.$eventsTable")
 
     val aggregations: Seq[Aggregation] = Seq(
@@ -258,7 +274,16 @@ class GroupByUploadTest extends SparkTestBase with Matchers {
       Column("list_event", StringType, 100, nullRate = 0.0), // never null
       Column("views", IntType, 10,  nullRate = 0.0), // never null
     )
+
     val eventDf = DataFrameGen.events(spark, eventSchema, count = 1000, partitions = 18)
+
+    // Check the input data is as expected
+    eventDf.show(10, truncate = false)
+    val listEventNullCount = eventDf.filter("list_event IS NULL").count()
+    val viewsNullCount = eventDf.filter("views IS NULL").count()
+    listEventNullCount shouldBe 0
+    viewsNullCount shouldBe 0
+
     eventDf.save(s"$namespace.$eventsTable")
 
     val aggregations: Seq[Aggregation] = Seq(

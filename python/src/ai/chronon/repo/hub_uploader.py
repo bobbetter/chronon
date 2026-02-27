@@ -73,7 +73,10 @@ def build_local_repo_hashmap(root_dir: str):
 
 
 def compute_and_upload_diffs(
-    branch: str, zipline_hub: ZiplineHub, local_repo_confs: dict[str, Conf], format: Format = Format.TEXT
+    branch: str,
+    zipline_hub: ZiplineHub,
+    local_repo_confs: dict[str, Conf],
+    format: Format = Format.TEXT,
 ):
     # Determine which confs are different from the ZiplineHub
     # Call Zipline hub with `names_and_hashes` as the argument to get back
@@ -83,13 +86,15 @@ def compute_and_upload_diffs(
     changed_conf_names = zipline_hub.call_diff_api(names_to_hashes)["diff"]
 
     if not changed_conf_names:
-        print_success(f"Remote contains all local files. No need to upload '{branch}'.", format=format)
+        print_success(
+            f"Remote contains all local files. No need to upload '{branch}'.", format=format
+        )
         diffed_confs = {}
     else:
         unchanged = len(names_to_hashes) - len(changed_conf_names)
         print_info(
             f"🔍 Detected {len(changed_conf_names)} changes on local branch '{branch}'. {unchanged} unchanged.",
-            format=format
+            format=format,
         )
 
         # a list of names for diffed hashes on branch
@@ -104,7 +109,9 @@ def compute_and_upload_diffs(
 
         # Make PUT request to ZiplineHub
         zipline_hub.call_upload_api(branch=branch, diff_confs=diff_confs)
-        print_step(f"⬆️ Uploaded {len(diffed_confs)} changed confs to branch '{branch}'.", format=format)
+        print_step(
+            f"⬆️ Uploaded {len(diffed_confs)} changed confs to branch '{branch}'.", format=format
+        )
 
     zipline_hub.call_sync_api(branch=branch, names_to_hashes=names_to_hashes)
 

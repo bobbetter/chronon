@@ -30,6 +30,7 @@ STYLE_KEY = "bold"
 
 # ── Icon / label constants ────────────────────────────────────────────
 
+
 class Icons:
     SUCCESS = f"[{STYLE_SUCCESS}]✅ SUCCESS[/]"
     ERROR = f"[{STYLE_ERROR}]❌ ERROR[/]"
@@ -76,7 +77,10 @@ def print_step(msg, format=Format.TEXT):
 def print_url(label, url, format=Format.TEXT):
     if format == Format.JSON:
         return
-    console.print(f"  [{STYLE_KEY}]{label}:[/{STYLE_KEY}] [{STYLE_URL}]{url}[/{STYLE_URL}]")
+    console.print(
+        f"  [{STYLE_KEY}]{label}:[/{STYLE_KEY}] [{STYLE_URL}]{url}[/{STYLE_URL}]",
+        soft_wrap=True
+    )
 
 
 def print_key_value(key, value, format=Format.TEXT):

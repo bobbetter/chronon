@@ -36,6 +36,9 @@ trait CloudGcpModule extends Cross.Module[String] with build.BaseModule {
     // the correct versions during assembly merge. Exclude conflicting metadata here;
     // the assembly task patches the correct versions back in from our resolved dependencies.
     Assembly.Rule.ExcludePattern("META-INF/maven/org\\.apache\\.avro/.*"),
+    // iceberg-spark-runtime shades aircompressor but leaves the original pom metadata,
+    // which grype flags as vulnerable. Strip it since the code is shaded.
+    Assembly.Rule.ExcludePattern("META-INF/maven/io\\.airlift/aircompressor/.*"),
   )
 
   override def unmanagedClasspath = Task {

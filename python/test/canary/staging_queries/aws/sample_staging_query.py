@@ -83,7 +83,7 @@ v1_hub = StagingQuery(
         TableDependency(table=training_set.v1_hub.table, partition_column="ds", offset=1)
     ],
     version=0,
-    step_days=3,
+    step_days=30,
 )
 
 bigquery_import_query = f"""

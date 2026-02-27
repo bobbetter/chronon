@@ -14,8 +14,7 @@ trait CloudAwsModule extends Cross.Module[String] with build.BaseModule {
 
   def moduleDeps = Seq(build.spark(crossValue), build.aggregator(crossValue), build.api(crossValue), build.online(crossValue))
 
-  def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingApiDeps ++ build.Constants.utilityDeps ++ Seq(
-    mvn"org.apache.hadoop:hadoop-client-api:3.3.6",
+  def mvnDeps = build.Constants.commonDeps ++ build.Constants.loggingApiDeps ++ build.Constants.utilityDeps  ++ Seq(
     mvn"software.amazon.awssdk:dynamodb:2.30.13",
     mvn"software.amazon.awssdk:ec2:2.30.13",
     mvn"software.amazon.awssdk:emr:2.30.13",
@@ -26,14 +25,23 @@ trait CloudAwsModule extends Cross.Module[String] with build.BaseModule {
     mvn"software.amazon.awssdk:auth:2.30.13",
     mvn"software.amazon.awssdk:url-connection-client:2.30.13",
     mvn"software.amazon.awssdk:netty-nio-client:2.30.13",
+    mvn"software.amazon.awssdk:sts:2.30.13",
     mvn"software.amazon.awssdk:identity-spi:2.30.13",
+    mvn"org.apache.hadoop:hadoop-client-api:3.4.1",
     mvn"org.apache.iceberg::iceberg-spark-runtime-3.5:1.10.0",
+    mvn"io.fabric8:kubernetes-client:7.5.2"
+      .exclude("com.fasterxml.jackson.core" -> "jackson-core")
+      .exclude("com.fasterxml.jackson.core" -> "jackson-databind")
+      .exclude("com.fasterxml.jackson.core" -> "jackson-annotations"),
   )
   
   override def assemblyRules = super.assemblyRules ++ Seq(
     // iceberg-spark-runtime embeds stale avro pom.properties (1.12.0) that override
     // the correct version during assembly merge. Exclude and patch back below.
     Assembly.Rule.ExcludePattern("META-INF/maven/org\\.apache\\.avro/.*"),
+    // iceberg-spark-runtime shades aircompressor but leaves the original pom metadata,
+    // which grype flags as vulnerable. Strip it since the code is shaded.
+    Assembly.Rule.ExcludePattern("META-INF/maven/io\\.airlift/aircompressor/.*"),
   )
 
   // Patch correct avro version back into the assembly jar after stripping stale metadata.

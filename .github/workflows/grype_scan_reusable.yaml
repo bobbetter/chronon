@@ -116,107 +116,142 @@ jobs:
   security_scan:
     runs-on: ubuntu-latest
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact: service
+            artifact_name: service-assembly-jar
+            scan_type: jar
+            fail_on: low
+          - artifact: cloud-gcp
+            artifact_name: cloud-gcp-jar
+            scan_type: jar
+            fail_on: low
+          - artifact: cloud-aws
+            artifact_name: cloud-aws-jar
+            scan_type: jar
+            fail_on: low
+          - artifact: cloud-azure
+            artifact_name: cloud-azure-jar
+            scan_type: jar
+            fail_on: low
+          - artifact: flink
+            artifact_name: flink-jar
+            scan_type: jar
+            fail_on: low
+          - artifact: flink-connectors
+            artifact_name: flink-connectors-jar
+            scan_type: jar
+            fail_on: low
+          - artifact: fetcher-image
+            artifact_name: chronon-fetcher-image
+            scan_type: docker
+            fail_on: medium
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Service Assembly Jar
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: service-assembly-jar
-          path: service-assembly-jar
-
-      - name: Download Cloud GCP Jar
-        uses: actions/download-artifact@v4
-        with:
-          name: cloud-gcp-jar
-          path: cloud-gcp-jar
-
-      - name: Download Cloud AWS Jar
-        uses: actions/download-artifact@v4
-        with:
-          name: cloud-aws-jar
-          path: cloud-aws-jar
-
-      - name: Download Cloud Azure Jar
-        uses: actions/download-artifact@v4
-        with:
-          name: cloud-azure-jar
-          path: cloud-azure-jar
-
-      - name: Download Flink Jar
-        uses: actions/download-artifact@v4
-        with:
-          name: flink-jar
-          path: flink-jar
-
-      - name: Download Flink connectors Jar
-        uses: actions/download-artifact@v4
-        with:
-          name: flink-connectors-jar
-          path: flink-connectors-jar
-
-      - name: Download Docker image
-        uses: actions/download-artifact@v4
-        with:
-          name: chronon-fetcher-image
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.scan_type == 'jar' && matrix.artifact_name || '.' }}
 
       - name: Install Grype
         run: |
           curl -sSfL https://get.anchore.io/grype | sh -s -- -b /usr/local/bin
 
-      - name: Run Grype scan on Service JAR
-        run: |
-          echo "Scanning Service JAR for vulnerabilities..."
-          grype --only-fixed --fail-on low service-assembly-jar/out.jar
-
-      - name: Run Grype scan on Cloud GCP JAR
-        run: |
-          echo "Scanning Cloud GCP JAR for vulnerabilities..."
-          grype --only-fixed --fail-on low cloud-gcp-jar/out.jar
-
-      - name: Run Grype scan on Cloud AWS JAR
-        run: |
-          echo "Scanning Cloud AWS JAR for vulnerabilities..."
-          grype --only-fixed --fail-on low cloud-aws-jar/out.jar
-
-      - name: Run Grype scan on Cloud Azure JAR
-        run: |
-          echo "Scanning Cloud Azure JAR for vulnerabilities..."
-          grype --only-fixed --fail-on low cloud-azure-jar/out.jar
-
-      - name: Run Grype scan on Flink JAR
-        run: |
-          echo "Scanning Flink JAR for vulnerabilities..."
-          grype --only-fixed --fail-on low flink-jar/out.jar
-
-      - name: Run Grype scan on Flink connectors JAR
-        run: |
-          echo "Scanning Flink connectors JAR for vulnerabilities..."
-          grype --only-fixed --fail-on low flink-connectors-jar/out.jar
-
-      - name: Load Docker image for Grype scanning
+      - name: Load Docker image
+        if: matrix.scan_type == 'docker'
         run: docker load -i chronon-fetcher.tar
 
-      # we go with medium & higher here as there are some dated Linux packages that we can't do much about
-      - name: Run Grype scan on Fetcher Docker image
+      - name: Run Grype scan on ${{ matrix.artifact }}
         run: |
-          echo "Scanning Fetcher Docker image for vulnerabilities..."
-          grype --only-fixed --fail-on medium chronon-fetcher:grype-test
+          echo "Scanning ${{ matrix.artifact }} for vulnerabilities..."
+          if [ "${{ matrix.scan_type }}" = "docker" ]; then
+            grype --only-fixed --fail-on ${{ matrix.fail_on }} chronon-fetcher:grype-test
+          else
+            grype --only-fixed --fail-on ${{ matrix.fail_on }} ${{ matrix.artifact_name }}/out.jar
+          fi
 
-      - name: On Fail Notify Slack
-        if: ${{ failure() && inputs.slack_webhook_secret != '' }}
-        uses: slackapi/slack-github-action@v1
+  notify:
+    runs-on: ubuntu-latest
+    needs: [security_scan]
+    if: ${{ failure() && inputs.slack_webhook_secret != '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect failed scan details
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Find which scan steps failed in the current job
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" \
+            --jq '[.jobs[] | select(.name | startswith("security_scan")) | select(.conclusion == "failure") | .name]' \
+            > /tmp/failed-scans.json 2>/dev/null || echo "[]" > /tmp/failed-scans.json
+
+      - name: Build notification payload
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          python3 << 'PYEOF' > /tmp/slack_payload.json
+          import json, os
+
+          run_url = os.environ['RUN_URL']
+          sha = os.environ['COMMIT_SHA']
+          branch = os.environ['BRANCH']
+
+          # Load failed scan step names
+          try:
+              with open('/tmp/failed-scans.json') as f:
+                  failed_scans = json.load(f)
+          except Exception:
+              failed_scans = []
+
+          if failed_scans:
+              scans_text = '\n'.join(f'• {s}' for s in failed_scans)
+          else:
+              scans_text = '• (could not determine failed scans)'
+
+          blocks = [
+              {
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': f':warning: *Chronon Grype Security Scan Failed*\n\nCommit: <{run_url}|{sha[:8]}>\nBranch: `{branch}`'
+                  }
+              },
+              {
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': f'*Failed Scans:*\n{scans_text}'
+                  }
+              },
+              {
+                  'type': 'context',
+                  'elements': [{
+                      'type': 'mrkdwn',
+                      'text': f'<{run_url}|View full logs>'
+                  }]
+              },
+          ]
+
+          payload = {
+              'text': 'Chronon Grype Security Scan Failed',
+              'blocks': blocks
+          }
+
+          print(json.dumps(payload))
+          PYEOF
+
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2
         with:
-          payload: |
-            {
-              "text": "Grype Security Scan Failed\n\n The security scan failed for commit <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|${{ github.sha }}> on branch ${{ github.ref }}. Security vulnerabilities were detected. Please check the logs for more details.",
-              "attachments": [
-                {
-                  "text": "",
-                  "color": "#ff0000"
-                }
-              ]
-            }
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload-file-path: /tmp/slack_payload.json

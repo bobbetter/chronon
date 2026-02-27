@@ -14,9 +14,9 @@ from gen_thrift.api.ttypes import ConfType
 @click.command(name="compile")
 @click.option(
     "--chronon-root",
+    default=None,
     envvar="CHRONON_ROOT",
     help="Path to the root Chronon folder.",
-    default=os.getcwd(),
 )
 @click.option(
     "--ignore-python-errors",
@@ -25,6 +25,7 @@ from gen_thrift.api.ttypes import ConfType
     help="Allow compilation to proceed even with Python errors (useful for testing)",
 )
 @click.option(
+    "-f",
     "--format",
     help="Output format.",
     default=Format.TEXT,
@@ -38,6 +39,7 @@ from gen_thrift.api.ttypes import ConfType
 )
 @jsonify_exceptions_if_json_format
 def compile(chronon_root, ignore_python_errors, format, force):
+    """Compile Chronon configs."""
     if chronon_root is None or chronon_root == "":
         chronon_root = os.getcwd()
 
@@ -48,17 +50,22 @@ def compile(chronon_root, ignore_python_errors, format, force):
             )
         sys.path.insert(0, chronon_root)
     elif format != Format.JSON:
-        console.print(f"\n[{STYLE_INFO} italic]{chronon_root}[/{STYLE_INFO} italic] already on python path.")
+        console.print(
+            f"\n[{STYLE_INFO} italic]{chronon_root}[/{STYLE_INFO} italic] already on python path."
+        )
 
-    compiled_result, has_errors = __compile(chronon_root, ignore_python_errors, format=format, force=force)
+    compiled_result, has_errors = __compile(
+        chronon_root, ignore_python_errors, format=format, force=force
+    )
 
     if has_errors and not ignore_python_errors:
         sys.exit(1)
     return compiled_result
 
 
-def __compile(chronon_root, ignore_python_errors=False, format=Format.TEXT, force=False) -> tuple[
-    dict[ConfType, CompileResult], bool]:
+def __compile(
+    chronon_root, ignore_python_errors=False, format=Format.TEXT, force=False
+) -> tuple[dict[ConfType, CompileResult], bool]:
     if chronon_root:
         chronon_root_path = os.path.expanduser(chronon_root)
         os.chdir(chronon_root_path)
@@ -72,17 +79,25 @@ def __compile(chronon_root, ignore_python_errors=False, format=Format.TEXT, forc
             )
         )
 
-    compile_context = CompileContext(ignore_python_errors=ignore_python_errors, format=format, force=force)
+    compile_context = CompileContext(
+        ignore_python_errors=ignore_python_errors, format=format, force=force
+    )
     compiler = Compiler(compile_context)
     results = compiler.compile()
     if format == Format.JSON:
-        print(json.dumps({
-            "status": "success",
-            "results": {
-                ConfType._VALUES_TO_NAMES[conf_type]: list(conf_result.obj_dict.keys())
-                for conf_type, conf_result in results.items()
-                if conf_result.obj_dict
-            }}, indent=4))
+        print(
+            json.dumps(
+                {
+                    "status": "success",
+                    "results": {
+                        ConfType._VALUES_TO_NAMES[conf_type]: list(conf_result.obj_dict.keys())
+                        for conf_type, conf_result in results.items()
+                        if conf_result.obj_dict
+                    },
+                },
+                indent=4,
+            )
+        )
     return results, compiler.has_compilation_errors()
 
 

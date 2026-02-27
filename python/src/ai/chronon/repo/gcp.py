@@ -486,9 +486,10 @@ class GcpRunner(Runner):
                 ).strip()
 
             # Check if this is a streaming deploy job
-            is_streaming_deploy = (
-                self.mode in ["streaming", "streaming-client"] and "deploy" in self._args.get("args")
-            )
+            is_streaming_deploy = self.mode in [
+                "streaming",
+                "streaming-client",
+            ] and "deploy" in self._args.get("args")
 
             # For non-streaming jobs or streaming jobs that aren't deploy, wait for completion
             if not self.disable_cloud_logging and submitted_job_id and not is_streaming_deploy:

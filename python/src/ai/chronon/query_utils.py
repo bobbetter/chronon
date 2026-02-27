@@ -36,7 +36,7 @@ def tables_in_query(query: str, dialect: str = "spark") -> List[str]:
 def normalize_table_name(table_name: str) -> str:
     """
     Normalize a table name. Standardize the names so we can compare them in the case of quotes and such.
-    Ex: 
+    Ex:
     >>> normalize_table_name("sample_namespace.sample_table")
     'sample_namespace.sample_table'
     >>> normalize_table_name("`sample_namespace.sample_table`")

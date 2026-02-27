@@ -7,9 +7,11 @@ import ai.chronon.integrations.aws.EmrSubmitter.{
   DefaultClusterInstanceType
 }
 import ai.chronon.spark.submission.JobSubmitterConstants._
-import ai.chronon.spark.submission.{JobSubmitter, JobType, SparkJob => TypeSparkJob}
+import ai.chronon.spark.submission.{JobSubmitter, JobType, FlinkJob => TypeFlinkJob, SparkJob => TypeSparkJob}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import software.amazon.awssdk.core.exception.SdkException
+import io.fabric8.kubernetes.client.Config
 import software.amazon.awssdk.services.ec2.Ec2Client
 import software.amazon.awssdk.services.ec2.model.{DescribeSecurityGroupsRequest, DescribeSubnetsRequest, Filter}
 import software.amazon.awssdk.services.emr.EmrClient
@@ -17,7 +19,11 @@ import software.amazon.awssdk.services.emr.model._
 
 import scala.jdk.CollectionConverters._
 
-class EmrSubmitter(customerId: String, emrClient: EmrClient, ec2Client: Ec2Client) extends JobSubmitter {
+class EmrSubmitter(customerId: String,
+                   emrClient: EmrClient,
+                   ec2Client: Ec2Client,
+                   eksFlinkSubmitter: Option[EksFlinkSubmitter] = None)
+    extends JobSubmitter {
 
   private val ClusterApplications = List(
     "Flink",
@@ -29,7 +35,6 @@ class EmrSubmitter(customerId: String, emrClient: EmrClient, ec2Client: Ec2Clien
     "Spark"
   )
 
-  // TODO: test if this works for Flink
   private val DefaultEmrReleaseLabel = "emr-7.2.0"
 
   /** Looks up a subnet ID from a subnet name tag.
@@ -431,28 +436,111 @@ class EmrSubmitter(customerId: String, emrClient: EmrClient, ec2Client: Ec2Clien
                       files: List[String],
                       labels: Map[String, String],
                       args: String*): String = {
-    val existingJobId = submissionProperties.getOrElse(ClusterId, throw new RuntimeException("JobFlowId not found"))
     val userArgs = args.filter(arg => !SharedInternalArgs.exists(arg.startsWith))
-    val request = AddJobFlowStepsRequest
-      .builder()
-      .jobFlowId(existingJobId)
-      .steps(
-        createStepConfig(files,
-                         submissionProperties(MainClass),
-                         submissionProperties(JarURI),
-                         jobProperties,
-                         userArgs: _*))
-      .build()
 
-    val responseStepId = emrClient.addJobFlowSteps(request).stepIds().get(0)
+    jobType match {
+      case TypeFlinkJob =>
+        val jobId = submissionProperties.getOrElse(JobId, throw new RuntimeException("Job ID not found"))
+        val mainClass = submissionProperties.getOrElse(MainClass, throw new RuntimeException("Main class not found"))
+        val mainJarUri = submissionProperties.getOrElse(
+          FlinkMainJarURI,
+          throw new RuntimeException(s"Missing expected $FlinkMainJarURI"))
+        val jarUri = submissionProperties.getOrElse(JarURI, throw new RuntimeException("Jar URI not found"))
+        val flinkCheckpointPath = submissionProperties.getOrElse(
+          FlinkCheckpointUri,
+          throw new RuntimeException(s"Missing expected $FlinkCheckpointUri"))
+        val maybeSavepointUri = submissionProperties.get(SavepointUri)
+        val maybeKinesisConnectorJarUri = submissionProperties.get(FlinkKinesisConnectorJarURI)
+        val maybeAdditionalJarsUri = submissionProperties.get(AdditionalJars)
+        val additionalJars = maybeAdditionalJarsUri
+          .map(_.split(",").map(_.trim).filter(_.nonEmpty))
+          .getOrElse(Array.empty)
+        val jarUris = Array(jarUri) ++ maybeKinesisConnectorJarUri.toList ++ additionalJars
 
-    logger.info(s"EMR step id: $responseStepId")
-    logger.info(
-      s"Safe to exit. Follow the job status at: https://console.aws.amazon.com/emr/home#/clusterDetails/$existingJobId")
-    responseStepId
+        val serviceAccount = submissionProperties.getOrElse(
+          EksServiceAccount,
+          throw new RuntimeException(s"Missing expected $EksServiceAccount"))
+        val namespace =
+          submissionProperties.getOrElse(EksNamespace, throw new RuntimeException(s"Missing expected $EksNamespace"))
+
+        eksFlinkSubmitter
+          .getOrElse(
+            throw new RuntimeException("EksFlinkSubmitter is required for Flink jobs")
+          )
+          .submit(
+            jobId = jobId,
+            mainClass = mainClass,
+            mainJarUri = mainJarUri,
+            jarUris = jarUris,
+            flinkCheckpointUri = flinkCheckpointPath,
+            maybeSavepointUri = maybeSavepointUri,
+            maybeFlinkJarsUri = submissionProperties.get(FlinkJarsUri),
+            jobProperties = jobProperties,
+            args = userArgs,
+            serviceAccount = serviceAccount,
+            namespace = namespace
+          )
+
+      case TypeSparkJob =>
+        val existingJobId = submissionProperties.getOrElse(ClusterId, throw new RuntimeException("JobFlowId not found"))
+        val stepConfig = createStepConfig(files,
+                                          submissionProperties(MainClass),
+                                          submissionProperties(JarURI),
+                                          jobProperties,
+                                          userArgs: _*)
+
+        val request = AddJobFlowStepsRequest
+          .builder()
+          .jobFlowId(existingJobId)
+          .steps(stepConfig)
+          .build()
+
+        val responseStepId = emrClient.addJobFlowSteps(request).stepIds().get(0)
+
+        logger.info(s"EMR step id: $responseStepId")
+        logger.info(
+          s"Safe to exit. Follow the job status at: https://console.aws.amazon.com/emr/home#/clusterDetails/$existingJobId")
+        responseStepId
+    }
   }
 
-  override def status(jobId: String): JobStatusType = ???
+  override def status(jobId: String): JobStatusType = {
+    val (clusterId, stepId) = if (jobId.contains(":")) {
+      val parts = jobId.split(":")
+      (parts(0), parts(1))
+    } else {
+      throw new IllegalArgumentException(s"Job ID must be in format 'clusterId:stepId', got: $jobId")
+    }
+
+    try {
+      val state = emrClient
+        .describeStep(
+          DescribeStepRequest
+            .builder()
+            .clusterId(clusterId)
+            .stepId(stepId)
+            .build()
+        )
+        .step()
+        .status()
+        .state()
+
+      state match {
+        case StepState.PENDING        => JobStatusType.PENDING
+        case StepState.CANCEL_PENDING => JobStatusType.PENDING
+        case StepState.RUNNING        => JobStatusType.RUNNING
+        case StepState.COMPLETED      => JobStatusType.SUCCEEDED
+        case StepState.CANCELLED      => JobStatusType.FAILED
+        case StepState.FAILED         => JobStatusType.FAILED
+        case StepState.INTERRUPTED    => JobStatusType.FAILED
+        case _                        => JobStatusType.UNKNOWN
+      }
+    } catch {
+      case e: SdkException =>
+        logger.error(s"Failed to get status for job $jobId: ${e.getMessage}", e)
+        JobStatusType.UNKNOWN
+    }
+  }
 
   override def kill(stepId: String): scala.Unit = {
     val resp = emrClient.cancelSteps(CancelStepsRequest.builder().stepIds(stepId).build())
@@ -460,23 +548,108 @@ class EmrSubmitter(customerId: String, emrClient: EmrClient, ec2Client: Ec2Clien
 }
 
 object EmrSubmitter {
-  def apply(): EmrSubmitter = {
+  def apply(k8sConfig: Option[Config] = None): EmrSubmitter = {
     val customerId = sys.env.getOrElse("CUSTOMER_ID", throw new Exception("CUSTOMER_ID not set")).toLowerCase
 
     new EmrSubmitter(
       customerId,
       EmrClient.builder().build(),
-      Ec2Client.builder().build()
+      Ec2Client.builder().build(),
+      Some(new EksFlinkSubmitter(k8sConfig))
     )
   }
 
   private val ClusterInstanceTypeArgKeyword = "--cluster-instance-type"
   private val ClusterInstanceCountArgKeyword = "--cluster-instance-count"
   private val ClusterIdleTimeoutArgKeyword = "--cluster-idle-timeout"
-
   private val DefaultClusterInstanceType = "m5.xlarge"
   private val DefaultClusterInstanceCount = 3
   private val DefaultClusterIdleTimeout = 60 * 60 * 1 // 1h in seconds
+
+  private[aws] def createSubmissionPropsMap(jobType: JobType,
+                                            args: Array[String],
+                                            clusterId: String): Map[String, String] = {
+    val jarUri = JobSubmitter
+      .getArgValue(args, JarUriArgKeyword)
+      .getOrElse(throw new Exception("Missing required argument: " + JarUriArgKeyword))
+    val mainClass = JobSubmitter
+      .getArgValue(args, MainClassKeyword)
+      .getOrElse(throw new Exception("Missing required argument: " + MainClassKeyword))
+
+    val clusterInstanceType = JobSubmitter
+      .getArgValue(args, ClusterInstanceTypeArgKeyword)
+      .getOrElse(DefaultClusterInstanceType)
+    val clusterInstanceCount = JobSubmitter
+      .getArgValue(args, ClusterInstanceCountArgKeyword)
+      .getOrElse(DefaultClusterInstanceCount.toString)
+    val clusterIdleTimeout = JobSubmitter
+      .getArgValue(args, ClusterIdleTimeoutArgKeyword)
+      .getOrElse(DefaultClusterIdleTimeout.toString)
+
+    jobType match {
+      case TypeSparkJob =>
+        Map(
+          MainClass -> mainClass,
+          JarURI -> jarUri,
+          ClusterInstanceType -> clusterInstanceType,
+          ClusterInstanceCount -> clusterInstanceCount,
+          ClusterIdleTimeout -> clusterIdleTimeout,
+          ClusterId -> clusterId
+        )
+      case TypeFlinkJob =>
+        val jobId = JobSubmitter
+          .getArgValue(args, JobIdArgKeyword)
+          .getOrElse(throw new Exception("Missing required argument: " + JobIdArgKeyword))
+        val flinkCheckpointUri = JobSubmitter
+          .getArgValue(args, StreamingCheckpointPathArgKeyword)
+          .getOrElse(throw new Exception(s"Missing required argument $StreamingCheckpointPathArgKeyword"))
+        val flinkMainJarUri = JobSubmitter
+          .getArgValue(args, FlinkMainJarUriArgKeyword)
+          .getOrElse(throw new Exception("Missing required argument: " + FlinkMainJarUriArgKeyword))
+        val eksServiceAccount = JobSubmitter
+          .getArgValue(args, EksServiceAccountArgKeyword)
+          .getOrElse(throw new Exception("Missing required argument: " + EksServiceAccountArgKeyword))
+        val eksNamespace = JobSubmitter
+          .getArgValue(args, EksNamespaceArgKeyword)
+          .getOrElse(throw new Exception("Missing required argument: " + EksNamespaceArgKeyword))
+        val maybeKinesisJarUri = JobSubmitter.getArgValue(args, FlinkKinesisJarUriArgKeyword)
+        val maybeFlinkJarsUri = JobSubmitter.getArgValue(args, FlinkJarsUriArgKeyword)
+        val maybeAdditionalJarsUri = JobSubmitter.getArgValue(args, AdditionalJarsUriArgKeyword)
+
+        val baseJobProps = Map(
+          JobId -> jobId,
+          MainClass -> mainClass,
+          JarURI -> jarUri,
+          FlinkMainJarURI -> flinkMainJarUri,
+          FlinkCheckpointUri -> flinkCheckpointUri,
+          EksServiceAccount -> eksServiceAccount,
+          EksNamespace -> eksNamespace
+        ) ++ maybeKinesisJarUri.map(FlinkKinesisConnectorJarURI -> _) ++
+          maybeFlinkJarsUri.map(FlinkJarsUri -> _) ++
+          maybeAdditionalJarsUri.map(AdditionalJars -> _)
+
+        val userPassedSavepoint = JobSubmitter.getArgValue(args, StreamingCustomSavepointArgKeyword)
+        val maybeSavepointUri =
+          if (userPassedSavepoint.isDefined) {
+            userPassedSavepoint
+          } else if (args.contains(StreamingLatestSavepointArgKeyword)) {
+            System.err.println("Latest savepoint not yet supported for EMR, proceeding without savepoint")
+            None
+          } else if (args.contains(StreamingNoSavepointArgKeyword)) {
+            None
+          } else {
+            None
+          }
+
+        if (maybeSavepointUri.isEmpty) {
+          baseJobProps
+        } else {
+          val savepointUri = maybeSavepointUri.get
+          System.err.println(s"Deploying Flink app with savepoint uri $savepointUri")
+          baseJobProps + (SavepointUri -> savepointUri)
+        }
+    }
+  }
 
   def main(args: Array[String]): scala.Unit = {
     // List of args that are not application args
@@ -528,24 +701,19 @@ object EmrSubmitter {
 
     val emrSubmitter = EmrSubmitter()
 
-    // Get or create the EMR cluster
-    val maybeClusterConfig = JobSubmitter.getClusterConfig(args)
-    val clusterId = emrSubmitter.getOrCreateCluster(clusterName, maybeClusterConfig)
+    val jobType = jobTypeValue.toLowerCase match {
+      case "spark" => TypeSparkJob
+      case "flink" => TypeFlinkJob
+      case _       => throw new Exception("Invalid job type")
+    }
 
-    val (jobType, submissionProps) = jobTypeValue.toLowerCase match {
-      case "spark" => {
-        val baseProps = Map(
-          MainClass -> mainClass,
-          JarURI -> jarUri,
-          ClusterInstanceType -> clusterInstanceType,
-          ClusterInstanceCount -> clusterInstanceCount,
-          ClusterIdleTimeout -> clusterIdleTimeout
-        )
-
-        (TypeSparkJob, baseProps + (ClusterId -> clusterId))
-      }
-      // TODO: add flink
-      case _ => throw new Exception("Invalid job type")
+    val submissionProps = jobType match {
+      case TypeFlinkJob =>
+        createSubmissionPropsMap(jobType, args, "")
+      case TypeSparkJob =>
+        val maybeClusterConfig = JobSubmitter.getClusterConfig(args)
+        val clusterId = emrSubmitter.getOrCreateCluster(clusterName, maybeClusterConfig)
+        createSubmissionPropsMap(jobType, args, clusterId)
     }
 
     val finalArgs = userArgs.toSeq

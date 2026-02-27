@@ -363,12 +363,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ build_artifacts, push_to_aws ]
 
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
     permissions:
       id-token: write
       contents: read
 
     steps:
-
       - name: Checkout repo
         uses: actions/checkout@v4
 
@@ -378,30 +383,84 @@ jobs:
           role-to-assume: arn:aws:iam::${{secrets.AWS_ACCOUNT_ID}}:role/github_actions
           aws-region: ${{secrets.AWS_REGION}}
 
-      - name: Run Quickstart Integration Tests
-        id: aws_integration_tests
+      - name: Run Integration Tests
         shell: bash
+        env:
+          CLOUD: aws
+          VERSION: ${{ needs.build_artifacts.outputs.version }}
+          PYTEST_ADDOPTS: "-x -k test_run_quickstart"
         run: |
           set -xo pipefail
-          ./scripts/distribution/run_aws_quickstart.sh --canary --version ${{ needs.build_artifacts.outputs.version }}
+          ./mill python.test_integration 2>&1 | tee /tmp/test-output.log
 
       - name: On Fail Notify Slack
         id: notify_slack
         if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        uses: slackapi/slack-github-action@v1
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_AWS_WEBHOOK_URL }}
-        with:
-          payload: |
-            {
-              "text": "Zipline AWS CI Tests Failed\n\n The integration tests failed for commit <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|${{ github.sha }}> on branch ${{ github.ref }}. Please check the logs for more details.",
-              "attachments": [
-                {
-                  "text": "",
-                  "color": "#ff0000"
-                }
-              ]
-            }
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          python3 << 'PYEOF' > /tmp/slack_payload.json
+          import json, os, re
+
+          run_url = os.environ['RUN_URL']
+          sha = os.environ['COMMIT_SHA']
+          branch = os.environ['BRANCH']
+
+          # Read test output tail
+          log_tail = ''
+          try:
+              with open('/tmp/test-output.log') as f:
+                  lines = f.readlines()
+              cleaned = []
+              for line in lines:
+                  line = re.sub(r'\x1b\[[0-9;]*m', '', line.rstrip())
+                  cleaned.append(line)
+              log_tail = '\n'.join(cleaned[-30:])
+          except Exception:
+              pass
+
+          blocks = [
+              {
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': f':x: *Chronon AWS Integration Tests Failed*\n\nCommit: <{run_url}|{sha[:8]}>\nBranch: `{branch}`'
+                  }
+              },
+          ]
+
+          if log_tail:
+              log_text = f'```\n{log_tail}\n```'
+              if len(log_text) > 2900:
+                  log_text = f'```\n...{log_tail[-2880:]}\n```'
+              blocks.append({
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': log_text
+                  }
+              })
+
+          blocks.append({
+              'type': 'context',
+              'elements': [{
+                  'type': 'mrkdwn',
+                  'text': f'<{run_url}|View full logs>'
+              }]
+          })
+
+          payload = {
+              'text': 'Chronon AWS Integration Tests Failed',
+              'blocks': blocks
+          }
+
+          print(json.dumps(payload))
+          PYEOF
+
+          curl -X POST -H 'Content-type: application/json' --data @/tmp/slack_payload.json "$SLACK_WEBHOOK_URL"
 
   run_fetcher_integration_tests:
     runs-on: ubuntu-latest
@@ -515,16 +574,81 @@ jobs:
             exit 1
           fi
 
+  build_and_push_fetcher_image:
+    needs: [build_artifacts, run_fetcher_integration_tests]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Download Cloud AWS Jar
+        uses: actions/download-artifact@v4
+        with:
+          name: cloud-aws-jar
+          path: cloud-aws-jar
+
+      - name: Download Cloud GCP Jar
+        uses: actions/download-artifact@v4
+        with:
+          name: cloud-gcp-jar
+          path: cloud-gcp-jar
+
+      - name: Download Cloud Azure Jar
+        uses: actions/download-artifact@v4
+        with:
+          name: cloud-azure-jar
+          path: cloud-azure-jar
+
+      - name: Download Service Assembly Jar
+        uses: actions/download-artifact@v4
+        with:
+          name: service-assembly-jar
+          path: service-assembly-jar
+
+      - name: Copy JARs to build_output
+        run: |
+          mkdir -p build_output
+          cp cloud-aws-jar/out.jar build_output/cloud_aws_lib_deploy.jar
+          cp cloud-gcp-jar/out.jar build_output/cloud_gcp_lib_deploy.jar
+          cp cloud-azure-jar/out.jar build_output/cloud_azure_lib_deploy.jar
+          cp service-assembly-jar/out.jar build_output/service_assembly_deploy.jar
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push fetcher image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/fetcher/Dockerfile
+          push: true
+          tags: |
+            ziplineai/chronon-fetcher:${{ github.sha }}
+            ziplineai/chronon-fetcher:nightly
+
   run_gcp_integration_tests:
     runs-on: ubuntu-latest
     needs: [ build_artifacts, push_to_gcp ]
+
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     permissions:
       id-token: write
       contents: read
 
     steps:
-      # Checkout the canary-confs repo with the branch with Zipline specific team.json
       - name: Checkout repo
         uses: actions/checkout@v4
 
@@ -538,30 +662,84 @@ jobs:
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Run Quickstart Integration Tests
+      - name: Run Integration Tests
         shell: bash
-        id: gcp_integration_tests
+        env:
+          CLOUD: gcp
+          VERSION: ${{ needs.build_artifacts.outputs.version }}
+          PYTEST_ADDOPTS: "-x -k test_run_quickstart"
         run: |
           set -xo pipefail
-          ./scripts/distribution/run_gcp_template_quickstart.sh --canary --version ${{ needs.build_artifacts.outputs.version }}
+          ./mill python.test_integration 2>&1 | tee /tmp/test-output.log
 
       - name: On Fail Notify Slack
         id: notify_slack
         if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        uses: slackapi/slack-github-action@v1
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_GCP_WEBHOOK_URL }}
-        with:
-          payload: |
-            {
-              "text": "Zipline GCP CI Tests Failed\n\n The integration tests failed for commit <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|${{ github.sha }}> on branch ${{ github.ref }}. Please check the logs for more details.",
-              "attachments": [
-                {
-                  "text": "",
-                  "color": "#ff0000"
-                }
-              ]
-            }
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          python3 << 'PYEOF' > /tmp/slack_payload.json
+          import json, os, re
+
+          run_url = os.environ['RUN_URL']
+          sha = os.environ['COMMIT_SHA']
+          branch = os.environ['BRANCH']
+
+          # Read test output tail
+          log_tail = ''
+          try:
+              with open('/tmp/test-output.log') as f:
+                  lines = f.readlines()
+              cleaned = []
+              for line in lines:
+                  line = re.sub(r'\x1b\[[0-9;]*m', '', line.rstrip())
+                  cleaned.append(line)
+              log_tail = '\n'.join(cleaned[-30:])
+          except Exception:
+              pass
+
+          blocks = [
+              {
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': f':x: *Chronon GCP Integration Tests Failed*\n\nCommit: <{run_url}|{sha[:8]}>\nBranch: `{branch}`'
+                  }
+              },
+          ]
+
+          if log_tail:
+              log_text = f'```\n{log_tail}\n```'
+              if len(log_text) > 2900:
+                  log_text = f'```\n...{log_tail[-2880:]}\n```'
+              blocks.append({
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': log_text
+                  }
+              })
+
+          blocks.append({
+              'type': 'context',
+              'elements': [{
+                  'type': 'mrkdwn',
+                  'text': f'<{run_url}|View full logs>'
+              }]
+          })
+
+          payload = {
+              'text': 'Chronon GCP Integration Tests Failed',
+              'blocks': blocks
+          }
+
+          print(json.dumps(payload))
+          PYEOF
+
+          curl -X POST -H 'Content-type: application/json' --data @/tmp/slack_payload.json "$SLACK_WEBHOOK_URL"
 
   push_to_aws_passing:
     needs: [ build_artifacts, run_gcp_integration_tests, run_aws_integration_tests, run_fetcher_integration_tests ]
@@ -928,18 +1106,145 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Send Failure Notification
-        uses: slackapi/slack-github-action@v1
+      - name: Collect failed job logs
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_TESTS_WEBHOOK_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/failed-logs
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" \
+            --jq '.jobs[] | select(.conclusion == "failure" and .name != "on_fail_notify_slack") | "\(.id) \(.name)"' | \
+          while read -r JOB_ID JOB_NAME; do
+            gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs/${JOB_ID}/logs" \
+              > "/tmp/failed-logs/${JOB_ID}.log" 2>/dev/null || true
+          done
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" \
+            --jq '[.jobs[] | select(.conclusion == "failure" and .name != "on_fail_notify_slack") | {id, name, steps: [.steps[] | select(.conclusion == "failure") | .name]}]' \
+            > /tmp/failed-logs/metadata.json 2>/dev/null || echo "[]" > /tmp/failed-logs/metadata.json
+
+      - name: Build notification payload
+        env:
+          FETCHER_TESTS_RESULT: ${{ needs.run_fetcher_integration_tests.result }}
+          AWS_TESTS_RESULT: ${{ needs.run_aws_integration_tests.result }}
+          GCP_TESTS_RESULT: ${{ needs.run_gcp_integration_tests.result }}
+          MERGE_RESULT: ${{ needs.merge_to_main-passing-tests.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          python3 << 'PYEOF' > /tmp/slack_payload.json
+          import json, os, re
+
+          run_url = os.environ['RUN_URL']
+          sha = os.environ['COMMIT_SHA']
+          branch = os.environ['BRANCH']
+
+          jobs = [
+              ('FETCHER_TESTS_RESULT', 'Fetcher Integration Tests'),
+              ('AWS_TESTS_RESULT', 'AWS Integration Tests'),
+              ('GCP_TESTS_RESULT', 'GCP Integration Tests'),
+              ('MERGE_RESULT', 'Merge to main-passing-tests'),
+          ]
+
+          failed = []
+          skipped = []
+          for env_var, label in jobs:
+              result = os.environ.get(env_var, '')
+              if result == 'failure':
+                  failed.append(label)
+              elif result == 'cancelled':
+                  failed.append(f'{label} (cancelled)')
+              elif result == 'skipped':
+                  skipped.append(label)
+
+          failed_text = '\n'.join(f'• {f}' for f in failed) if failed else '• Unknown'
+
+          blocks = [
+              {
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': f':x: *Chronon CI Pipeline Failed*\n\nCommit: <{run_url}|{sha[:8]}>\nBranch: `{branch}`'
+                  }
+              },
+              {
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': f'*Failed Steps:*\n{failed_text}'
+                  }
+              },
+          ]
+
+          if skipped:
+              skipped_text = '\n'.join(f'• {s}' for s in skipped)
+              blocks.append({
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': f'*Skipped (due to upstream failure):*\n{skipped_text}'
+                  }
+              })
+
+          # Add log excerpts from failed jobs
+          try:
+              with open('/tmp/failed-logs/metadata.json') as f:
+                  metadata = json.load(f)
+          except Exception:
+              metadata = []
+
+          for job in metadata:
+              job_id = job.get('id')
+              job_name = job.get('name', 'Unknown')
+              failed_steps = job.get('steps', [])
+              failed_step_text = ', '.join(failed_steps) if failed_steps else 'unknown step'
+
+              log_file = f'/tmp/failed-logs/{job_id}.log'
+              if not os.path.exists(log_file):
+                  continue
+
+              with open(log_file) as f:
+                  raw = f.read()
+
+              lines = raw.splitlines()
+              cleaned = []
+              for line in lines:
+                  line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+                  line = re.sub(r'^[0-9T:.Z-]+ ', '', line)
+                  cleaned.append(line)
+
+              tail = '\n'.join(cleaned[-30:])
+
+              log_text = f'*{job_name}* (failed step: {failed_step_text})\n```\n{tail}\n```'
+              if len(log_text) > 2900:
+                  log_text = f'*{job_name}* (failed step: {failed_step_text})\n```\n{tail[-(2900 - len(job_name) - len(failed_step_text) - 50):]}\n...(truncated)```'
+
+              blocks.append({
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': log_text
+                  }
+              })
+
+          blocks.append({
+              'type': 'context',
+              'elements': [{
+                  'type': 'mrkdwn',
+                  'text': f'<{run_url}|View full logs>'
+              }]
+          })
+
+          payload = {
+              'text': 'Chronon CI Pipeline Failed',
+              'blocks': blocks
+          }
+
+          print(json.dumps(payload))
+          PYEOF
+
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2
         with:
-          payload: |
-            {
-              "text": "Zipline CI Tests Failed\n\n The integration tests failed for commit <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|${{ github.sha }}> on branch ${{ github.ref }}. Please check the logs for more details.",
-              "attachments": [
-                {
-                  "text": "",
-                  "color": "#ff0000"
-                }
-              ]
-            }
+          webhook: ${{ secrets.SLACK_TESTS_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload-file-path: /tmp/slack_payload.json

@@ -29,6 +29,7 @@ default = Team(
             "CUSTOMER_ID": "<customer_id>",
             "AWS_REGION": "<region>",
             "ARTIFACT_PREFIX": "s3://zipline-artifacts-<customer_id>",
+            "WAREHOUSE_PREFIX": "s3://zipline-warehouse-<customer_id>",
             "CLOUD_PROVIDER": "aws",
             "HUB_URL": "<hub-url>",  # URL to the Zipline Hub control plane
             "FRONTEND_URL": "<frontend-url>",  # URL to the Zipline Frontend

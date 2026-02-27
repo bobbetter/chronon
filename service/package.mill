@@ -42,6 +42,7 @@ trait ServiceModule extends Cross.Module[String] with build.BaseModule {
         mvn"net.minidev:json-smart:2.5.2",
         mvn"commons-beanutils:commons-beanutils:1.11.0",
         mvn"org.apache.hadoop:hadoop-common:3.4.1",
+        mvn"io.airlift:aircompressor:2.0.3",
       ).map(_.forceVersion())
 
   override def resources = Task.Sources(

@@ -32,9 +32,13 @@ class ConfigInfo:
 
 @dataclass
 class CompileContext:
-    def __init__(self, ignore_python_errors: bool = False, format: Format = Format.TEXT, force: bool = False):
+    def __init__(
+        self, ignore_python_errors: bool = False, format: Format = Format.TEXT, force: bool = False
+    ):
         self.chronon_root: str = os.getenv("CHRONON_ROOT", os.getcwd())
-        self.teams_dict: Dict[str, Team] = teams.load_teams(self.chronon_root, print=format != Format.JSON)
+        self.teams_dict: Dict[str, Team] = teams.load_teams(
+            self.chronon_root, print=format != Format.JSON
+        )
         self.compile_dir: str = "compiled"
         self.ignore_python_errors: bool = ignore_python_errors
         self.format: Format = format
@@ -52,7 +56,11 @@ class CompileContext:
                 cls=StagingQuery,
                 config_type=ConfType.STAGING_QUERY,
             ),
-            ConfigInfo(folder_name="model_transforms", cls=ModelTransforms, config_type=ConfType.MODEL_TRANSFORMS),
+            ConfigInfo(
+                folder_name="model_transforms",
+                cls=ModelTransforms,
+                config_type=ConfType.MODEL_TRANSFORMS,
+            ),
             ConfigInfo(folder_name="models", cls=Model, config_type=ConfType.MODEL),
             ConfigInfo(
                 folder_name="teams_metadata", cls=MetaData, config_type=None

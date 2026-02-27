@@ -119,38 +119,38 @@ echo -e "${GREEN}<<<<<.....................................COMPILE..............
 zipline compile --chronon-root=$CHRONON_ROOT
 
 echo -e "${GREEN}<<<<<.....................................IMPORT-PURCHASES.....................................>>>>>\033[0m"
-zipline run --repo=$CHRONON_ROOT --version $VERSION --mode backfill --conf compiled/staging_queries/gcp/purchases_import_${SUFFIX_VALUE}.v1__0 --start-ds $START_DS --end-ds $END_DS
+zipline run compiled/staging_queries/gcp/purchases_import_${SUFFIX_VALUE}.v1__0 --repo=$CHRONON_ROOT --version $VERSION --mode backfill --start-ds $START_DS --end-ds $END_DS
 fail_if_bash_failed $?
 
 echo -e "${GREEN}<<<<<.....................................IMPORT-CHECKOUTS.....................................>>>>>\033[0m"
-zipline run --repo=$CHRONON_ROOT --version $VERSION --mode backfill --conf compiled/staging_queries/gcp/checkouts_import_${SUFFIX_VALUE}.v1__0 --start-ds $START_DS --end-ds $END_DS
+zipline run compiled/staging_queries/gcp/checkouts_import_${SUFFIX_VALUE}.v1__0 --repo=$CHRONON_ROOT --version $VERSION --mode backfill --start-ds $START_DS --end-ds $END_DS
 fail_if_bash_failed $?
 
 echo -e "${GREEN}<<<<<.....................................IMPORT-PURCHASES-NOTDS.....................................>>>>>\033[0m"
-zipline run --repo=$CHRONON_ROOT --version $VERSION --mode backfill --conf compiled/staging_queries/gcp/purchases_notds_import_${SUFFIX_VALUE}.v1__0 --start-ds $START_DS --end-ds $END_DS
+zipline run compiled/staging_queries/gcp/purchases_notds_import_${SUFFIX_VALUE}.v1__0 --repo=$CHRONON_ROOT --version $VERSION --mode backfill --start-ds $START_DS --end-ds $END_DS
 fail_if_bash_failed $?
 
 echo -e "${GREEN}<<<<<.....................................IMPORT-CHECKOUTS-NOTDS.....................................>>>>>\033[0m"
-zipline run --repo=$CHRONON_ROOT --version $VERSION --mode backfill --conf compiled/staging_queries/gcp/checkouts_notds_import_${SUFFIX_VALUE}.v1__0 --start-ds $START_DS --end-ds $END_DS
+zipline run compiled/staging_queries/gcp/checkouts_notds_import_${SUFFIX_VALUE}.v1__0 --repo=$CHRONON_ROOT --version $VERSION --mode backfill --start-ds $START_DS --end-ds $END_DS
 fail_if_bash_failed $?
 
 echo -e "${GREEN}<<<<<.....................................BACKFILL.....................................>>>>>\033[0m"
 if [[ "$ENVIRONMENT" == "canary" ]]; then
-  zipline run --repo=$CHRONON_ROOT  --version $VERSION --mode backfill --conf compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_test__0 --start-ds $START_DS --end-ds $END_DS
+  zipline run compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_test__0 --repo=$CHRONON_ROOT --version $VERSION --mode backfill --start-ds $START_DS --end-ds $END_DS
 else
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode backfill --conf compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_dev__0 --start-ds $START_DS --end-ds $END_DS
+  zipline run compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_dev__0 --repo=$CHRONON_ROOT --version $VERSION --mode backfill --start-ds $START_DS --end-ds $END_DS
 fi
 
 fail_if_bash_failed $?
 
 echo -e "${GREEN}<<<<<.....................................BACKFILL-JOIN.....................................>>>>>\033[0m"
 if [[ "$ENVIRONMENT" == "canary" ]]; then
-  zipline run --repo=$CHRONON_ROOT  --version $VERSION --mode backfill --conf compiled/joins/gcp/training_set_${SUFFIX_VALUE}.v1_test__0 --start-ds $START_DS --end-ds $END_DS
-  zipline run --repo=$CHRONON_ROOT  --version $VERSION --mode backfill --conf compiled/joins/gcp/training_set_${SUFFIX_VALUE}.v1_dev_notds__0 --start-ds $START_DS --end-ds $END_DS
+  zipline run compiled/joins/gcp/training_set_${SUFFIX_VALUE}.v1_test__0 --repo=$CHRONON_ROOT --version $VERSION --mode backfill --start-ds $START_DS --end-ds $END_DS
+  zipline run compiled/joins/gcp/training_set_${SUFFIX_VALUE}.v1_dev_notds__0 --repo=$CHRONON_ROOT --version $VERSION --mode backfill --start-ds $START_DS --end-ds $END_DS
 
 else
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode backfill --conf compiled/joins/gcp/training_set_${SUFFIX_VALUE}.v1_dev__0 --start-ds $START_DS --end-ds $END_DS
-  zipline run --repo=$CHRONON_ROOT  --version $VERSION --mode backfill --conf compiled/joins/gcp/training_set_${SUFFIX_VALUE}.v1_dev_notds__0 --start-ds $START_DS --end-ds $END_DS
+  zipline run compiled/joins/gcp/training_set_${SUFFIX_VALUE}.v1_dev__0 --repo=$CHRONON_ROOT --version $VERSION --mode backfill --start-ds $START_DS --end-ds $END_DS
+  zipline run compiled/joins/gcp/training_set_${SUFFIX_VALUE}.v1_dev_notds__0 --repo=$CHRONON_ROOT --version $VERSION --mode backfill --start-ds $START_DS --end-ds $END_DS
 fi
 fail_if_bash_failed $?
 
@@ -158,39 +158,39 @@ fail_if_bash_failed $?
 echo -e "${GREEN}<<<<<.....................................CHECK-PARTITIONS.....................................>>>>>\033[0m"
 EXPECTED_PARTITION=$END_DS
 if [[ "$ENVIRONMENT" == "canary" ]]; then
-  zipline run --repo=$CHRONON_ROOT  --version $VERSION --mode metastore check-partitions --partition-names=data.gcp_purchases_${SUFFIX_VALUE}_v1_test__0/ds=$EXPECTED_PARTITION --conf compiled/teams_metadata/gcp/gcp_team_metadata
+  zipline run compiled/teams_metadata/gcp/gcp_team_metadata --repo=$CHRONON_ROOT --version $VERSION --mode metastore check-partitions --partition-names=data.gcp_purchases_${SUFFIX_VALUE}_v1_test__0/ds=$EXPECTED_PARTITION
 else
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode metastore check-partitions --partition-names=data.gcp_purchases_${SUFFIX_VALUE}_v1_dev__0/ds=$EXPECTED_PARTITION --conf compiled/teams_metadata/gcp/gcp_team_metadata
+  zipline run compiled/teams_metadata/gcp/gcp_team_metadata --repo=$CHRONON_ROOT --version $VERSION --mode metastore check-partitions --partition-names=data.gcp_purchases_${SUFFIX_VALUE}_v1_dev__0/ds=$EXPECTED_PARTITION
 fi
 fail_if_bash_failed $?
 
 echo -e "${GREEN}<<<<<.....................................GROUP-BY-UPLOAD.....................................>>>>>\033[0m"
 if [[ "$ENVIRONMENT" == "canary" ]]; then
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode upload --conf compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_test__0 --ds $END_DS
+  zipline run compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_test__0 --repo=$CHRONON_ROOT --version $VERSION --mode upload --ds $END_DS
 else
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode upload --conf compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_dev__0 --ds $END_DS
+  zipline run compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_dev__0 --repo=$CHRONON_ROOT --version $VERSION --mode upload --ds $END_DS
 fi
 fail_if_bash_failed
 
 # Need to wait for upload to finish
 echo -e "${GREEN}<<<<<.....................................UPLOAD-TO-KV.....................................>>>>>\033[0m"
 if [[ "$ENVIRONMENT" == "canary" ]]; then
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode upload-to-kv --conf compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_test__0 --ds=$END_DS
+  zipline run compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_test__0 --repo=$CHRONON_ROOT --version $VERSION --mode upload-to-kv --ds=$END_DS
 else
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode upload-to-kv --conf compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_dev__0 --ds=$END_DS
+  zipline run compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_dev__0 --repo=$CHRONON_ROOT --version $VERSION --mode upload-to-kv --ds=$END_DS
 fi
 fail_if_bash_failed
 
 echo -e "${GREEN}<<<<< .....................................METADATA-UPLOAD.....................................>>>>>\033[0m"
 if [[ "$ENVIRONMENT" == "canary" ]]; then
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode metadata-upload --conf compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_test__0
+  zipline run compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_test__0 --repo=$CHRONON_ROOT --version $VERSION --mode metadata-upload
 else
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode metadata-upload --conf compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_dev__0
+  zipline run compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_dev__0 --repo=$CHRONON_ROOT --version $VERSION --mode metadata-upload
 fi
 fail_if_bash_failed
 
 echo -e "${GREEN}<<<<< .....................................STAGING-QUERY.....................................>>>>>\033[0m"
-zipline run --repo=$CHRONON_ROOT --version $VERSION --mode backfill --conf compiled/staging_queries/gcp/exports_${SUFFIX_VALUE}.checkouts__0 --start-ds $START_DS --end-ds $END_DS
+zipline run compiled/staging_queries/gcp/exports_${SUFFIX_VALUE}.checkouts__0 --repo=$CHRONON_ROOT --version $VERSION --mode backfill --start-ds $START_DS --end-ds $END_DS
 
 fail_if_bash_failed
 
@@ -198,9 +198,9 @@ fail_if_bash_failed
 echo -e "${GREEN}<<<<<.....................................FETCH.....................................>>>>>\033[0m"
 touch tmp_fetch.out
 if [[ "$ENVIRONMENT" == "canary" ]]; then
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode fetch --conf=compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_test__0 -k '{"user_id":"5"}' --name gcp.purchases_${SUFFIX_VALUE}.v1_test__0 2>&1 | tee tmp_fetch.out
+  zipline run compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_test__0 --repo=$CHRONON_ROOT --version $VERSION --mode fetch -k '{"user_id":"5"}' --name gcp.purchases_${SUFFIX_VALUE}.v1_test__0 2>&1 | tee tmp_fetch.out
 else
-  zipline run --repo=$CHRONON_ROOT --version $VERSION --mode fetch --conf=compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_dev__0  -k '{"user_id":"5"}' --name gcp.purchases_${SUFFIX_VALUE}.v1_dev__0 2>&1 | tee tmp_fetch.out
+  zipline run compiled/group_bys/gcp/purchases_${SUFFIX_VALUE}.v1_dev__0 --repo=$CHRONON_ROOT --version $VERSION --mode fetch -k '{"user_id":"5"}' --name gcp.purchases_${SUFFIX_VALUE}.v1_dev__0 2>&1 | tee tmp_fetch.out
 fi
 cat tmp_fetch.out | grep purchase_price_average_7d
 # check if exit code of previous is 0

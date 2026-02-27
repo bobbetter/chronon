@@ -609,7 +609,9 @@ def GroupBy(
     if not isinstance(sources, list):
         sources = [sources]
 
-    sources = [_sanitize_columns(utils.normalize_source(source, output_namespace)) for source in sources]
+    sources = [
+        _sanitize_columns(utils.normalize_source(source, output_namespace)) for source in sources
+    ]
 
     # get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]

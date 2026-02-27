@@ -96,6 +96,7 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
   override def assemblyRules = super.assemblyRules ++ Seq(
     Assembly.Rule.Exclude("META-INF/versions/17/reactor/netty/resources/DefaultLoopNIO.class"),
     Assembly.Rule.Relocate("io.netty.**", "shaded.io.netty.@1"),
+    Assembly.Rule.Relocate("reactor.netty.**", "shaded.reactor.netty.@1"),
     // Shade OkHttp/Okio to avoid conflicts with Spark's bundled OkHttp 3.x
     // (azure-core-http-okhttp requires OkHttp 4.x for RequestBody.create(byte[]))
     Assembly.Rule.Relocate("okhttp3.**", "shaded.okhttp3.@1"),
@@ -109,6 +110,9 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
     Assembly.Rule.ExcludePattern("META-INF/maven/commons-beanutils/.*"),
     Assembly.Rule.ExcludePattern("META-INF/maven/org\\.apache\\.avro/.*"),
     Assembly.Rule.ExcludePattern("META-INF/maven/com\\.nimbusds/nimbus-jose-jwt/.*"),
+    // iceberg-spark-runtime shades aircompressor but leaves the original pom metadata,
+    // which grype flags as vulnerable. Strip it since the code is shaded.
+    Assembly.Rule.ExcludePattern("META-INF/maven/io\\.airlift/aircompressor/.*"),
   )
 
   // Uber-jars (spark-core, hadoop-client-runtime, iceberg-spark-runtime) embed stale
