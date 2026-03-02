@@ -41,6 +41,18 @@ class GCPCleanup:
         return deleted
 
 
+class AzureCleanup:
+    """Stub for Azure table cleanup (Snowflake/Iceberg targets)."""
+
+    def __init__(self, catalog: str):
+        self.catalog = catalog
+
+    def cleanup_tables(self, suffix: str) -> list[str]:
+        # TODO: implement Snowflake-based cleanup for Azure canary tables
+        logger.warning("Azure table cleanup not yet implemented for suffix=%s", suffix)
+        return []
+
+
 class AWSCleanup:
     """Delete AWS Glue tables whose names contain a given suffix.
 
@@ -58,9 +70,12 @@ class AWSCleanup:
 
         Returns a list of deleted table names.
         """
+        import os
+
         import boto3
 
-        client = boto3.client("glue")
+        region = os.environ.get("AWS_REGION", "us-west-2")
+        client = boto3.client("glue", region_name=region)
         deleted: list[str] = []
 
         paginator = client.get_paginator("get_tables")

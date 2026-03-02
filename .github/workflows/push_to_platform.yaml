@@ -60,18 +60,104 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Send Failure Notification
-        uses: slackapi/slack-github-action@v1
+      - name: Collect failed job logs
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_GENERAL_WEBHOOK_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/failed-logs
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" \
+            --jq '.jobs[] | select(.conclusion == "failure" and .name != "on_fail_notify_slack") | "\(.id) \(.name)"' | \
+          while read -r JOB_ID JOB_NAME; do
+            gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs/${JOB_ID}/logs" \
+              > "/tmp/failed-logs/${JOB_ID}.log" 2>/dev/null || true
+          done
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" \
+            --jq '[.jobs[] | select(.conclusion == "failure" and .name != "on_fail_notify_slack") | {id, name, steps: [.steps[] | select(.conclusion == "failure") | .name]}]' \
+            > /tmp/failed-logs/metadata.json 2>/dev/null || echo "[]" > /tmp/failed-logs/metadata.json
+
+      - name: Build notification payload
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          python3 << 'PYEOF' > /tmp/slack_payload.json
+          import json, os, re
+
+          run_url = os.environ['RUN_URL']
+          sha = os.environ['COMMIT_SHA']
+          branch = os.environ['BRANCH']
+
+          blocks = [
+              {
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': f':x: *Chronon Merge to Platform Failed*\n\nCommit: <{run_url}|{sha[:8]}>\nBranch: `{branch}`\n\nThe subtree pull from chronon to platform failed.'
+                  }
+              },
+          ]
+
+          # Add log excerpts from failed jobs
+          try:
+              with open('/tmp/failed-logs/metadata.json') as f:
+                  metadata = json.load(f)
+          except Exception:
+              metadata = []
+
+          for job in metadata:
+              job_id = job.get('id')
+              job_name = job.get('name', 'Unknown')
+              failed_steps = job.get('steps', [])
+              failed_step_text = ', '.join(failed_steps) if failed_steps else 'unknown step'
+
+              log_file = f'/tmp/failed-logs/{job_id}.log'
+              if not os.path.exists(log_file):
+                  continue
+
+              with open(log_file) as f:
+                  raw = f.read()
+
+              lines = raw.splitlines()
+              cleaned = []
+              for line in lines:
+                  line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+                  line = re.sub(r'^[0-9T:.Z-]+ ', '', line)
+                  cleaned.append(line)
+
+              tail = '\n'.join(cleaned[-30:])
+
+              log_text = f'*{job_name}* (failed step: {failed_step_text})\n```\n{tail}\n```'
+              if len(log_text) > 2900:
+                  log_text = f'*{job_name}* (failed step: {failed_step_text})\n```\n{tail[-(2900 - len(job_name) - len(failed_step_text) - 50):]}\n...(truncated)```'
+
+              blocks.append({
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': log_text
+                  }
+              })
+
+          blocks.append({
+              'type': 'context',
+              'elements': [{
+                  'type': 'mrkdwn',
+                  'text': f'<{run_url}|View full logs>'
+              }]
+          })
+
+          payload = {
+              'text': 'Chronon Merge to Platform Failed',
+              'blocks': blocks
+          }
+
+          print(json.dumps(payload))
+          PYEOF
+
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2
         with:
-          payload: |
-            {
-              "text": "Merging to Platform Failed\n\n There was an error merging to platform on commit <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|${{ github.sha }}> on branch ${{ github.ref }}. Please check the logs for more details.",
-              "attachments": [
-                {
-                  "text": "",
-                  "color": "#ff0000"
-                }
-              ]
-            }
+          webhook: ${{ secrets.SLACK_GENERAL_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload-file-path: /tmp/slack_payload.json

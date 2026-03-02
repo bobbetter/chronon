@@ -325,7 +325,7 @@ object KyuubiClient {
     * @param auth Authentication configuration
     * @return A new KyuubiClient instance
     */
-  def apply(baseUrl: String, auth: KyuubiAuth = KyuubiAuth.NoAuth, trustAll: Boolean = false): KyuubiClient = {
+  def apply(baseUrl: String, auth: KyuubiAuth = KyuubiAuth.NoAuth, trustAll: Boolean = true): KyuubiClient = {
     val vertx = Vertx.vertx()
     val isHttps = baseUrl.toLowerCase.startsWith("https://")
     val options = new WebClientOptions()

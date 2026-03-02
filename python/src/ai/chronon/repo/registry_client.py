@@ -69,10 +69,14 @@ class RegistryClient:
     Streams blobs to avoid loading multi-GB layers into memory.
     """
 
-    http: urllib3.PoolManager = field(default_factory=lambda: urllib3.PoolManager(num_pools=4, maxsize=_CONCURRENCY))
+    http: urllib3.PoolManager = field(
+        default_factory=lambda: urllib3.PoolManager(num_pools=4, maxsize=_CONCURRENCY)
+    )
     _auth_cache: dict[str, RegistryAuth] = field(default_factory=dict)
 
-    def authenticate(self, registry: str, username: str | None = None, password: str | None = None) -> None:
+    def authenticate(
+        self, registry: str, username: str | None = None, password: str | None = None
+    ) -> None:
         """Store credentials for a registry. Token exchange happens lazily on first request."""
         self._auth_cache[registry] = RegistryAuth(username=username, password=password)
 
@@ -109,13 +113,17 @@ class RegistryClient:
             headers=headers,
         )
         if resp.status != 200:
-            raise RegistryError(f"Docker Hub auth failed (HTTP {resp.status}): {resp.data.decode()}")
+            raise RegistryError(
+                f"Docker Hub auth failed (HTTP {resp.status}): {resp.data.decode()}"
+            )
 
         token = json.loads(resp.data)["token"]
         auth.token = token
         return {"Authorization": f"Bearer {token}"}
 
-    def _registry_token_exchange(self, registry: str, repo: str, www_authenticate: str) -> dict[str, str]:
+    def _registry_token_exchange(
+        self, registry: str, repo: str, www_authenticate: str
+    ) -> dict[str, str]:
         """Handle WWW-Authenticate challenge for non-Docker-Hub registries."""
         auth = self._auth_cache.get(registry, RegistryAuth())
 
@@ -147,7 +155,9 @@ class RegistryClient:
 
         resp = self.http.request("GET", realm, fields=fields, headers=headers)
         if resp.status != 200:
-            raise RegistryError(f"Token exchange failed at {realm} (HTTP {resp.status}): {resp.data.decode()}")
+            raise RegistryError(
+                f"Token exchange failed at {realm} (HTTP {resp.status}): {resp.data.decode()}"
+            )
 
         data = json.loads(resp.data)
         token = data.get("token") or data.get("access_token")
@@ -174,7 +184,9 @@ class RegistryClient:
         if headers:
             hdrs.update(headers)
 
-        resp = self.http.request(method, url, headers=hdrs, body=body, preload_content=preload_content)
+        resp = self.http.request(
+            method, url, headers=hdrs, body=body, preload_content=preload_content
+        )
 
         if resp.status == 401:
             www_auth = resp.headers.get("WWW-Authenticate", "")
@@ -182,7 +194,9 @@ class RegistryClient:
                 hdrs = self._registry_token_exchange(registry, repo, www_auth)
                 if headers:
                     hdrs.update(headers)
-                resp = self.http.request(method, url, headers=hdrs, body=body, preload_content=preload_content)
+                resp = self.http.request(
+                    method, url, headers=hdrs, body=body, preload_content=preload_content
+                )
 
         return resp
 
@@ -198,7 +212,9 @@ class RegistryClient:
             headers={"Accept": ALL_MANIFEST_TYPES},
         )
         if resp.status != 200:
-            raise RegistryError(f"Failed to get manifest {repo}:{reference} from {registry} (HTTP {resp.status})")
+            raise RegistryError(
+                f"Failed to get manifest {repo}:{reference} from {registry} (HTTP {resp.status})"
+            )
 
         content_type = resp.headers.get("Content-Type", MANIFEST_V2)
         digest = resp.headers.get("Docker-Content-Digest", "")
@@ -238,7 +254,9 @@ class RegistryClient:
             return total
         return sum(layer.get("size", 0) for layer in manifest.get("layers", []))
 
-    def put_manifest(self, registry: str, repo: str, reference: str, body: bytes, content_type: str) -> str:
+    def put_manifest(
+        self, registry: str, repo: str, reference: str, body: bytes, content_type: str
+    ) -> str:
         """Push a manifest. Returns the digest."""
         resp = self._request(
             "PUT",
@@ -269,7 +287,9 @@ class RegistryClient:
         """Pull a blob by digest. For small blobs (configs). Use pull_blob_stream for layers."""
         resp = self._request("GET", registry, f"/v2/{repo}/blobs/{digest}", repo)
         if resp.status != 200:
-            raise RegistryError(f"Failed to pull blob {digest} from {registry}/{repo} (HTTP {resp.status})")
+            raise RegistryError(
+                f"Failed to pull blob {digest} from {registry}/{repo} (HTTP {resp.status})"
+            )
         return resp.data
 
     def pull_blob_stream(self, registry: str, repo: str, digest: str) -> urllib3.HTTPResponse:
@@ -278,17 +298,23 @@ class RegistryClient:
             "GET", registry, f"/v2/{repo}/blobs/{digest}", repo, preload_content=False
         )
         if resp.status != 200:
-            raise RegistryError(f"Failed to pull blob {digest} from {registry}/{repo} (HTTP {resp.status})")
+            raise RegistryError(
+                f"Failed to pull blob {digest} from {registry}/{repo} (HTTP {resp.status})"
+            )
         return resp
 
-    def _upload_blob(self, registry: str, repo: str, digest: str, body, content_length: int) -> None:
+    def _upload_blob(
+        self, registry: str, repo: str, digest: str, body, content_length: int
+    ) -> None:
         """Initiate and complete a monolithic blob upload.
 
         ``body`` may be bytes or a file-like object.
         """
         resp = self._request("POST", registry, f"/v2/{repo}/blobs/uploads/", repo)
         if resp.status not in (200, 202):
-            raise RegistryError(f"Failed to initiate blob upload to {registry}/{repo} (HTTP {resp.status})")
+            raise RegistryError(
+                f"Failed to initiate blob upload to {registry}/{repo} (HTTP {resp.status})"
+            )
 
         location = resp.headers.get("Location", "")
         if not location:
@@ -313,8 +339,15 @@ class RegistryClient:
         """Push a small blob (config) via monolithic upload."""
         self._upload_blob(registry, repo, digest, data, len(data))
 
-    def push_blob_stream(self, registry: str, repo: str, digest: str, source_stream: urllib3.HTTPResponse,
-                         content_length: int, on_progress=None) -> None:
+    def push_blob_stream(
+        self,
+        registry: str,
+        repo: str,
+        digest: str,
+        source_stream: urllib3.HTTPResponse,
+        content_length: int,
+        on_progress=None,
+    ) -> None:
         """Push a large blob by streaming from a source response."""
         chunks = []
         while True:
@@ -328,8 +361,15 @@ class RegistryClient:
         data = b"".join(chunks)
         self._upload_blob(registry, repo, digest, data, len(data))
 
-    def _push_blob_from_file(self, registry: str, repo: str, digest: str,
-                             file_path: str, content_length: int, on_progress=None) -> None:
+    def _push_blob_from_file(
+        self,
+        registry: str,
+        repo: str,
+        digest: str,
+        file_path: str,
+        content_length: int,
+        on_progress=None,
+    ) -> None:
         """Push a blob from a local file."""
         with open(file_path, "rb") as f:
             body = _ProgressReader(f, on_progress) if on_progress else f
@@ -337,20 +377,30 @@ class RegistryClient:
 
     # ── High-level copy / push operations ─────────────────────────────
 
-    def _hash_and_push_layer(self, layer_file: str, registry: str, repo: str,
-                              on_progress=None) -> tuple[str, int]:
+    def _hash_and_push_layer(
+        self, layer_file: str, registry: str, repo: str, on_progress=None
+    ) -> tuple[str, int]:
         """Hash a layer file and push it if missing. Returns (digest, size)."""
         with open(layer_file, "rb") as f:
             digest = "sha256:" + hashlib.file_digest(f, "sha256").hexdigest()
         size = os.path.getsize(layer_file)
         if not self.blob_exists(registry, repo, digest):
-            self._push_blob_from_file(registry, repo, digest, layer_file, size, on_progress=on_progress)
+            self._push_blob_from_file(
+                registry, repo, digest, layer_file, size, on_progress=on_progress
+            )
         elif on_progress:
             on_progress(size)
         return digest, size
 
-    def copy_image(self, src_registry: str, src_repo: str, dst_registry: str, dst_repo: str, tag: str,
-                    on_progress=None) -> str:
+    def copy_image(
+        self,
+        src_registry: str,
+        src_repo: str,
+        dst_registry: str,
+        dst_repo: str,
+        tag: str,
+        on_progress=None,
+    ) -> str:
         """Copy an image (manifest + all blobs) from source to destination registry.
 
         Handles both single-platform manifests and multi-platform manifest lists/OCI indexes.
@@ -362,55 +412,96 @@ class RegistryClient:
         if content_type in _MULTI_PLATFORM_TYPES:
             for platform_manifest in manifest.get("manifests", []):
                 platform_digest = platform_manifest["digest"]
-                self._copy_single_manifest(src_registry, src_repo, dst_registry, dst_repo, platform_digest,
-                                           on_progress=on_progress)
+                self._copy_single_manifest(
+                    src_registry,
+                    src_repo,
+                    dst_registry,
+                    dst_repo,
+                    platform_digest,
+                    on_progress=on_progress,
+                )
         else:
-            self._copy_blobs_for_manifest(src_registry, src_repo, dst_registry, dst_repo, manifest,
-                                          on_progress=on_progress)
+            self._copy_blobs_for_manifest(
+                src_registry, src_repo, dst_registry, dst_repo, manifest, on_progress=on_progress
+            )
 
         result_digest = self.put_manifest(dst_registry, dst_repo, tag, manifest_bytes, content_type)
         return result_digest
 
     def _copy_single_manifest(
-        self, src_registry: str, src_repo: str, dst_registry: str, dst_repo: str, digest: str,
+        self,
+        src_registry: str,
+        src_repo: str,
+        dst_registry: str,
+        dst_repo: str,
+        digest: str,
         on_progress=None,
     ) -> None:
         """Copy a single-platform manifest and its blobs."""
         manifest_bytes, content_type, _ = self.get_manifest(src_registry, src_repo, digest)
         manifest = json.loads(manifest_bytes)
 
-        self._copy_blobs_for_manifest(src_registry, src_repo, dst_registry, dst_repo, manifest,
-                                      on_progress=on_progress)
+        self._copy_blobs_for_manifest(
+            src_registry, src_repo, dst_registry, dst_repo, manifest, on_progress=on_progress
+        )
         self.put_manifest(dst_registry, dst_repo, digest, manifest_bytes, content_type)
 
     def _copy_blobs_for_manifest(
-        self, src_registry: str, src_repo: str, dst_registry: str, dst_repo: str, manifest: dict,
+        self,
+        src_registry: str,
+        src_repo: str,
+        dst_registry: str,
+        dst_repo: str,
+        manifest: dict,
         on_progress=None,
     ) -> None:
         """Copy all blobs (config + layers) referenced by a manifest."""
         config_digest = manifest.get("config", {}).get("digest")
         if config_digest:
-            self._copy_blob(src_registry, src_repo, dst_registry, dst_repo, config_digest, on_progress=on_progress)
+            self._copy_blob(
+                src_registry,
+                src_repo,
+                dst_registry,
+                dst_repo,
+                config_digest,
+                on_progress=on_progress,
+            )
 
         layers = manifest.get("layers", [])
         with ThreadPoolExecutor(max_workers=_CONCURRENCY) as pool:
             futures = [
-                pool.submit(self._copy_blob, src_registry, src_repo, dst_registry, dst_repo, layer["digest"],
-                            on_progress=on_progress)
+                pool.submit(
+                    self._copy_blob,
+                    src_registry,
+                    src_repo,
+                    dst_registry,
+                    dst_repo,
+                    layer["digest"],
+                    on_progress=on_progress,
+                )
                 for layer in layers
             ]
             for future in futures:
                 future.result()
 
     def _copy_blob(
-        self, src_registry: str, src_repo: str, dst_registry: str, dst_repo: str, digest: str,
+        self,
+        src_registry: str,
+        src_repo: str,
+        dst_registry: str,
+        dst_repo: str,
+        digest: str,
         on_progress=None,
     ) -> None:
         """Copy a single blob, skipping if it already exists at the destination."""
         if self.blob_exists(dst_registry, dst_repo, digest):
-            logger.debug(f"Blob {digest[:19]}... already exists at {dst_registry}/{dst_repo}, skipping")
+            logger.debug(
+                f"Blob {digest[:19]}... already exists at {dst_registry}/{dst_repo}, skipping"
+            )
             if on_progress:
-                resp = self._request("HEAD", dst_registry, f"/v2/{dst_repo}/blobs/{digest}", dst_repo)
+                resp = self._request(
+                    "HEAD", dst_registry, f"/v2/{dst_repo}/blobs/{digest}", dst_repo
+                )
                 size = int(resp.headers.get("Content-Length", 0))
                 if size:
                     on_progress(size)
@@ -418,12 +509,17 @@ class RegistryClient:
 
         stream = self.pull_blob_stream(src_registry, src_repo, digest)
         content_length = int(stream.headers.get("Content-Length", 0))
-        self.push_blob_stream(dst_registry, dst_repo, digest, stream, content_length, on_progress=on_progress)
+        self.push_blob_stream(
+            dst_registry, dst_repo, digest, stream, content_length, on_progress=on_progress
+        )
 
-    def extract_blob_to_file(self, registry: str, repo: str, digest: str, output_path: str,
-                              on_progress=None) -> None:
+    def extract_blob_to_file(
+        self, registry: str, repo: str, digest: str, output_path: str, on_progress=None
+    ) -> None:
         """Download a blob to a local file. Used for extracting JARs from engine image layers."""
-        resp = self._request("GET", registry, f"/v2/{repo}/blobs/{digest}", repo, preload_content=False)
+        resp = self._request(
+            "GET", registry, f"/v2/{repo}/blobs/{digest}", repo, preload_content=False
+        )
         if resp.status != 200:
             raise RegistryError(f"Failed to pull blob {digest} (HTTP {resp.status})")
 
@@ -437,8 +533,9 @@ class RegistryClient:
                     on_progress(len(chunk))
         resp.release_conn()
 
-    def push_oci_archive(self, archive_path: str, registry: str, repo: str, tag: str,
-                          on_progress=None) -> str:
+    def push_oci_archive(
+        self, archive_path: str, registry: str, repo: str, tag: str, on_progress=None
+    ) -> str:
         """Push a ``docker save`` OCI archive to a registry. Returns the manifest digest."""
         with tempfile.TemporaryDirectory() as tmpdir:
             with tarfile.open(archive_path, "r") as tar:
@@ -465,7 +562,9 @@ class RegistryClient:
             layer_files = [os.path.join(tmpdir, rel) for rel in entry["Layers"]]
             with ThreadPoolExecutor(max_workers=_CONCURRENCY) as pool:
                 futures = [
-                    pool.submit(self._hash_and_push_layer, lf, registry, repo, on_progress=on_progress)
+                    pool.submit(
+                        self._hash_and_push_layer, lf, registry, repo, on_progress=on_progress
+                    )
                     for lf in layer_files
                 ]
                 results = [f.result() for f in futures]
@@ -505,7 +604,9 @@ class ImageTarget:
     When ``client`` is None, operations use the local Docker CLI.
     """
 
-    def __init__(self, client=None, registry_host=None, repo_prefix=None, on_progress=None, on_status=None):
+    def __init__(
+        self, client=None, registry_host=None, repo_prefix=None, on_progress=None, on_status=None
+    ):
         self._client = client
         self._host = registry_host
         self._prefix = repo_prefix
@@ -555,8 +656,14 @@ class ImageTarget:
         Raises RegistryError on failure.
         """
         if self._client is not None:
-            return self._client.copy_image(DOCKER_HUB_REGISTRY, repo, self._host, self.dst_repo(repo), tag,
-                                           on_progress=self._on_progress)
+            return self._client.copy_image(
+                DOCKER_HUB_REGISTRY,
+                repo,
+                self._host,
+                self.dst_repo(repo),
+                tag,
+                on_progress=self._on_progress,
+            )
         self._run_docker(["docker", "pull", f"{repo}:{tag}"])
         return ""
 
@@ -566,7 +673,8 @@ class ImageTarget:
         Raises RegistryError on failure.
         """
         if self._client is not None:
-            return self._client.push_oci_archive(archive_path, self._host, self.dst_repo(repo), tag,
-                                                 on_progress=self._on_progress)
+            return self._client.push_oci_archive(
+                archive_path, self._host, self.dst_repo(repo), tag, on_progress=self._on_progress
+            )
         self._run_docker(["docker", "load", "-i", archive_path])
         return ""

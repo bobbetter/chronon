@@ -243,11 +243,23 @@ class ConfValidator(object):
         returns:
           list of errors.
         """
+        errors = []
+        # Online configs are deployed via `zipline hub schedule` which schedules them to run at a regular cadence.
+        # If the semantic hash changes after deployment, subsequent runs will fail. So we block in-place
+        # changes to online configs at compile time itself to prevent this.
+        if not self.safe_to_overwrite(obj):
+            obj_type = type(obj).__name__
+            errors.append(
+                ValueError(
+                    f"{obj_type} '{obj.metaData.name}' is online and cannot be changed in-place as there can be downstream readers"
+                    f"To make changes to an online config, create a new copy of it"
+                )
+            )
         if isinstance(obj, GroupBy):
-            return self._validate_group_by(obj)
+            errors.extend(self._validate_group_by(obj))
         elif isinstance(obj, Join):
-            return self._validate_join(obj)
-        return []
+            errors.extend(self._validate_join(obj))
+        return errors
 
     def _has_diff(self, obj: object, old_obj: object, skipped_fields=SKIPPED_FIELDS) -> bool:
         new_json = {

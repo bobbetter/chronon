@@ -144,7 +144,9 @@ class RolloutStrategy:
     def to_thrift(self):
         rollout_metric_thresholds_thrift = None
         if self.rollout_metric_thresholds:
-            rollout_metric_thresholds_thrift = [metric.to_thrift() for metric in self.rollout_metric_thresholds]
+            rollout_metric_thresholds_thrift = [
+                metric.to_thrift() for metric in self.rollout_metric_thresholds
+            ]
 
         return ttypes.RolloutStrategy(
             rolloutType=self.rollout_type,
@@ -243,9 +245,7 @@ def Model(
     # Get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
 
-    assert isinstance(version, str), (
-        f"Version must be a string, but found {type(version).__name__}"
-    )
+    assert isinstance(version, str), f"Version must be a string, but found {type(version).__name__}"
 
     # Create metadata
     meta_data = ttypes.MetaData(
@@ -292,10 +292,13 @@ def Model(
     return model
 
 
-def _get_model_transforms_output_table_name(model_transforms: ttypes.ModelTransforms, full_name: bool = False):
+def _get_model_transforms_output_table_name(
+    model_transforms: ttypes.ModelTransforms, full_name: bool = False
+):
     """Generate output table name for ModelTransforms"""
     utils.__set_name(model_transforms, ttypes.ModelTransforms, "models")
     return utils.output_table_name(model_transforms, full_name=full_name)
+
 
 def ModelTransforms(
     sources: List[ANY_SOURCE_TYPE],
@@ -361,6 +364,8 @@ def ModelTransforms(
     )
 
     # Add the table property for output table name generation
-    model_transforms.__class__.table = property(lambda self: _get_model_transforms_output_table_name(self, full_name=True))
+    model_transforms.__class__.table = property(
+        lambda self: _get_model_transforms_output_table_name(self, full_name=True)
+    )
 
     return model_transforms

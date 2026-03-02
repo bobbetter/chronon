@@ -35,6 +35,7 @@ default = Team(
             "GCP_DATAPROC_CLUSTER_NAME": "<dataproc-cluster-name>",
             "GCP_BIGTABLE_INSTANCE_ID": "<bigtable-instance-id>",
             "ARTIFACT_PREFIX": "<customer-artifact-bucket>",
+            "WAREHOUSE_PREFIX": "gs://zipline-warehouse-<customer_id>",
             "CLOUD_PROVIDER": "<gcp | aws>",
         },
     ),

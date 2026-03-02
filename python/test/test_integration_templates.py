@@ -7,9 +7,11 @@ from click.testing import CliRunner
 
 from integration.helpers.cli import compile_configs
 from integration.helpers.templates import (
-    GCP_CONFIGS,
     AWS_CONFIGS,
-    _apply_test_id,
+    AZURE_CONFIGS,
+    GCP_CONFIGS,
+    _apply_renames,
+    _find_imported_stems,
     cleanup_test_configs,
     generate_test_configs,
     get_confs,
@@ -86,6 +88,9 @@ class TestCompiledConfsExist:
     def test_aws_confs(self):
         self._compile_and_check("aws")
 
+    def test_azure_confs(self):
+        self._compile_and_check("azure")
+
 
 class TestConfigSourcesExist:
     """Ensure every ConfigTemplate.source points to a real file in the canary dir."""
@@ -128,58 +133,103 @@ class TestConfigSourcesExist:
             source=cfg.source, path=path, cloud="AWS",
         )
 
+    @pytest.mark.parametrize(
+        "cfg",
+        AZURE_CONFIGS,
+        ids=[c.source for c in AZURE_CONFIGS],
+    )
+    def test_azure_source_exists(self, cfg):
+        path = os.path.join(_canary_root, cfg.source)
+        assert os.path.isfile(path), self._SOURCE_MISSING_MSG.format(
+            source=cfg.source, path=path, cloud="AZURE",
+        )
 
-class TestApplyTestId:
+
+class TestRewriteImports:
     def test_simple_rename(self):
-        content = "from staging_queries.gcp import purchases_import"
-        result = _apply_test_id(content, ["purchases_import"], "abc123")
-        assert result == "from staging_queries.gcp import purchases_import_abc123"
+        content = "from staging_queries.gcp import purchases_import\nv = purchases_import.v1"
+        renames = {"purchases_import": "purchases_import_abc123"}
+        found = _find_imported_stems(content, renames)
+        result = _apply_renames(content, found)
+        assert "import purchases_import_abc123" in result
+        assert "purchases_import_abc123.v1" in result
 
     def test_multiple_renames(self):
         content = "import purchases_import, purchases_notds_import"
-        result = _apply_test_id(
-            content, ["purchases_import", "purchases_notds_import"], "xyz"
-        )
+        renames = {
+            "purchases_import": "purchases_import_xyz",
+            "purchases_notds_import": "purchases_notds_import_xyz",
+        }
+        found = _find_imported_stems(content, renames)
+        result = _apply_renames(content, found)
         assert result == "import purchases_import_xyz, purchases_notds_import_xyz"
 
     def test_word_boundary_prevents_partial_match(self):
         """purchases should not match inside purchases_import."""
         content = "from staging_queries.gcp import purchases_import, purchases_notds_import"
-        result = _apply_test_id(content, ["purchases"], "test1")
+        renames = {"purchases": "purchases_test1"}
+        found = _find_imported_stems(content, renames)
+        result = _apply_renames(content, found)
         # purchases_import and purchases_notds_import should NOT be affected
         assert result == content
 
     def test_word_boundary_matches_standalone(self):
         """purchases should match when it appears as a standalone word."""
         content = "from group_bys.gcp import purchases\nJoinPart(group_by=purchases.v1_test)"
-        result = _apply_test_id(content, ["purchases"], "test1")
+        renames = {"purchases": "purchases_test1"}
+        found = _find_imported_stems(content, renames)
+        result = _apply_renames(content, found)
         assert "import purchases_test1" in result
         assert "purchases_test1.v1_test" in result
 
     def test_longest_first_ordering(self):
         """Longer names are replaced first to prevent double-suffixing."""
-        content = "checkouts_import and checkouts_notds_import"
-        result = _apply_test_id(
-            content, ["checkouts_import", "checkouts_notds_import"], "t1"
+        content = "import checkouts_import, checkouts_notds_import\ncheckouts_import and checkouts_notds_import"
+        renames = {
+            "checkouts_import": "checkouts_import_t1",
+            "checkouts_notds_import": "checkouts_notds_import_t1",
+        }
+        found = _find_imported_stems(content, renames)
+        result = _apply_renames(content, found)
+        assert "checkouts_import_t1 and checkouts_notds_import_t1" in result
+
+    def test_only_imported_stems_are_rewritten(self):
+        """Variable names matching a module stem should not be rewritten
+        if the file doesn't import that module."""
+        content = (
+            "from staging_queries.gcp import exports\n"
+            "user_activities = exports.user_activities\n"
         )
-        assert result == "checkouts_import_t1 and checkouts_notds_import_t1"
+        renames = {
+            "exports": "exports_t1",
+            "user_activities": "user_activities_t1",
+        }
+        found = _find_imported_stems(content, renames)
+        result = _apply_renames(content, found)
+        # exports is imported -> should be renamed
+        assert "import exports_t1" in result
+        assert "exports_t1.user_activities" in result
+        # user_activities is NOT imported -> the variable name stays
+        assert "user_activities = " in result
+        assert "user_activities_t1 = " not in result
 
     def test_no_renames_passthrough(self):
         content = "some arbitrary content"
-        result = _apply_test_id(content, [], "abc")
+        result = _apply_renames(content, {})
         assert result == content
 
     def test_jinja2_literals_survive(self):
         """{{ start_date }} and {{ end_date }} pass through unchanged."""
-        content = 'query="SELECT * WHERE ds BETWEEN {{ start_date }} AND {{ end_date }}"'
-        result = _apply_test_id(content, ["some_module"], "test1")
+        content = 'import some_module\nquery="SELECT * WHERE ds BETWEEN {{ start_date }} AND {{ end_date }}"'
+        found = _find_imported_stems(content, {"some_module": "some_module_test1"})
+        result = _apply_renames(content, found)
         assert "{{ start_date }}" in result
         assert "{{ end_date }}" in result
 
 
 class TestGenerateAndCleanup:
     def test_round_trip(self, tmp_path):
-        """generate_test_configs creates files, cleanup_test_configs removes them."""
+        """generate_test_configs renames files in-place, cleanup restores them."""
         # Set up a minimal canary structure
         sq_dir = tmp_path / "staging_queries" / "gcp"
         sq_dir.mkdir(parents=True)
@@ -206,20 +256,34 @@ class TestGenerateAndCleanup:
         generated = generate_test_configs(tid, str(tmp_path), cloud="gcp")
         assert len(generated) == 8
 
-        # All files exist
-        for path in generated:
-            assert os.path.exists(path), f"Expected {path} to exist"
+        # Original files should no longer exist
+        assert not (sq_dir / "exports.py").exists()
+        assert not (gb_dir / "purchases.py").exists()
 
-        # Verify renames in group_bys/gcp/purchases_abc12345.py
+        # Renamed files should exist
+        assert (sq_dir / f"exports_{tid}.py").exists()
+        assert (gb_dir / f"purchases_{tid}.py").exists()
+
+        # Verify import renames propagated into file contents
         gb_content = (gb_dir / f"purchases_{tid}.py").read_text()
         assert f"purchases_import_{tid}" in gb_content
 
-        # Verify renames in joins/gcp/training_set_abc12345.py
         join_content = (join_dir / f"training_set_{tid}.py").read_text()
         assert f"purchases_{tid}" in join_content
 
-        # Cleanup
-        removed = cleanup_test_configs(tid, str(tmp_path), cloud="gcp")
-        assert len(removed) == 8
-        for path in removed:
-            assert not os.path.exists(path)
+        # Cleanup should restore originals
+        restored = cleanup_test_configs(tid, str(tmp_path), cloud="gcp")
+        assert len(restored) == 8
+
+        # Original files should be back
+        assert (sq_dir / "exports.py").exists()
+        assert (gb_dir / "purchases.py").exists()
+
+        # Renamed files should be gone
+        assert not (sq_dir / f"exports_{tid}.py").exists()
+        assert not (gb_dir / f"purchases_{tid}.py").exists()
+
+        # Import references should be reverted
+        gb_content = (gb_dir / "purchases.py").read_text()
+        assert "purchases_import" in gb_content
+        assert f"purchases_import_{tid}" not in gb_content

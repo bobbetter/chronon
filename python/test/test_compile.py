@@ -70,7 +70,7 @@ def test_compile_with_json_format(canary):
     runner = CliRunner()
     result = runner.invoke(compile, [
         '--chronon-root', canary,
-        '--format', 'json',
+        '-f', 'json',
         '--ignore-python-errors',
         '--force',
     ])
@@ -99,7 +99,7 @@ def test_compile_with_exit_code_nonzero(canary):
     runner = CliRunner()
     result = runner.invoke(compile, [
         '--chronon-root', canary,
-        '--format', 'json',
+        '-f', 'json',
         '--force',
     ])
 

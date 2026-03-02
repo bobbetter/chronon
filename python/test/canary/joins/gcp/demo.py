@@ -53,7 +53,7 @@ v1 = Join(
     version=1,
     online=True,
     output_namespace="data",
-    step_days=2,
+    step_days=30,
     enable_stats_compute=True,
 )
 
@@ -104,7 +104,7 @@ derivations_v1 = Join(
     version=2,
     online=True,
     output_namespace="data",
-    step_days=2,
+    step_days=30,
     offline_schedule="0 3 * * *",
     online_schedule="0 3 * * *"
 )

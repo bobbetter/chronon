@@ -38,11 +38,13 @@
                 "spark.chronon.partition.format": "yyyy-MM-dd",
                 "spark.chronon.table_write.format": "iceberg",
                 "spark.chronon.table_write.prefix": "s3://zipline-warehouse-dev/data/tables/",
+                "spark.chronon.table_write.upload.format": "ion",
+                "spark.chronon.table_write.upload.location": "s3://zipline-warehouse-dev/data/ion_uploads/",
                 "spark.default.parallelism": "10",
                 "spark.driver.cores": "1",
-                "spark.driver.memory": "1g",
+                "spark.driver.memory": "512m",
                 "spark.executor.cores": "1",
-                "spark.executor.memory": "1g",
+                "spark.executor.memory": "512m",
                 "spark.sql.catalog.default_iceberg": "org.apache.iceberg.spark.SparkCatalog",
                 "spark.sql.catalog.default_iceberg.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
                 "spark.sql.catalog.default_iceberg.warehouse": "s3://zipline-warehouse-dev/data/tables/",
@@ -60,11 +62,13 @@
                   "spark.chronon.partition.format": "yyyy-MM-dd",
                   "spark.chronon.table_write.format": "iceberg",
                   "spark.chronon.table_write.prefix": "s3://zipline-warehouse-dev/data/tables/",
+                  "spark.chronon.table_write.upload.format": "ion",
+                  "spark.chronon.table_write.upload.location": "s3://zipline-warehouse-dev/data/ion_uploads/",
                   "spark.default.parallelism": "10",
                   "spark.driver.cores": "1",
-                  "spark.driver.memory": "1g",
+                  "spark.driver.memory": "512m",
                   "spark.executor.cores": "1",
-                  "spark.executor.memory": "1g",
+                  "spark.executor.memory": "512m",
                   "spark.sql.catalog.default_iceberg": "org.apache.iceberg.spark.SparkCatalog",
                   "spark.sql.catalog.default_iceberg.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
                   "spark.sql.catalog.default_iceberg.warehouse": "s3://zipline-warehouse-dev/data/tables/",
@@ -88,7 +92,8 @@
                 "FRONTEND_URL": "http://localhost:3000",
                 "HUB_URL": "http://localhost:3903",
                 "SPARK_CLUSTER_NAME": "zipline-canary-emr",
-                "VERSION": "latest"
+                "VERSION": "latest",
+                "WAREHOUSE_PREFIX": "s3://zipline-warehouse-dev"
               },
               "modeEnvironments": {
                 "upload": {
@@ -101,7 +106,8 @@
                   "FRONTEND_URL": "http://localhost:3000",
                   "HUB_URL": "http://localhost:3903",
                   "SPARK_CLUSTER_NAME": "zipline-canary-emr",
-                  "VERSION": "latest"
+                  "VERSION": "latest",
+                  "WAREHOUSE_PREFIX": "s3://zipline-warehouse-dev"
                 }
               }
             },
@@ -250,11 +256,13 @@
           "spark.chronon.partition.format": "yyyy-MM-dd",
           "spark.chronon.table_write.format": "iceberg",
           "spark.chronon.table_write.prefix": "s3://zipline-warehouse-dev/data/tables/",
+          "spark.chronon.table_write.upload.format": "ion",
+          "spark.chronon.table_write.upload.location": "s3://zipline-warehouse-dev/data/ion_uploads/",
           "spark.default.parallelism": "10",
           "spark.driver.cores": "1",
-          "spark.driver.memory": "1g",
+          "spark.driver.memory": "512m",
           "spark.executor.cores": "1",
-          "spark.executor.memory": "1g",
+          "spark.executor.memory": "512m",
           "spark.sql.catalog.default_iceberg": "org.apache.iceberg.spark.SparkCatalog",
           "spark.sql.catalog.default_iceberg.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
           "spark.sql.catalog.default_iceberg.warehouse": "s3://zipline-warehouse-dev/data/tables/",
@@ -272,11 +280,13 @@
             "spark.chronon.partition.format": "yyyy-MM-dd",
             "spark.chronon.table_write.format": "iceberg",
             "spark.chronon.table_write.prefix": "s3://zipline-warehouse-dev/data/tables/",
+            "spark.chronon.table_write.upload.format": "ion",
+            "spark.chronon.table_write.upload.location": "s3://zipline-warehouse-dev/data/ion_uploads/",
             "spark.default.parallelism": "10",
             "spark.driver.cores": "1",
-            "spark.driver.memory": "1g",
+            "spark.driver.memory": "512m",
             "spark.executor.cores": "1",
-            "spark.executor.memory": "1g",
+            "spark.executor.memory": "512m",
             "spark.sql.catalog.default_iceberg": "org.apache.iceberg.spark.SparkCatalog",
             "spark.sql.catalog.default_iceberg.catalog-impl": "org.apache.iceberg.aws.glue.GlueCatalog",
             "spark.sql.catalog.default_iceberg.warehouse": "s3://zipline-warehouse-dev/data/tables/",
@@ -300,7 +310,8 @@
           "FRONTEND_URL": "http://localhost:3000",
           "HUB_URL": "http://localhost:3903",
           "SPARK_CLUSTER_NAME": "zipline-canary-emr",
-          "VERSION": "latest"
+          "VERSION": "latest",
+          "WAREHOUSE_PREFIX": "s3://zipline-warehouse-dev"
         },
         "modeEnvironments": {
           "upload": {
@@ -313,7 +324,8 @@
             "FRONTEND_URL": "http://localhost:3000",
             "HUB_URL": "http://localhost:3903",
             "SPARK_CLUSTER_NAME": "zipline-canary-emr",
-            "VERSION": "latest"
+            "VERSION": "latest",
+            "WAREHOUSE_PREFIX": "s3://zipline-warehouse-dev"
           }
         }
       },

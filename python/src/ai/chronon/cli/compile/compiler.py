@@ -54,7 +54,9 @@ class Compiler:
         # Show the nice display first
         if self.compile_context.format != Format.JSON:
             console.print(
-                self.compile_context.compile_status.render(self.compile_context.ignore_python_errors)
+                self.compile_context.compile_status.render(
+                    self.compile_context.ignore_python_errors
+                )
             )
 
         # Check for confirmation before finalizing files
@@ -67,10 +69,11 @@ class Compiler:
                 # In case of JSON format we need to prompt the user for confirmation if changes are not versioned.
                 non_version_changes = self.compile_context.validator._non_version_changes()
                 if non_version_changes:
-                    raise PromptException(prompt=f"The following configs are changing in-place (changing semantics without changing the version)."
-                    f" {', '.join([v.name for v in non_version_changes])} Do you want to proceed?",
-                    options= ["yes", "no"],
-                    instructions="If 'yes' run with --force to proceed with the compilation."
+                    raise PromptException(
+                        prompt=f"The following configs are changing in-place (changing semantics without changing the version)."
+                        f" {', '.join([v.name for v in non_version_changes])} Do you want to proceed?",
+                        options=["yes", "no"],
+                        instructions="If 'yes' run with --force to proceed with the compilation.",
                     )
 
         # Only proceed with file operations if there are no compilation errors

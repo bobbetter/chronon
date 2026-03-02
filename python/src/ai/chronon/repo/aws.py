@@ -1,6 +1,7 @@
 import json
 import multiprocessing
 import os
+import time
 from typing import List
 
 import boto3
@@ -11,6 +12,7 @@ from ai.chronon.repo.default_runner import Runner
 from ai.chronon.repo.utils import (
     JobType,
     check_call,
+    check_output,
     extract_filename_from_path,
     get_customer_id,
     split_date_range,
@@ -268,5 +270,51 @@ class AwsRunner(Runner):
                 )
                 pool.map(check_call, command_list)
         elif len(command_list) == 1:
-            # TODO: add log tailing
-            check_call(command_list[0])
+            output = check_output(command_list[0]).decode("utf-8").split("\n")
+            print(*output, sep="\n")
+
+            # Parse EMR step ID and cluster ID from EmrSubmitter output
+            step_id = None
+            cluster_id = None
+            for line in output:
+                if "EMR step id:" in line:
+                    step_id = line.split("EMR step id:")[-1].strip()
+                if "clusterDetails/" in line:
+                    cluster_id = line.split("clusterDetails/")[-1].strip()
+
+            if not self.disable_cloud_logging and step_id and cluster_id:
+                poll_interval = 30
+                max_attempts = 120
+                region = os.environ.get("AWS_REGION", "us-west-2")
+                emr_client = boto3.client("emr", region_name=region)
+
+                LOG.info("Waiting for EMR step %s on cluster %s...", step_id, cluster_id)
+                for _attempt in range(max_attempts):
+                    resp = emr_client.describe_step(
+                        ClusterId=cluster_id, StepId=step_id
+                    )
+                    state = resp["Step"]["Status"]["State"]
+                    LOG.info("EMR step %s status: %s", step_id, state)
+
+                    if state == "COMPLETED":
+                        LOG.info("EMR step %s completed successfully.", step_id)
+                        return
+                    elif state in ("FAILED", "CANCELLED", "INTERRUPTED"):
+                        status_info = resp["Step"]["Status"]
+                        failure_msg = (
+                            status_info.get("FailureDetails", {}).get("Message")
+                            or status_info.get("StateChangeReason", {}).get("Message")
+                            or "no details"
+                        )
+                        log_uri = status_info.get("FailureDetails", {}).get("LogFile", "")
+                        detail = f"EMR step {step_id} {state}: {failure_msg}"
+                        if log_uri:
+                            detail += f"\nLog: {log_uri}"
+                        raise RuntimeError(detail)
+
+                    time.sleep(poll_interval)
+
+                raise RuntimeError(
+                    f"Timed out waiting for EMR step {step_id} after"
+                    f" {max_attempts * poll_interval} seconds."
+                )

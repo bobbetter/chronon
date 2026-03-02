@@ -52,7 +52,7 @@ class Runner:
 
         self.validate = args.get("validate")
         self.validate_rows = args.get("validate_rows")
-        self.enable_debug = args.get("enable_debug")
+        self.enable_debug = args.get("debug")
         self.uploader = args.get("uploader")
 
         valid_jar = args["online_jar"] and os.path.exists(args["online_jar"])
@@ -108,7 +108,7 @@ class Runner:
             self.spark_submit = args["spark_submit_path"]
         self.list_apps_cmd = args["list_apps"]
 
-        self.disable_cloud_logging = args.get("disable_cloud_logging")
+        self.disable_cloud_logging = args.get("no_cloud_logging")
 
     def run_spark_streaming(self):
         # streaming mode

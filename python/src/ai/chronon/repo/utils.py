@@ -8,6 +8,8 @@ import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from enum import Enum
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as ver
 
 from click import style
 
@@ -474,7 +476,7 @@ def upload_to_blob_store(local_path: str, remote_uri: str) -> str:
 def _upload_to_gcs(local_path: str, gcs_uri: str) -> str:
     from google.cloud import storage
 
-    parts = gcs_uri[len("gs://"):].split("/", 1)
+    parts = gcs_uri[len("gs://") :].split("/", 1)
     bucket_name, blob_name = parts[0], parts[1] if len(parts) > 1 else ""
     client = storage.Client()
     bucket = client.bucket(bucket_name)
@@ -487,7 +489,7 @@ def _upload_to_gcs(local_path: str, gcs_uri: str) -> str:
 def _upload_to_s3(local_path: str, s3_uri: str) -> str:
     import boto3
 
-    parts = s3_uri[len("s3://"):].split("/", 1)
+    parts = s3_uri[len("s3://") :].split("/", 1)
     bucket_name, key = parts[0], parts[1] if len(parts) > 1 else ""
     boto3.client("s3").upload_file(local_path, bucket_name, key)
     LOG.info(f"Uploaded {local_path} -> {s3_uri}")
@@ -523,3 +525,12 @@ def print_possible_confs(conf, repo, *args, **kwargs):
         )
     else:
         print(f"Directory does not exist: {style(conf_dirname, fg='yellow')}")
+
+
+def get_package_version():
+    try:
+        package_version = ver("zipline-ai")
+    except PackageNotFoundError:
+        package_version = "unknown"
+    return package_version
+

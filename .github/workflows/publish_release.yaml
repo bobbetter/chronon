@@ -219,7 +219,7 @@ jobs:
         run: |
           set -eo pipefail
 
-          for customer_id in "canary" "etsy" "base" "dev"; do
+          for customer_id in "canary" "base"; do
             echo "Uploading wheel to GCS for customer_id: $customer_id"
             gcloud storage cp ${{ needs.build_python_wheel.outputs.wheel_file }} gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/wheels/${{ needs.build_python_wheel.outputs.wheel_file }}
             gcloud storage objects update gs://zipline-artifacts-${customer_id}/release/${VERSION#v}/wheels/${{ needs.build_python_wheel.outputs.wheel_file }} --custom-metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
@@ -546,21 +546,152 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Send Failure Notification
-        uses: slackapi/slack-github-action@v1
+      - name: Collect failed job logs
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_TESTS_WEBHOOK_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/failed-logs
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" \
+            --jq '.jobs[] | select(.conclusion == "failure" and .name != "on_fail_notify_slack") | "\(.id) \(.name)"' | \
+          while read -r JOB_ID JOB_NAME; do
+            gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs/${JOB_ID}/logs" \
+              > "/tmp/failed-logs/${JOB_ID}.log" 2>/dev/null || true
+          done
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" \
+            --jq '[.jobs[] | select(.conclusion == "failure" and .name != "on_fail_notify_slack") | {id, name, steps: [.steps[] | select(.conclusion == "failure") | .name]}]' \
+            > /tmp/failed-logs/metadata.json 2>/dev/null || echo "[]" > /tmp/failed-logs/metadata.json
+
+      - name: Build notification payload
+        env:
+          PUBLISH_PYPI_RESULT: ${{ needs.publish_to_pypi.result }}
+          PROMOTE_AWS_RESULT: ${{ needs.promote-aws-candidate.result }}
+          PROMOTE_GCP_RESULT: ${{ needs.promote-gcp-candidate.result }}
+          PROMOTE_AZURE_RESULT: ${{ needs.promote-azure-candidate.result }}
+          ATTACH_ASSETS_RESULT: ${{ needs.attach-release-assets.result }}
+          DOCKER_RESULT: ${{ needs.build_and_publish_docker.result }}
+          ENGINE_IMAGES_RESULT: ${{ needs.build_engine_images.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RELEASE_VERSION: ${{ env.VERSION }}
+        run: |
+          python3 << 'PYEOF' > /tmp/slack_payload.json
+          import json, os, re
+
+          run_url = os.environ['RUN_URL']
+          version = os.environ['RELEASE_VERSION']
+
+          jobs = [
+              ('PUBLISH_PYPI_RESULT', 'Publish to PyPI'),
+              ('PROMOTE_AWS_RESULT', 'Promote AWS Candidate'),
+              ('PROMOTE_GCP_RESULT', 'Promote GCP Candidate'),
+              ('PROMOTE_AZURE_RESULT', 'Promote Azure Candidate'),
+              ('ATTACH_ASSETS_RESULT', 'Attach Release Assets'),
+              ('DOCKER_RESULT', 'Build & Publish Docker'),
+              ('ENGINE_IMAGES_RESULT', 'Build Engine Images'),
+          ]
+
+          failed = []
+          skipped = []
+          for env_var, label in jobs:
+              result = os.environ.get(env_var, '')
+              if result == 'failure':
+                  failed.append(label)
+              elif result == 'cancelled':
+                  failed.append(f'{label} (cancelled)')
+              elif result == 'skipped':
+                  skipped.append(label)
+
+          failed_text = '\n'.join(f'• {f}' for f in failed) if failed else '• Unknown'
+
+          blocks = [
+              {
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': f':x: *Chronon Publish Release Failed*\n\nVersion: <{run_url}|{version}>'
+                  }
+              },
+              {
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': f'*Failed Steps:*\n{failed_text}'
+                  }
+              },
+          ]
+
+          if skipped:
+              skipped_text = '\n'.join(f'• {s}' for s in skipped)
+              blocks.append({
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': f'*Skipped (due to upstream failure):*\n{skipped_text}'
+                  }
+              })
+
+          # Add log excerpts from failed jobs
+          try:
+              with open('/tmp/failed-logs/metadata.json') as f:
+                  metadata = json.load(f)
+          except Exception:
+              metadata = []
+
+          for job in metadata:
+              job_id = job.get('id')
+              job_name = job.get('name', 'Unknown')
+              failed_steps = job.get('steps', [])
+              failed_step_text = ', '.join(failed_steps) if failed_steps else 'unknown step'
+
+              log_file = f'/tmp/failed-logs/{job_id}.log'
+              if not os.path.exists(log_file):
+                  continue
+
+              with open(log_file) as f:
+                  raw = f.read()
+
+              lines = raw.splitlines()
+              cleaned = []
+              for line in lines:
+                  line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+                  line = re.sub(r'^[0-9T:.Z-]+ ', '', line)
+                  cleaned.append(line)
+
+              tail = '\n'.join(cleaned[-30:])
+
+              log_text = f'*{job_name}* (failed step: {failed_step_text})\n```\n{tail}\n```'
+              if len(log_text) > 2900:
+                  log_text = f'*{job_name}* (failed step: {failed_step_text})\n```\n{tail[-(2900 - len(job_name) - len(failed_step_text) - 50):]}\n...(truncated)```'
+
+              blocks.append({
+                  'type': 'section',
+                  'text': {
+                      'type': 'mrkdwn',
+                      'text': log_text
+                  }
+              })
+
+          blocks.append({
+              'type': 'context',
+              'elements': [{
+                  'type': 'mrkdwn',
+                  'text': f'<{run_url}|View full logs>'
+              }]
+          })
+
+          payload = {
+              'text': 'Chronon Publish Release Failed',
+              'blocks': blocks
+          }
+
+          print(json.dumps(payload))
+          PYEOF
+
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2
         with:
-          payload: |
-            {
-              "text": "Zipline CI Publish Release Failed\n\n Publishing the release failed for version <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|${{ env.VERSION }}>. Please check the logs for more details.",
-              "attachments": [
-                {
-                  "text": "",
-                  "color": "#ff0000"
-                }
-              ]
-            }
+          webhook: ${{ secrets.SLACK_TESTS_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload-file-path: /tmp/slack_payload.json
 
   clean_up_artifacts:
     permissions:

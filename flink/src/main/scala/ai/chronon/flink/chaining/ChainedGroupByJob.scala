@@ -91,11 +91,11 @@ class ChainedGroupByJob(eventSrc: FlinkSource[ProjectedEvent],
         throw new IllegalArgumentException(s"Unsupported trigger type: $t. Supported: 'always_fire', 'buffered'")
     }
   }
-  
+
   override def runGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse] = {
     throw new NotImplementedError(
       s"Untiled mode is not implemented for ChainedGroupByJob (JoinSource GroupBys). " +
-      s"GroupBy: $groupByName uses JoinSource and only supports tiled mode."
+        s"GroupBy: $groupByName uses JoinSource and only supports tiled mode."
     )
   }
 
