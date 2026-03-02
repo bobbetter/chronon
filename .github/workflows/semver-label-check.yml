@@ -1,0 +1,21 @@
+name: "Label Checker"
+on:
+  pull_request:
+    types: [opened, labeled, unlabeled, synchronize]
+
+jobs:
+  check_labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for required labels
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            const requiredLabels = ['Semver-Major', 'Semver-Minor', 'Semver-Patch'];
+            
+            const hasRequiredLabel = labels.some(label => requiredLabels.includes(label));
+            
+            if (!hasRequiredLabel) {
+              core.setFailed(`PR must have at least one of these labels: ${requiredLabels.join(', ')}`);
+            }

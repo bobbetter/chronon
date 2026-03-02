@@ -8,7 +8,7 @@ trait StorageClient {
     * @param objectName The name of the object.
     * @return The converted object.
     */
-  def downloadObjectToMemory(bucketName: String, objectName: String): Array[Byte]
+  protected def downloadObjectToMemory(bucketName: String, objectName: String): Array[Byte]
 
   /** Downloads an object from the storage to memory and converts it to the specified type.
     *
@@ -45,5 +45,12 @@ trait StorageClient {
     * @return True if the file exists, false otherwise.
     */
   def fileExists(objectPath: String): Boolean
+
+  /** Uploads content to the specified object path.
+    *
+    * @param objectPath The full path of the object in the storage (e.g. gs://bucket/key, s3://bucket/key).
+    * @param content The content to upload.
+    */
+  def upload(objectPath: String, content: Array[Byte]): Unit
 
 }

@@ -1,0 +1,324 @@
+name: CI
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  merge_group:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      scala: ${{ steps.filter.outputs.scala }}
+      python: ${{ steps.filter.outputs.python }}
+      azure: ${{ steps.filter.outputs.azure }}
+      redis: ${{ steps.filter.outputs.redis }}
+      security: ${{ steps.filter.outputs.security }}
+      format: ${{ steps.filter.outputs.format }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            scala:
+              - '**/*.scala'
+              - '*.mill'
+              - '**/*.mill'
+            python:
+              - 'python/**'
+              - 'thrift/**'
+            azure:
+              - 'cloud_azure/**'
+              - 'online/**'
+              - 'api/**'
+            redis:
+              - 'redis/**'
+              - 'online/**'
+              - 'api/**'
+            security:
+              - '*.mill'
+              - '**/*.mill'
+              - 'docker/fetcher/Dockerfile'
+              - '.grype.yaml'
+            format:
+              - '**/*.scala'
+              - '.scalafmt.conf'
+
+  spark:
+    needs: changes
+    if: needs.changes.outputs.scala == 'true'
+    strategy:
+      matrix:
+        scala-version: ["2.12.18", "2.13.17"]
+    uses: ./.github/workflows/reusable_spark_tests.yaml
+    with:
+      scala-version: ${{ matrix.scala-version }}
+
+  non-spark:
+    needs: changes
+    if: needs.changes.outputs.scala == 'true'
+    strategy:
+      matrix:
+        scala-version: ["2.12.18", "2.13.17"]
+    uses: ./.github/workflows/reusable_non_spark_tests.yaml
+    with:
+      scala-version: ${{ matrix.scala-version }}
+
+  python-lint:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Git
+        run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+      - name: Install uv
+        shell: bash
+        run: |
+          apt-get update && apt-get install -y curl
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Run Python lint and format check
+        shell: bash
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          ./mill python.ruffCheck
+
+  python-tests:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Git
+        run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+      - name: Install uv
+        shell: bash
+        run: |
+          apt-get update && apt-get install -y curl
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - name: Run Python tests
+        shell: bash
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          ./mill python.test
+      - name: Build coverage report
+        shell: bash
+        run: |
+          ./mill python.test.coverageHtml --omit='**/test/**,**/out/**' --fail-under=65
+      - uses: actions/upload-artifact@v4
+        with:
+          name: htmlcov
+          path: out/python/test/coverageHtml.dest/htmlcov
+
+  cosmos:
+    needs: changes
+    if: needs.changes.outputs.azure == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+      - name: Install Thrift
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y thrift-compiler
+      - name: Cache Mill
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mill
+          key: ${{ runner.os }}-mill-${{ hashFiles('build.mill') }}
+          restore-keys: |
+            ${{ runner.os }}-mill-
+      - name: Verify Docker is available
+        run: |
+          docker version
+          docker info
+      - name: Start Cosmos DB Emulator
+        run: |
+          echo "Starting Cosmos DB Linux Emulator..."
+          docker run --detach \
+            --name cosmos-emulator \
+            --publish 8080:8080 \
+            --publish 8081:8081 \
+            --publish 1234:1234 \
+            mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-preview \
+            --protocol https
+
+          echo "Waiting for emulator to be ready..."
+          for i in {1..60}; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/ready 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+              echo "Emulator is ready!"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "ERROR: Emulator failed to start within 120s"
+              docker logs cosmos-emulator
+              exit 1
+            fi
+            echo "Waiting... (attempt $i/60)"
+            sleep 2
+          done
+
+          # Additional wait for full initialization
+          sleep 5
+      - name: Setup SSL Certificate
+        run: |
+          echo "Extracting emulator SSL certificate..."
+          CERT_FILE="/tmp/cosmos_emulator.cert"
+          openssl s_client -connect localhost:8081 </dev/null 2>/dev/null | \
+            sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > $CERT_FILE
+
+          echo "Setting up Java truststore..."
+          TRUSTSTORE_PATH="/tmp/cosmos-truststore.jks"
+          TRUSTSTORE_PASSWORD="changeit"
+
+          # Copy system cacerts to custom truststore
+          sudo cp $JAVA_HOME/lib/security/cacerts $TRUSTSTORE_PATH
+          sudo chmod 644 $TRUSTSTORE_PATH
+
+          # Import emulator certificate
+          sudo keytool -importcert -noprompt \
+            -alias cosmos-emulator \
+            -file $CERT_FILE \
+            -keystore $TRUSTSTORE_PATH \
+            -storepass $TRUSTSTORE_PASSWORD
+
+          echo "COSMOS_TRUSTSTORE_PATH=$TRUSTSTORE_PATH" >> $GITHUB_ENV
+          echo "COSMOS_TRUSTSTORE_PASSWORD=$TRUSTSTORE_PASSWORD" >> $GITHUB_ENV
+      - name: Run Cosmos DB tests
+        run: ./mill cloud_azure.test
+        env:
+          COSMOS_ENDPOINT: "https://localhost:8081"
+          COSMOS_KEY: "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="
+          COSMOS_DATABASE: "test_chronon_db"
+          JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStore=${{ env.COSMOS_TRUSTSTORE_PATH }} -Djavax.net.ssl.trustStorePassword=${{ env.COSMOS_TRUSTSTORE_PASSWORD }}"
+      - name: Stop Cosmos DB Emulator
+        if: always()
+        run: |
+          docker stop cosmos-emulator || true
+          docker rm cosmos-emulator || true
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmos-test-results
+          path: |
+            out/cloud_azure/test/testForked.dest/
+            out/cloud_azure/test/compile.dest/
+          retention-days: 7
+
+  redis:
+    needs: changes
+    if: needs.changes.outputs.redis == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+      - name: Install Thrift
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y thrift-compiler
+      - name: Cache Mill
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mill
+          key: ${{ runner.os }}-mill-${{ hashFiles('build.mill') }}
+          restore-keys: |
+            ${{ runner.os }}-mill-
+      - name: Verify Docker is available
+        run: |
+          docker version
+          docker info
+      - name: Run Redis tests
+        run: ./mill redis.test
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: true
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: redis-test-results
+          path: |
+            out/redis/test/testForked.dest/
+            out/redis/test/compile.dest/
+          retention-days: 7
+
+  format:
+    needs: changes
+    if: needs.changes.outputs.format == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+      - name: Check Scalafmt
+        run: |
+          ./mill __.checkFormat
+
+  grype:
+    needs: changes
+    if: needs.changes.outputs.security == 'true'
+    uses: ./.github/workflows/grype_scan_reusable.yaml
+
+  ci-gate:
+    if: always()
+    needs: [spark, non-spark, python-lint, python-tests, cosmos, redis, format, grype]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CI results
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          for result in $results; do
+            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              echo "CI failed: at least one job had result '$result'"
+              exit 1
+            fi
+          done
+          echo "All CI checks passed or were skipped"

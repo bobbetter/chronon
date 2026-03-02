@@ -6,6 +6,7 @@ import ai.chronon.integrations.aws.EmrSubmitter.{
   DefaultClusterInstanceCount,
   DefaultClusterInstanceType
 }
+import ai.chronon.spark.submission.JobSubmitterConstants
 import ai.chronon.spark.submission.JobSubmitterConstants._
 import ai.chronon.spark.submission.{JobSubmitter, JobType, FlinkJob => TypeFlinkJob, SparkJob => TypeSparkJob}
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -13,16 +14,24 @@ import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import software.amazon.awssdk.core.exception.SdkException
 import io.fabric8.kubernetes.client.Config
 import software.amazon.awssdk.services.ec2.Ec2Client
+
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success, Try}
 import software.amazon.awssdk.services.ec2.model.{DescribeSecurityGroupsRequest, DescribeSubnetsRequest, Filter}
 import software.amazon.awssdk.services.emr.EmrClient
-import software.amazon.awssdk.services.emr.model._
-
+import software.amazon.awssdk.services.emr.model.{Unit => _, _}
+import software.amazon.awssdk.services.s3.S3Client
 import scala.jdk.CollectionConverters._
 
 class EmrSubmitter(customerId: String,
                    emrClient: EmrClient,
                    ec2Client: Ec2Client,
-                   eksFlinkSubmitter: Option[EksFlinkSubmitter] = None)
+                   eksFlinkSubmitter: Option[EksFlinkSubmitter] = None,
+                   s3Client: Option[S3Client] = None,
+                   dynamodbTableName: String = "",
+                   awsRegion: String = "",
+                   override val tablePartitionsDataset: String = "",
+                   override val dqMetricsDataset: String = "")
     extends JobSubmitter {
 
   private val ClusterApplications = List(
@@ -436,7 +445,7 @@ class EmrSubmitter(customerId: String,
                       files: List[String],
                       labels: Map[String, String],
                       args: String*): String = {
-    val userArgs = args.filter(arg => !SharedInternalArgs.exists(arg.startsWith))
+    val userArgs = JobSubmitter.getApplicationArgs(jobType, args.toArray)
 
     jobType match {
       case TypeFlinkJob =>
@@ -500,7 +509,8 @@ class EmrSubmitter(customerId: String,
         logger.info(s"EMR step id: $responseStepId")
         logger.info(
           s"Safe to exit. Follow the job status at: https://console.aws.amazon.com/emr/home#/clusterDetails/$existingJobId")
-        responseStepId
+        // Return composite ID so status/kill/getJobUrl can resolve both cluster and step
+        s"$existingJobId:$responseStepId"
     }
   }
 
@@ -542,20 +552,80 @@ class EmrSubmitter(customerId: String,
     }
   }
 
-  override def kill(stepId: String): scala.Unit = {
-    val resp = emrClient.cancelSteps(CancelStepsRequest.builder().stepIds(stepId).build())
+  override def kill(jobId: String): scala.Unit = {
+    val parts = jobId.split(":")
+    require(parts.length == 2, s"Expected jobId in 'clusterId:stepId' format, got: $jobId")
+    emrClient.cancelSteps(CancelStepsRequest.builder().clusterId(parts(0)).stepIds(parts(1)).build())
   }
+
+  override def jarName: String = "cloud_aws_lib_deploy.jar"
+  override def onlineClass: String = "ai.chronon.integrations.aws.AwsApiImpl"
+
+  override def resolveConfPath(stagedFileUri: String): String =
+    s"/mnt/zipline/${stagedFileUri.split("/").last}"
+
+  override def getJobUrl(jobId: String): Option[String] = {
+    if (jobId.contains(":")) {
+      val parts = jobId.split(":")
+      Some(s"https://console.aws.amazon.com/emr/home?region=$awsRegion#/clusterDetails/${parts(0)}/step/${parts(1)}")
+    } else None
+  }
+
+  override def deprecatedClusterNameEnvVars: Seq[String] = Seq(EmrClusterNameEnvVar)
+
+  override def clusterIdentifierKey: String = ClusterId
+
+  override def ensureClusterReady(clusterName: String, clusterConf: Option[Map[String, String]])(implicit
+      ec: ExecutionContext): Option[String] = {
+    Try(findClusterByName(clusterName)) match {
+      case Success(Some(cluster))
+          if Set(ClusterState.RUNNING, ClusterState.WAITING).contains(cluster.status().state()) =>
+        Some(cluster.id())
+      case Success(Some(_)) =>
+        logger.info(s"EMR cluster $clusterName exists but is not ready.")
+        None
+      case Success(None) =>
+        if (clusterConf.isDefined && clusterConf.get.contains("emr.config")) {
+          logger.info(s"EMR cluster $clusterName not found. Triggering creation asynchronously.")
+          Future {
+            getOrCreateCluster(clusterName, clusterConf)
+          }.recover { case ex: Exception =>
+            logger.error(s"Failed to create EMR cluster $clusterName asynchronously", ex)
+          }
+        }
+        None
+      case Failure(ex) =>
+        throw new RuntimeException(s"Failed to look up EMR cluster $clusterName", ex)
+    }
+  }
+
+  override def close(): Unit = {
+    try {
+      emrClient.close()
+      ec2Client.close()
+      s3Client.foreach(_.close())
+    } catch {
+      case _: Exception => logger.info("Error shutting down AWS clients.")
+    }
+  }
+
+  override def kvStoreApiProperties: Map[String, String] = Map(
+    "AWS_DYNAMODB_TABLE_NAME" -> dynamodbTableName,
+    "AWS_DEFAULT_REGION" -> awsRegion
+  )
 }
 
 object EmrSubmitter {
   def apply(k8sConfig: Option[Config] = None): EmrSubmitter = {
     val customerId = sys.env.getOrElse("CUSTOMER_ID", throw new Exception("CUSTOMER_ID not set")).toLowerCase
+    val awsRegion = sys.env.getOrElse("AWS_REGION", sys.env.getOrElse("AWS_DEFAULT_REGION", ""))
 
     new EmrSubmitter(
       customerId,
       EmrClient.builder().build(),
       Ec2Client.builder().build(),
-      Some(new EksFlinkSubmitter(k8sConfig))
+      eksFlinkSubmitter = Some(new EksFlinkSubmitter(k8sConfig)),
+      awsRegion = awsRegion
     )
   }
 

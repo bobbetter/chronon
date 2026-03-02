@@ -30,7 +30,7 @@ from ai.chronon.repo.registry_client import (
     RegistryClient,
     RegistryError,
 )
-from ai.chronon.repo.utils import upload_to_blob_store
+from ai.chronon.repo.utils import get_package_version, upload_to_blob_store
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ def admin():
     "Optional when using --bundle or when already authenticated to Docker Hub.",
 )
 @click.option(
-    "--release", default="latest", show_default=True, help="Zipline release to load (e.g. 0.1.42)."
+    "--release", default=None, help="Zipline release to load (e.g. 0.1.42). Defaults to the installed zipline-ai package version."
 )
 @click.option(
     "--artifact-store",
@@ -115,6 +115,19 @@ def install(cloud, registry, api_token, release, artifact_store, bundle):
     """
     for name in ("urllib3", "ai.chronon.logger"):
         logging.getLogger(name).setLevel(logging.WARNING)
+
+    if release is None:
+        release = get_package_version()
+        if release == "unknown":
+            release = "latest"
+        console.print(f"Using release [bold]{release}[/bold]")
+    else:
+        pkg_version = get_package_version()
+        if pkg_version != "unknown" and release != pkg_version:
+            if not click.confirm(
+                f"Specified release {release} does not match installed zipline cli version {pkg_version}. Continue?"
+            ):
+                raise SystemExit(1)
 
     if registry == "local":
         _check_docker_available()

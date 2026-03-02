@@ -16,8 +16,8 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
   private val jettyVersion = "12.0.12"
   private val avroVersion = build.Constants.avroVersion
   private val nimbusJoseJwtVersion = "9.37.4"
-  // Azure Cosmos SDK requires Jackson 2.17.2 (incompatible with 2.15.2)
-  private val jacksonVersion = "2.17.2"
+  // Azure Cosmos SDK requires Jackson >= 2.17.2; use 2.18.6 to fix GHSA-72hv-8253-57qq.
+  private val jacksonVersion = "2.18.6"
 
   def excludeJackson(dep: mill.scalalib.Dep): mill.scalalib.Dep = {
     dep
@@ -160,7 +160,7 @@ trait CloudAzureModule extends Cross.Module[String] with build.BaseModule {
       // This is a shaded JAR so we keep it out of the main module dependencies
       // Exclude Jackson to avoid version conflicts
       excludeJackson(mvn"com.azure.cosmos.spark:azure-cosmos-spark_3-5_2-12:4.42.0"),
-      // Force Jackson 2.17.2 to match azure-cosmos SDK requirements
+      // Force Jackson version to match azure-cosmos SDK requirements
       mvn"com.fasterxml.jackson.core:jackson-core:$jacksonVersion",
       mvn"com.fasterxml.jackson.core:jackson-databind:$jacksonVersion",
       mvn"com.fasterxml.jackson.core:jackson-annotations:$jacksonVersion",

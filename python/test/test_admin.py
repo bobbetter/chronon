@@ -5,12 +5,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from click.testing import CliRunner
+
 from ai.chronon.repo.admin import (
     _authenticate_docker_hub,
     _base_domain,
     _creds_from_helper,
     _get_docker_credentials,
     _parse_registry,
+    admin,
 )
 from ai.chronon.repo.registry_client import DOCKER_HUB_REGISTRY
 
@@ -277,3 +280,81 @@ class TestAuthenticateDockerHub:
             _authenticate_docker_hub(client, "my-token")
             mock.assert_not_called()
             client.authenticate.assert_called_once_with(DOCKER_HUB_REGISTRY, username="ziplineai", password="my-token")
+
+
+# --- install release resolution ---
+
+
+class TestInstallReleaseResolution:
+    """Tests for the default --release resolution logic in the install command."""
+
+    @patch("ai.chronon.repo.admin._check_docker_available")
+    @patch("ai.chronon.repo.admin._load_from_docker_hub")
+    @patch("ai.chronon.repo.admin.get_package_version", return_value="1.0.15")
+    def test_defaults_to_package_version(self, mock_version, mock_load, mock_docker):
+        mock_load.return_value = []
+        runner = CliRunner()
+        result = runner.invoke(admin, ["install", "gcp", "--registry", "local"])
+        assert result.exit_code == 0
+        assert "Using release 1.0.15" in result.output
+        mock_load.assert_called_once()
+        assert mock_load.call_args[0][2] == "1.0.15"
+
+    @patch("ai.chronon.repo.admin._check_docker_available")
+    @patch("ai.chronon.repo.admin._load_from_docker_hub")
+    @patch("ai.chronon.repo.admin.get_package_version", return_value="unknown")
+    def test_falls_back_to_latest_when_package_not_installed(self, mock_version, mock_load, mock_docker):
+        mock_load.return_value = []
+        runner = CliRunner()
+        result = runner.invoke(admin, ["install", "gcp", "--registry", "local"])
+        assert result.exit_code == 0
+        assert "Using release latest" in result.output
+        mock_load.assert_called_once()
+        assert mock_load.call_args[0][2] == "latest"
+
+    @patch("ai.chronon.repo.admin._check_docker_available")
+    @patch("ai.chronon.repo.admin._load_from_docker_hub")
+    @patch("ai.chronon.repo.admin.get_package_version", return_value="1.0.15")
+    def test_explicit_release_matching_version_no_prompt(self, mock_version, mock_load, mock_docker):
+        mock_load.return_value = []
+        runner = CliRunner()
+        result = runner.invoke(admin, ["install", "gcp", "--registry", "local", "--release", "1.0.15"])
+        assert result.exit_code == 0
+        assert "does not match" not in result.output
+        mock_load.assert_called_once()
+        assert mock_load.call_args[0][2] == "1.0.15"
+
+    @patch("ai.chronon.repo.admin._check_docker_available")
+    @patch("ai.chronon.repo.admin._load_from_docker_hub")
+    @patch("ai.chronon.repo.admin.get_package_version", return_value="1.0.15")
+    def test_mismatched_release_confirmed_proceeds(self, mock_version, mock_load, mock_docker):
+        mock_load.return_value = []
+        runner = CliRunner()
+        result = runner.invoke(admin, ["install", "gcp", "--registry", "local", "--release", "1.0.14"], input="y\n")
+        assert result.exit_code == 0
+        assert "does not match installed zipline cli version 1.0.15" in result.output
+        mock_load.assert_called_once()
+        assert mock_load.call_args[0][2] == "1.0.14"
+
+    @patch("ai.chronon.repo.admin._check_docker_available")
+    @patch("ai.chronon.repo.admin._load_from_docker_hub")
+    @patch("ai.chronon.repo.admin.get_package_version", return_value="1.0.15")
+    def test_mismatched_release_declined_aborts(self, mock_version, mock_load, mock_docker):
+        mock_load.return_value = []
+        runner = CliRunner()
+        result = runner.invoke(admin, ["install", "gcp", "--registry", "local", "--release", "1.0.14"], input="n\n")
+        assert result.exit_code == 1
+        assert "does not match installed zipline cli version 1.0.15" in result.output
+        mock_load.assert_not_called()
+
+    @patch("ai.chronon.repo.admin._check_docker_available")
+    @patch("ai.chronon.repo.admin._load_from_docker_hub")
+    @patch("ai.chronon.repo.admin.get_package_version", return_value="unknown")
+    def test_mismatched_release_skips_prompt_when_version_unknown(self, mock_version, mock_load, mock_docker):
+        mock_load.return_value = []
+        runner = CliRunner()
+        result = runner.invoke(admin, ["install", "gcp", "--registry", "local", "--release", "1.0.14"])
+        assert result.exit_code == 0
+        assert "does not match" not in result.output
+        mock_load.assert_called_once()
+        assert mock_load.call_args[0][2] == "1.0.14"

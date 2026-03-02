@@ -2,7 +2,7 @@ package ai.chronon.integrations.cloud_gcp
 
 import ai.chronon.spark.submission.StorageClient
 import com.google.cloud.storage.Storage.BlobListOption
-import com.google.cloud.storage.{BlobId, Storage, StorageOptions}
+import com.google.cloud.storage.{BlobId, BlobInfo, Storage, StorageOptions}
 
 import scala.jdk.CollectionConverters._
 
@@ -43,6 +43,12 @@ class GCSClient(storageClient: Storage) extends StorageClient {
   override def downloadObjectToMemory(objectPath: String): Array[Byte] = {
     val blobId = BlobId.fromGsUtilUri(objectPath)
     downloadObjectToMemory(blobId.getBucket, blobId.getName)
+  }
+
+  override def upload(objectPath: String, content: Array[Byte]): Unit = {
+    val blobId = BlobId.fromGsUtilUri(objectPath)
+    val blobInfo = BlobInfo.newBuilder(blobId).build()
+    storageClient.create(blobInfo, content)
   }
 }
 

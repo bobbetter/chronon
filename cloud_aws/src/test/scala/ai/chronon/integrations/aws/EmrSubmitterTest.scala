@@ -49,7 +49,7 @@ class EmrSubmitterTest extends AnyFlatSpec with MockitoSugar {
       labels = Map.empty,
       expectedApplicationArgs: _*
     )
-    assertEquals(submittedStepId, stepId)
+    assertEquals(submittedStepId, s"$clusterId:$stepId")
 
     val actualRequest = requestCaptor.getValue
 

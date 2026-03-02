@@ -171,7 +171,7 @@ class KyuubiSubmitterTest extends AnyFlatSpec with MockitoSugar {
       s"$ZiplineVersionArgKeyword=1.0.0"
     )
 
-    val filtered = KyuubiSubmitter.getApplicationArgs(SparkJob, args)
+    val filtered = JobSubmitter.getApplicationArgs(SparkJob, args)
 
     assert(filtered.length == 1)
     assert(filtered(0) == "--user-arg=value")

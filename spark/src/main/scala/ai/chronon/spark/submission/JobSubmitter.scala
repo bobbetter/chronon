@@ -9,6 +9,7 @@ import ai.chronon.api.{JobStatusType, MetaData, ThriftJsonCodec}
 import ai.chronon.api.thrift.TBase
 import org.slf4j.{Logger, LoggerFactory}
 
+import scala.concurrent.ExecutionContext
 import scala.reflect.ClassTag
 
 sealed trait JobType
@@ -28,10 +29,58 @@ trait JobSubmitter {
   def status(jobId: String): JobStatusType
 
   def kill(jobId: String): Unit
+
+  // --- URL methods ---
+
+  def getJobUrl(jobId: String): Option[String] = None
+
+  def getSparkUrl(jobId: String): Option[String] = None
+
+  def getFlinkUrl(jobId: String): Option[String] = None
+
+  // --- Lifecycle methods ---
+
+  def close(): Unit = {}
+
+  def ensureClusterReady(clusterName: String, clusterConf: Option[Map[String, String]])(implicit
+      ec: ExecutionContext): Option[String] = Some(clusterName)
+
+  // --- Platform hooks (override per cloud) ---
+
+  /** Deprecated env var names for cluster name. Override per cloud for backwards compatibility.
+    * NodeSubmitter checks these after SparkClusterNameEnvVar.
+    */
+  def deprecatedClusterNameEnvVars: Seq[String] = Seq.empty
+
+  def jarName: String = ""
+  def flinkJarName: String = "flink_assembly_deploy.jar"
+  def onlineClass: String = ""
+  def tablePartitionsDataset: String = ""
+  def dqMetricsDataset: String = ""
+
+  def resolveConfPath(stagedFileUri: String): String = stagedFileUri.split("/").last
+
+  def kvStoreApiProperties: Map[String, String] = Map.empty
+
+  def buildFlinkPlatformArgs(env: Map[String, String], version: String, artifactPrefix: String): Seq[String] = Seq.empty
+
+  /** Key used in submissionProperties to pass the cluster identifier to submit().
+    * Override per cloud: GCP uses ClusterName, AWS uses ClusterId.
+    */
+  def clusterIdentifierKey: String = JobSubmitterConstants.ClusterName
 }
 
 object JobSubmitter {
   @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
+
+  def getApplicationArgs(jobType: JobType, args: Array[String]): Array[String] = {
+    val userArgs = args.filter(arg => !JobSubmitterConstants.SharedInternalArgs.exists(arg.startsWith))
+    jobType match {
+      case FlinkJob =>
+        userArgs.filter(arg => !arg.startsWith(JobSubmitterConstants.ConfTypeArgKeyword))
+      case _ => userArgs
+    }
+  }
 
   def getArgValue(args: Array[String], argKeyword: String): Option[String] = {
     args
@@ -135,10 +184,6 @@ object JobSubmitter {
 
 }
 
-abstract class JobAuth {
-  def token(): Unit = {}
-}
-
 object JobSubmitterConstants {
   val MainClass = "mainClass"
   val JarURI = "jarUri"
@@ -160,6 +205,12 @@ object JobSubmitterConstants {
 
   val SparkJobType = "spark"
   val FlinkJobType = "flink"
+
+  // Main class constants
+  val BatchRunnerClass = "ai.chronon.spark.batch.BatchNodeRunner"
+  val KVUploadRunnerClass = "ai.chronon.spark.kv_store.KVUploadNodeRunner"
+  val ModelRunnerClass = "ai.chronon.spark.model.ModelNodeRunner"
+  val FlinkMainClass = "ai.chronon.flink.FlinkJob"
 
   // EMR specific properties
   val ClusterInstanceCount = "clusterInstanceCount"
@@ -241,7 +292,9 @@ object JobSubmitterConstants {
   val GcpLocationEnvVar = "GCP_LOCATION"
   // Deprecated: Use ClusterNameEnvVar instead
   val GcpDataprocClusterNameEnvVar = "GCP_DATAPROC_CLUSTER_NAME"
-  val GcpEnableUploadKVClientEnvVar = "ENABLE_UPLOAD_CLIENTS"
+  val EnableUploadKVClientEnvVar = "ENABLE_UPLOAD_CLIENTS"
+  @deprecated("Use EnableUploadKVClientEnvVar", "")
+  val GcpEnableUploadKVClientEnvVar = EnableUploadKVClientEnvVar
 
   // AWS-specific environment variables
   // Deprecated: Use ClusterNameEnvVar instead

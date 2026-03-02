@@ -72,9 +72,9 @@ trait FlinkModule extends Cross.Module[String] with build.BaseModule {
         .exclude("log4j" -> "log4j"),
       mvn"org.apache.hadoop:hadoop-client-runtime:3.3.6",
       // Force correct Jackson versions
-      mvn"com.fasterxml.jackson.core:jackson-core:2.15.2",
-      mvn"com.fasterxml.jackson.core:jackson-databind:2.15.2",
-      mvn"com.fasterxml.jackson.core:jackson-annotations:2.15.2"
+      mvn"com.fasterxml.jackson.core:jackson-core:${build.Constants.jacksonVersion}",
+      mvn"com.fasterxml.jackson.core:jackson-databind:${build.Constants.jacksonVersion}",
+      mvn"com.fasterxml.jackson.core:jackson-annotations:${build.Constants.jacksonVersion}"
     )
   }
 }

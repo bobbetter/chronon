@@ -1,6 +1,7 @@
 package ai.chronon.integrations.cloud_gcp
 import ai.chronon.api.Builders.MetaData
 import ai.chronon.api.JobStatusType
+import ai.chronon.spark.submission.JobSubmitterConstants
 import ai.chronon.spark.submission.JobSubmitterConstants._
 import ai.chronon.spark.submission.{JobSubmitter, JobType, FlinkJob => TypeFlinkJob, SparkJob => TypeSparkJob}
 import com.google.api.gax.rpc.ApiException
@@ -8,7 +9,9 @@ import com.google.cloud.dataproc.v1._
 import com.google.cloud.storage.{Storage, StorageOptions}
 import com.google.protobuf.util.JsonFormat
 
+import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters._
+import scala.util.matching.Regex
 
 case class MoreThanOneRunningFlinkJob(message: String) extends Exception(message)
 
@@ -17,7 +20,13 @@ case class NoRunningFlinkJob(message: String) extends Exception(message)
 class DataprocSubmitter(jobControllerClient: JobControllerClient,
                         gcsClient: GCSClient,
                         val region: String,
-                        val projectId: String)
+                        val projectId: String,
+                        clusterControllerClient: Option[ClusterControllerClient] = None,
+                        rawStorageClient: Option[Storage] = None,
+                        bigtableInstanceId: String = "",
+                        override val tablePartitionsDataset: String = "",
+                        override val dqMetricsDataset: String = "",
+                        flinkHealthCheckFn: Option[String] => Boolean = _ => true)
     extends JobSubmitter {
 
   def listRunningGroupByFlinkJobs(groupByName: String): List[String] = {
@@ -94,22 +103,73 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
 
   override def status(jobId: String): JobStatusType = {
     try {
-      val currentJob: Job = jobControllerClient.getJob(projectId, region, jobId)
-      currentJob.getStatus.getState match {
-        case JobStatus.State.PENDING                              => JobStatusType.PENDING
-        case JobStatus.State.ERROR                                => JobStatusType.FAILED
-        case JobStatus.State.DONE                                 => JobStatusType.SUCCEEDED
-        case JobStatus.State.RUNNING | JobStatus.State.SETUP_DONE => JobStatusType.RUNNING
+      val job: Job = jobControllerClient.getJob(projectId, region, jobId)
+
+      val isFlinkJob = job.getTypeJobCase == Job.TypeJobCase.FLINK_JOB
+      lazy val isRunningAndHealthy =
+        job.getStatus.getState == JobStatus.State.RUNNING && flinkHealthCheckFn(getFlinkUrl(jobId))
+
+      val jobStatusType = job.getStatus.getState match {
+        case JobStatus.State.PENDING                                       => JobStatusType.PENDING
+        case JobStatus.State.ERROR                                         => JobStatusType.FAILED
+        case JobStatus.State.DONE                                          => JobStatusType.SUCCEEDED
+        case JobStatus.State.RUNNING if isFlinkJob && isRunningAndHealthy  => JobStatusType.RUNNING
+        case JobStatus.State.RUNNING if isFlinkJob && !isRunningAndHealthy => JobStatusType.PENDING
+        case JobStatus.State.RUNNING | JobStatus.State.SETUP_DONE          => JobStatusType.RUNNING
         case JobStatus.State.CANCEL_STARTED | JobStatus.State.CANCEL_PENDING | JobStatus.State.CANCELLED =>
           JobStatusType.FAILED
         case _ => JobStatusType.UNKNOWN
       }
 
+      emitJobRuntimeMetrics(job, jobStatusType)
+      jobStatusType
     } catch {
-
       case e: ApiException =>
         logger.error(s"Error monitoring job: ${e.getMessage}")
-        JobStatusType.UNKNOWN // If there's an error, we return UNKNOWN status
+        JobStatusType.UNKNOWN
+    }
+  }
+
+  private def emitJobRuntimeMetrics(job: Job, jobStatusType: JobStatusType): Unit = {
+    import ai.chronon.online.metrics.Metrics
+
+    val isTerminalState = jobStatusType match {
+      case JobStatusType.SUCCEEDED | JobStatusType.FAILED | JobStatusType.CANCELLED => true
+      case _                                                                        => false
+    }
+
+    if (isTerminalState) {
+      try {
+        val placement = job.getPlacement
+        val submittedTime = if (job.getStatusHistoryList.asScala.nonEmpty) {
+          job.getStatusHistoryList.asScala.head.getStateStartTime
+        } else null
+
+        val endTime = job.getStatus.getStateStartTime
+
+        if (submittedTime != null && endTime != null) {
+          val runtimeMillis = (endTime.getSeconds - submittedTime.getSeconds) * 1000
+
+          val ctx = Metrics.Context(Metrics.Environment.Orchestrator)
+
+          val jobType = job.getTypeJobCase match {
+            case Job.TypeJobCase.SPARK_JOB => "spark"
+            case Job.TypeJobCase.FLINK_JOB => "flink"
+            case _                         => "unknown"
+          }
+
+          val tags = Map(
+            "job_type" -> jobType,
+            "status" -> jobStatusType.toString,
+            "cluster" -> placement.getClusterName
+          )
+
+          ctx.distribution("job.runtime.millis", runtimeMillis, tags)
+        }
+      } catch {
+        case ex: Exception =>
+          logger.warn(s"Failed to emit job runtime metrics for job ${job.getReference.getJobId}", ex)
+      }
     }
   }
 
@@ -124,7 +184,7 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
                       files: List[String],
                       labels: Map[String, String],
                       rawArgs: String*): String = {
-    val args = DataprocSubmitter.getApplicationArgs(
+    val args = JobSubmitter.getApplicationArgs(
       jobType = jobType,
       args = rawArgs.toArray
     )
@@ -497,6 +557,131 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
       Some(matchedIds.head)
     }
   }
+
+  // --- Phase 1+2 overrides ---
+
+  override def jarName: String = "cloud_gcp_lib_deploy.jar"
+  override def onlineClass: String = "ai.chronon.integrations.cloud_gcp.GcpApiImpl"
+
+  override def getJobUrl(jobId: String): Option[String] =
+    Some(s"https://console.cloud.google.com/dataproc/jobs/$jobId?region=$region&project=$projectId")
+
+  private val yarnAppIdPattern: Regex = """application_\d+_\d+""".r
+
+  private def extractYarnAppIdFromTrackingUrl(trackingUrl: String): Option[String] =
+    yarnAppIdPattern.findFirstIn(trackingUrl)
+
+  override def getSparkUrl(jobId: String): Option[String] = {
+    clusterControllerClient.flatMap { ccClient =>
+      val dataprocJob = jobControllerClient.getJob(
+        GetJobRequest.newBuilder().setProjectId(projectId).setRegion(region).setJobId(jobId).build())
+      val clusterId = dataprocJob.getPlacement.getClusterName
+      for {
+        headApp <- dataprocJob.getYarnApplicationsList.asScala.filterNot(_.getName.contains("Flink")).headOption
+        appId <- extractYarnAppIdFromTrackingUrl(headApp.getTrackingUrl)
+        cluster <- Option(ccClient.getCluster(projectId, region, clusterId))
+        config <- Option(cluster.getConfig)
+        endpoint <- Option(config.getEndpointConfig)
+        addr <- Option(endpoint.getHttpPortsMap.get("Spark History Server")).map(_.stripSuffix("/"))
+      } yield s"$addr/history/$appId"
+    }
+  }
+
+  override def getFlinkUrl(jobId: String): Option[String] = {
+    clusterControllerClient.flatMap { ccClient =>
+      val dataprocJob = jobControllerClient.getJob(
+        GetJobRequest.newBuilder().setProjectId(projectId).setRegion(region).setJobId(jobId).build())
+      val clusterId = dataprocJob.getPlacement.getClusterName
+      for {
+        flinkApp <- dataprocJob.getYarnApplicationsList.asScala.find(app =>
+          app.getName.contains("Flink") && app.getState == YarnApplication.State.RUNNING)
+        appId <- extractYarnAppIdFromTrackingUrl(flinkApp.getTrackingUrl)
+        cluster <- Option(ccClient.getCluster(projectId, region, clusterId))
+        config <- Option(cluster.getConfig)
+        endpoint <- Option(config.getEndpointConfig)
+        yarnResourceManagerUrl <- Option(endpoint.getHttpPortsMap.get("YARN ResourceManager")).map(_.stripSuffix("/"))
+      } yield {
+        val baseUrl = yarnResourceManagerUrl.stripSuffix("/yarn")
+        s"$baseUrl/gateway/default/yarn/proxy/$appId/"
+      }
+    }
+  }
+
+  override def deprecatedClusterNameEnvVars: Seq[String] = Seq(GcpDataprocClusterNameEnvVar)
+
+  override def ensureClusterReady(clusterName: String, clusterConf: Option[Map[String, String]])(implicit
+      ec: ExecutionContext): Option[String] = {
+    clusterControllerClient match {
+      case None => Some(clusterName)
+      case Some(ccClient) =>
+        try {
+          val cluster = ccClient.getCluster(projectId, region, clusterName)
+          if (cluster == null) {
+            triggerAsyncClusterCreation(clusterName, clusterConf, ccClient)
+            None
+          } else {
+            cluster.getStatus.getState match {
+              case ClusterStatus.State.RUNNING | ClusterStatus.State.UPDATING =>
+                Some(clusterName)
+              case ClusterStatus.State.UNKNOWN | ClusterStatus.State.CREATING | ClusterStatus.State.STARTING |
+                  ClusterStatus.State.REPAIRING =>
+                logger.info(s"Cluster $clusterName not ready (state: ${cluster.getStatus.getState}).")
+                None
+              case state =>
+                throw new IllegalStateException(
+                  s"Cluster $clusterName is in state $state and cannot be used for job submission.")
+            }
+          }
+        } catch {
+          case _: com.google.api.gax.rpc.NotFoundException =>
+            triggerAsyncClusterCreation(clusterName, clusterConf, ccClient)
+            None
+          case ex: Exception =>
+            logger.error(s"Error checking cluster $clusterName readiness", ex)
+            throw ex
+        }
+    }
+  }
+
+  private def triggerAsyncClusterCreation(clusterName: String,
+                                          clusterConf: Option[Map[String, String]],
+                                          ccClient: ClusterControllerClient)(implicit ec: ExecutionContext): Unit = {
+    if (clusterConf.isDefined && clusterConf.get.contains("dataproc.config")) {
+      logger.info(s"Cluster $clusterName not found. Triggering creation asynchronously.")
+      Future {
+        DataprocSubmitter.getOrCreateCluster(clusterName, clusterConf, projectId, region, ccClient)
+      }.recover { case ex: Exception =>
+        logger.error(s"Failed to create cluster $clusterName asynchronously", ex)
+      }
+    }
+  }
+
+  override def close(): Unit = {
+    try {
+      jobControllerClient.shutdown()
+      clusterControllerClient.foreach(_.shutdown())
+    } catch {
+      case _: Exception => logger.info("Error shutting down GCP clients.")
+    }
+  }
+
+  override def kvStoreApiProperties: Map[String, String] = Map(
+    GcpProjectIdEnvVar -> projectId,
+    GcpBigtableInstanceIdEnvVar -> bigtableInstanceId,
+    GcpLocationEnvVar -> region
+  )
+
+  override def buildFlinkPlatformArgs(env: Map[String, String],
+                                      version: String,
+                                      artifactPrefix: String): Seq[String] = {
+    val enablePubSub = env.getOrElse("ENABLE_PUBSUB", "false").toBoolean
+    if (enablePubSub) {
+      val pubSubConnectorJarUri = s"$artifactPrefix/release/$version/jars/connectors_pubsub_deploy.jar"
+      Seq(s"$FlinkPubSubJarUriArgKeyword=$pubSubConnectorJarUri")
+    } else {
+      Seq.empty
+    }
+  }
 }
 
 object DataprocSubmitter {
@@ -505,7 +690,11 @@ object DataprocSubmitter {
             storageClient: Storage,
             region: String,
             projectId: String): DataprocSubmitter = {
-    new DataprocSubmitter(jobControllerClient, GCSClient(storageClient), region, projectId)
+    new DataprocSubmitter(jobControllerClient,
+                          GCSClient(storageClient),
+                          region,
+                          projectId,
+                          rawStorageClient = Some(storageClient))
   }
 
   private[cloud_gcp] def getDataprocFilesArgs(args: Array[String] = Array.empty): List[String] = {
@@ -516,23 +705,6 @@ object DataprocSubmitter {
       gcsFilesArgs(0).split("=")(1).split(",")
     }
     gcsFiles.toList
-  }
-
-  private[cloud_gcp] def getApplicationArgs(jobType: JobType, args: Array[String]) = {
-    val internalArgs = SharedInternalArgs
-    val userArgs = args.filter(arg => !internalArgs.exists(arg.startsWith))
-    val finalArgs = jobType match {
-      case TypeSparkJob => {
-        Array.concat(userArgs)
-      }
-      case TypeFlinkJob => {
-        val additionalArgsToFilterOut = Set(
-          ConfTypeArgKeyword
-        )
-        userArgs.filter(arg => !additionalArgsToFilterOut.exists(arg.startsWith))
-      }
-    }
-    finalArgs
   }
 
   private def validateOnlyOneFlinkSavepointDeploymentStrategySet(args: Array[String]): Unit = {

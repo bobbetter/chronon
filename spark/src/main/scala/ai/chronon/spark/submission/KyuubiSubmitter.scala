@@ -89,7 +89,13 @@ object KyuubiUtils {
 class KyuubiSubmitter private[submission] (
     baseUrl: String,
     private val kyuubiClient: KyuubiClient,
-    storageClient: Option[StorageClient]
+    storageClient: Option[StorageClient],
+    sparkHistoryServerUrl: Option[String] = None,
+    override val jarName: String = "",
+    override val onlineClass: String = "",
+    override val tablePartitionsDataset: String = "",
+    override val dqMetricsDataset: String = "",
+    override val kvStoreApiProperties: Map[String, String] = Map.empty
 ) extends JobSubmitter {
 
   /** List running Flink jobs for a given GroupBy name.
@@ -224,7 +230,7 @@ class KyuubiSubmitter private[submission] (
       labels: Map[String, String],
       rawArgs: String*
   ): String = {
-    val args = KyuubiSubmitter.getApplicationArgs(jobType, rawArgs.toArray)
+    val args = JobSubmitter.getApplicationArgs(jobType, rawArgs.toArray)
     val mainClass = submissionProperties.getOrElse(MainClass, throw new RuntimeException("Main class not found"))
     val jarUri = submissionProperties.getOrElse(JarURI, throw new RuntimeException("Jar URI not found"))
     val metadataName =
@@ -473,33 +479,63 @@ class KyuubiSubmitter private[submission] (
       Some(matchedIds.head)
     }
   }
+
+  override def getSparkUrl(jobId: String): Option[String] = {
+    try {
+      val batchStatus = kyuubiClient.getBatchStatus(jobId)
+      batchStatus.appId match {
+        case Some(sparkAppId) =>
+          sparkHistoryServerUrl match {
+            case Some(shsUrl) =>
+              Some(s"${shsUrl.stripSuffix("/")}/history/$sparkAppId/jobs/")
+            case None => batchStatus.appUrl
+          }
+        case None => None
+      }
+    } catch {
+      case e: Exception =>
+        logger.error(s"Failed to get Spark URL for job $jobId: ${e.getMessage}", e)
+        None
+    }
+  }
+
+  override def close(): Unit = {
+    try {
+      kyuubiClient.close()
+    } catch {
+      case _: Exception => logger.info("Error shutting down Kyuubi client.")
+    }
+  }
 }
 
 object KyuubiSubmitter {
 
   @transient lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  /** Factory method to create KyuubiSubmitter.
-    *
-    * @param baseUrl The base URL of the Kyuubi server (e.g., "http://kyuubi-server:10099")
-    * @param auth Authentication configuration for the Kyuubi server
-    * @param storageClient Optional storage client for Flink checkpoint management
-    * @return A new KyuubiSubmitter instance
-    */
   def apply(
       baseUrl: String,
       auth: KyuubiAuth = KyuubiAuth.NoAuth,
-      storageClient: Option[StorageClient] = None
+      storageClient: Option[StorageClient] = None,
+      sparkHistoryServerUrl: Option[String] = None,
+      jarName: String = "",
+      onlineClass: String = "",
+      tablePartitionsDataset: String = "",
+      dqMetricsDataset: String = "",
+      kvStoreApiProperties: Map[String, String] = Map.empty
   ): KyuubiSubmitter = {
     val client = KyuubiClient(baseUrl, auth)
-    new KyuubiSubmitter(baseUrl, client, storageClient)
+    new KyuubiSubmitter(baseUrl,
+                        client,
+                        storageClient,
+                        sparkHistoryServerUrl,
+                        jarName,
+                        onlineClass,
+                        tablePartitionsDataset,
+                        dqMetricsDataset,
+                        kvStoreApiProperties)
   }
 
-  /** Factory method for testing with a mock client.
-    *
-    * @param kyuubiClient The Kyuubi client (can be mocked)
-    * @return A new KyuubiSubmitter instance
-    */
+  /** Factory method for testing with a mock client. */
   def apply(kyuubiClient: KyuubiClient): KyuubiSubmitter = {
     new KyuubiSubmitter(kyuubiClient.baseUrl, kyuubiClient, None)
   }
@@ -515,24 +551,6 @@ object KyuubiSubmitter {
       List.empty
     } else {
       filesArgs(0).split("=")(1).split(",").toList
-    }
-  }
-
-  /** Filter application args, removing internal/framework args.
-    *
-    * @param jobType The job type
-    * @param args Command-line arguments
-    * @return Filtered arguments
-    */
-  private[submission] def getApplicationArgs(jobType: JobType, args: Array[String]): Array[String] = {
-    val internalArgs = SharedInternalArgs
-    val userArgs = args.filter(arg => !internalArgs.exists(arg.startsWith))
-
-    jobType match {
-      case SparkJob => userArgs
-      case FlinkJob =>
-        val additionalArgsToFilterOut = Set(ConfTypeArgKeyword)
-        userArgs.filter(arg => !additionalArgsToFilterOut.exists(arg.startsWith))
     }
   }
 
