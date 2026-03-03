@@ -77,7 +77,8 @@
           }
         }
       },
-      "offlineSchedule": "@daily"
+      "offlineSchedule": "@daily",
+      "stepDays": 30
     },
     "name": "gcp.sample_staging_query.purchases_labels__0",
     "outputNamespace": "data",
@@ -88,7 +89,7 @@
     "team": "gcp",
     "version": "0"
   },
-  "query": "\nSELECT \n    *,\n    case when rand() < 0.5 then 0 else 1 end as label\nFROM data.gcp_training_set_v1_test__0\nWHERE ds BETWEEN {{ start_date }} AND {{ end_date }}\n",
+  "query": "\nSELECT\n    *,\n    case when rand() < 0.5 then 0 else 1 end as label\nFROM data.gcp_training_set_v1_test__0\nWHERE ds BETWEEN {{ start_date }} AND {{ end_date }}\n",
   "tableDependencies": [
     {
       "endOffset": {

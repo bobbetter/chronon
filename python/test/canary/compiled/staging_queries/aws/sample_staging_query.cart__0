@@ -87,7 +87,8 @@
           }
         }
       },
-      "offlineSchedule": "@daily"
+      "offlineSchedule": "@daily",
+      "stepDays": 30
     },
     "name": "aws.sample_staging_query.cart__0",
     "outputNamespace": "data",

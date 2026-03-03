@@ -7,9 +7,9 @@ import ai.chronon.api.ScalaJavaConversions.{IterableOps, MapOps}
 import ai.chronon.spark.batch.StagingQuery
 import ai.chronon.spark.catalog.{Format, TableUtils}
 
-import java.net.URI
 import java.sql.{Connection, DriverManager, Statement}
 import java.util.{Properties, UUID}
+import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 
 /** Snowflake staging query implementation with key pair authentication.
@@ -48,52 +48,23 @@ class SnowflakeImport(stagingQueryConf: api.StagingQuery, endPartition: String, 
   // URL should include all connection params except credentials, e.g.:
   // jdbc:snowflake://account.snowflakecomputing.com/?user=x&db=y&schema=z&warehouse=w
   private[cloud_azure] lazy val snowflakeJdbcUrl: String = {
-    val jdbcUrl = envVars.getOrElse(
-      "SNOWFLAKE_JDBC_URL",
-      throw new IllegalStateException(
-        "SNOWFLAKE_JDBC_URL not set in metaData.executionInfo.env " +
-          "(e.g., jdbc:snowflake://account.snowflakecomputing.com/?user=x&db=y&schema=z&warehouse=w)")
+    val jdbcUrl = SnowflakeConnector.validateJdbcUrl(
+      envVars.getOrElse(
+        "SNOWFLAKE_JDBC_URL",
+        throw new IllegalStateException(
+          "SNOWFLAKE_JDBC_URL not set in metaData.executionInfo.env " +
+            "(e.g., jdbc:snowflake://account.snowflakecomputing.com/?user=x&db=y&schema=z&warehouse=w)")
+      )
     )
-    if (!jdbcUrl.startsWith("jdbc:snowflake://")) {
-      throw new IllegalStateException(s"SNOWFLAKE_JDBC_URL must start with 'jdbc:snowflake://'. Got: $jdbcUrl")
-    }
     // Append MULTI_STATEMENT_COUNT=0 to enable multi-statement execution for BEGIN...END blocks
-    if (jdbcUrl.contains("?")) {
-      s"$jdbcUrl&MULTI_STATEMENT_COUNT=0"
-    } else {
-      s"$jdbcUrl?MULTI_STATEMENT_COUNT=0"
-    }
+    if (jdbcUrl.contains("?")) s"$jdbcUrl&MULTI_STATEMENT_COUNT=0"
+    else s"$jdbcUrl?MULTI_STATEMENT_COUNT=0"
   }
 
-  /** Fetches the PEM-encoded private key content using tiered lookup:
-    * 1. SNOWFLAKE_PRIVATE_KEY from system environment (can be set via spark.driverEnv/executorEnv)
-    * 2. SNOWFLAKE_VAULT_URI from staging query configuration (Azure Key Vault)
-    * 3. Throws exception with helpful message if neither is found
-    *
-    * @return The PEM-encoded private key string
-    */
+  // System env takes precedence (spark.driverEnv/executorEnv), then staging query config env
   private[cloud_azure] def getPrivateKeyPem(): String = {
-    // Try system environment first (from spark.driverEnv/executorEnv)
-    Option(System.getenv("SNOWFLAKE_PRIVATE_KEY")) match {
-      case Some(privateKey) =>
-        logger.info("Using private key from SNOWFLAKE_PRIVATE_KEY system environment variable")
-        privateKey
-      case None =>
-        // Fall back to vault URI from staging query configuration
-        envVars.get("SNOWFLAKE_VAULT_URI") match {
-          case Some(vaultUri) =>
-            logger.info(s"Using private key from Azure Key Vault: $vaultUri")
-            val (vaultUrl, secretName) = AzureKeyVaultHelper.parseSecretUri(vaultUri)
-            AzureKeyVaultHelper.getSecret(vaultUrl, secretName)
-          case None =>
-            throw new IllegalStateException(
-              "Snowflake private key not found. Please provide one of the following:\n" +
-                "  1. SNOWFLAKE_PRIVATE_KEY system environment variable (via --conf spark.driverEnv.SNOWFLAKE_PRIVATE_KEY), or\n" +
-                "  2. SNOWFLAKE_VAULT_URI in staging query configuration (metaData.executionInfo.env.common) " +
-                "with Azure Key Vault URI (e.g., https://<vault-name>.vault.azure.net/secrets/<secret-name>)"
-            )
-        }
-    }
+    val sysEnv = System.getenv().asScala.toMap
+    SnowflakeConnector.getPrivateKeyPem(envVars ++ sysEnv)
   }
 
   // Connection properties with authentication configured
@@ -330,34 +301,8 @@ class SnowflakeImport(stagingQueryConf: api.StagingQuery, endPartition: String, 
         range.end,
         endPartition
       )
-    val jdbcParams: Map[String, String] = {
-      val queryString = new URI(snowflakeJdbcUrl.replace("jdbc:snowflake://", "http://")).getQuery
-      queryString.split("&").map(_.split("=")).map(kv => kv(0) -> kv(1)).toMap
-    }
-    // Get the PEM Base64 content for Snowflake connector (without headers)
-    val pemContent = getPrivateKeyPem()
-    // Extract Base64 content by removing PEM headers and whitespace
-    val pemBase64 = pemContent
-      .replaceAll("-----BEGIN.*-----", "")
-      .replaceAll("-----END.*-----", "")
-      .replaceAll("\\s", "")
-
-    val sfOptions = Map(
-      "sfURL" -> snowflakeJdbcUrl.split("\\?").head.replace("jdbc:snowflake://", ""),
-      "pem_private_key" -> pemBase64,
-      "sfUser" -> jdbcParams.getOrElse("user", throw new Exception("User missing in JDBC URL")),
-      "sfDatabase" -> jdbcParams.getOrElse("db", throw new Exception("DB missing in JDBC URL")),
-      "sfSchema" -> jdbcParams.getOrElse("schema", throw new Exception("Schema missing in JDBC URL")),
-      "sfWarehouse" -> jdbcParams.getOrElse("warehouse", throw new Exception("Warehouse missing in JDBC URL"))
-    )
-    // 2. Read from Snowflake Native Table
-    val snowflakeDF = tableUtils.sparkSession.read
-      .format("net.snowflake.spark.snowflake")
-      .options(sfOptions)
-      .option("query", renderedQuery)
-      .load()
-
-    val df = snowflakeDF.toDF(snowflakeDF.columns.map(_.toLowerCase): _*)
+    val sfOptions = SnowflakeConnector.buildSparkConnectorOptions(snowflakeJdbcUrl, getPrivateKeyPem())
+    val df = SnowflakeConnector.read(tableUtils.sparkSession, sfOptions, renderedQuery)
 
     val tableProps = Option(stagingQueryConf.metaData.tableProperties)
       .map(_.toScala.toMap)

@@ -13,4 +13,5 @@ FROM data.test_connection
         TableDependency(table="data.test_connection", partition_column="ds", offset=0)
     ],
     version=0,
+    step_days=30,
 )

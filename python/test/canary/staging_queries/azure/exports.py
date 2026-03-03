@@ -19,6 +19,7 @@ def get_select_star_export(table: str, partition_column: str = "ds"):
             TableDependency(table=f"{table}", partition_column=partition_column, offset=0)
         ],
         version=0,
+        step_days=30,
     )
 
 
@@ -39,6 +40,7 @@ def get_native_partition_export(table: str, partition_column: str):
             TableDependency(table=f"{table}", partition_column=partition_column, offset=0)
         ],
         version=0,
+        step_days=30,
     )
 
 

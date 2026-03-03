@@ -139,6 +139,54 @@ class StagingQueryPlannerTest extends AnyFlatSpec with Matchers {
     node.metaData.name should equal("testStagingQuery__staging")
   }
 
+  it should "staging query planner should propagate stepDays from executionInfo" in {
+    val stagingQuery = StagingQuery(
+      query = "SELECT * FROM test_table",
+      metaData = MetaData(
+        name = "testStagingQuery",
+        executionInfo = new ExecutionInfo().setStepDays(7)
+      ),
+      engineType = EngineType.SPARK
+    )
+
+    val planner = new StagingQueryPlanner(stagingQuery)
+    val plan = planner.buildPlan
+
+    val node = plan.nodes.asScala.head
+    node.metaData.executionInfo.stepDays should equal(7)
+  }
+
+  it should "staging query planner should default stepDays to 1 when executionInfo has no stepDays" in {
+    val stagingQuery = StagingQuery(
+      query = "SELECT * FROM test_table",
+      metaData = MetaData(
+        name = "testStagingQuery",
+        executionInfo = new ExecutionInfo()
+      ),
+      engineType = EngineType.SPARK
+    )
+
+    val planner = new StagingQueryPlanner(stagingQuery)
+    val plan = planner.buildPlan
+
+    val node = plan.nodes.asScala.head
+    node.metaData.executionInfo.stepDays should equal(1)
+  }
+
+  it should "staging query planner should default stepDays to 1 when no executionInfo" in {
+    val stagingQuery = StagingQuery(
+      query = "SELECT * FROM test_table",
+      metaData = MetaData(name = "testStagingQuery"),
+      engineType = EngineType.SPARK
+    )
+
+    val planner = new StagingQueryPlanner(stagingQuery)
+    val plan = planner.buildPlan
+
+    val node = plan.nodes.asScala.head
+    node.metaData.executionInfo.stepDays should equal(1)
+  }
+
   it should "staging query planner should produce same semantic hash with different executionInfo in metadata" in {
     val firstStagingQuery = StagingQuery(
       query = "SELECT * FROM test_table",

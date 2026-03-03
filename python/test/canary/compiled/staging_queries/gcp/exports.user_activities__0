@@ -78,7 +78,8 @@
           }
         }
       },
-      "offlineSchedule": "@daily"
+      "offlineSchedule": "@daily",
+      "stepDays": 30
     },
     "name": "gcp.exports.user_activities__0",
     "outputNamespace": "data",

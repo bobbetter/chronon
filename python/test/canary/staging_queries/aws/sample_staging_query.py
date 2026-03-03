@@ -19,6 +19,7 @@ def get_staging_query(category_name):
             TableDependency(table=training_set.v1_test.table, partition_column="ds", offset=1)
         ],
         version=0,
+        step_days=30,
     )
 
 cart = get_staging_query("cart")
@@ -50,6 +51,7 @@ terminal = StagingQuery(
         TableDependency(table=shipping.table, partition_column="ds", offset=1),
     ],
     version=0,
+    step_days=30,
 )
 
 purchases_labels = StagingQuery(
@@ -66,6 +68,7 @@ WHERE ds BETWEEN {{{{ start_date }}}} AND {{{{ end_date }}}}
         TableDependency(table=training_set.v1_test.table, partition_column="ds", offset=0),
     ],
     version=0,
+    step_days=30,
 )
 
 query_hub = f"""
@@ -101,5 +104,5 @@ v1_bigquery_import = StagingQuery(
         TableDependency(table=training_set.v1_hub.table, partition_column="ds", offset=0)
     ],
     version=0,
-
+    step_days=30,
 )

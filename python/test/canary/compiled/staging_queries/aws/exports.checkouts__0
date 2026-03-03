@@ -88,7 +88,8 @@
           }
         }
       },
-      "offlineSchedule": "@daily"
+      "offlineSchedule": "@daily",
+      "stepDays": 30
     },
     "name": "aws.exports.checkouts__0",
     "outputNamespace": "data",

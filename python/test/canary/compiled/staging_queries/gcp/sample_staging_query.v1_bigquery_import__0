@@ -78,7 +78,8 @@
           }
         }
       },
-      "offlineSchedule": "@daily"
+      "offlineSchedule": "@daily",
+      "stepDays": 30
     },
     "name": "gcp.sample_staging_query.v1_bigquery_import__0",
     "outputNamespace": "data",

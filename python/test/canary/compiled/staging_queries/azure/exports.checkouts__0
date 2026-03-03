@@ -41,7 +41,8 @@
           "WAREHOUSE_PREFIX": "abfss://dev-zipline-warehouse@ziplineai2.dfs.core.windows.net"
         }
       },
-      "offlineSchedule": "@daily"
+      "offlineSchedule": "@daily",
+      "stepDays": 30
     },
     "name": "azure.exports.checkouts__0",
     "outputNamespace": "data",

@@ -511,10 +511,8 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
   private def extractTimedValues(ddbResponseList: util.List[util.Map[String, AttributeValue]],
                                  defaultTimestamp: Long): Try[Seq[TimedValue]] = {
     Try {
-      ddbResponseList.toScala.map { ddbResponseMap =>
+      ddbResponseList.toScala.filterNot(_.isEmpty).map { ddbResponseMap =>
         val responseMap = ddbResponseMap.toScala
-        if (responseMap.isEmpty)
-          throw new Exception("Empty response returned from DynamoDB")
 
         val valueBytes = responseMap.get("valueBytes").map(v => v.b().asByteArray())
         if (valueBytes.isEmpty)
@@ -528,10 +526,8 @@ class DynamoDBKVStoreImpl(dynamoDbClient: DynamoDbAsyncClient, conf: Map[String,
 
   private def extractListValues(scanResponse: ScanResponse): Try[Seq[ListValue]] = {
     Try {
-      scanResponse.items().toScala.map { ddbResponseMap =>
+      scanResponse.items().toScala.filterNot(_.isEmpty).map { ddbResponseMap =>
         val responseMap = ddbResponseMap.toScala
-        if (responseMap.isEmpty)
-          throw new Exception("Empty response returned from DynamoDB")
 
         val keyBytes = responseMap.get("keyBytes").map(v => v.b().asByteArray())
         val valueBytes = responseMap.get("valueBytes").map(v => v.b().asByteArray())

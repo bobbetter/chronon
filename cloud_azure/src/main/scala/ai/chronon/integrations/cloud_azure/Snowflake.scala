@@ -5,8 +5,6 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.types.StructType
 import org.slf4j.LoggerFactory
 
-import java.net.URI
-
 /** Snowflake Format implementation for reading tables and partition metadata via Spark Snowflake connector.
   *
   * Configuration is read from environment variables (set via teams.py executionInfo.env):
@@ -56,15 +54,7 @@ case object Snowflake extends Format {
     * Uses the JDBC URL defaults for database and schema if not specified in the table name.
     */
   private def parseTableName(tableName: String): (String, String, String) = {
-    val jdbcParams = {
-      val jdbcUrl = getJdbcUrl
-      val queryString = new URI(jdbcUrl.replace("jdbc:snowflake://", "http://")).getQuery
-      if (queryString != null && queryString.nonEmpty) {
-        queryString.split("&").map(_.split("=", 2)).collect { case Array(k, v) => k -> v }.toMap
-      } else {
-        Map.empty[String, String]
-      }
-    }
+    val jdbcParams = SnowflakeConnector.parseJdbcParams(getJdbcUrl)
     val defaultDb = jdbcParams.getOrElse("db", "")
     val defaultSchema = jdbcParams.getOrElse("schema", "")
 
@@ -125,80 +115,19 @@ case object Snowflake extends Format {
 
   override def supportSubPartitionsFilter: Boolean = false
 
-  private def getJdbcUrl: String = {
-    val jdbcUrl = sys.env.getOrElse(
-      "SNOWFLAKE_JDBC_URL",
-      throw new IllegalStateException(
-        "SNOWFLAKE_JDBC_URL not found in environment. " +
-          "Expected format: jdbc:snowflake://account.snowflakecomputing.com/?user=x&db=y&schema=z&warehouse=w")
+  private def getJdbcUrl: String =
+    SnowflakeConnector.validateJdbcUrl(
+      sys.env.getOrElse(
+        "SNOWFLAKE_JDBC_URL",
+        throw new IllegalStateException(
+          "SNOWFLAKE_JDBC_URL not found in environment. " +
+            "Expected format: jdbc:snowflake://account.snowflakecomputing.com/?user=x&db=y&schema=z&warehouse=w")
+      )
     )
-    if (!jdbcUrl.startsWith("jdbc:snowflake://")) {
-      throw new IllegalStateException(s"SNOWFLAKE_JDBC_URL must start with 'jdbc:snowflake://'. Got: $jdbcUrl")
-    }
-    jdbcUrl
-  }
 
-  /** Fetches the PEM-encoded private key content using tiered lookup:
-    * 1. SNOWFLAKE_PRIVATE_KEY environment variable
-    * 2. SNOWFLAKE_VAULT_URI (Azure Key Vault)
-    * 3. Throws exception with helpful message if neither is found
-    *
-    * @return The PEM-encoded private key string
-    */
-  private def getPrivateKeyPem(): String = {
-    sys.env.get("SNOWFLAKE_PRIVATE_KEY") match {
-      case Some(privateKey) =>
-        snowflakeLogger.info("Using private key from SNOWFLAKE_PRIVATE_KEY environment variable")
-        privateKey
-      case None =>
-        sys.env.get("SNOWFLAKE_VAULT_URI") match {
-          case Some(vaultUri) =>
-            snowflakeLogger.info(s"Using private key from Azure Key Vault: $vaultUri")
-            val (vaultUrl, secretName) = AzureKeyVaultHelper.parseSecretUri(vaultUri)
-            AzureKeyVaultHelper.getSecret(vaultUrl, secretName)
-          case None =>
-            throw new IllegalStateException(
-              "Snowflake private key not found. Please provide one of the following:\n" +
-                "  1. SNOWFLAKE_PRIVATE_KEY environment variable with PEM-encoded private key content, or\n" +
-                "  2. SNOWFLAKE_VAULT_URI environment variable with Azure Key Vault URI " +
-                "(e.g., https://<vault-name>.vault.azure.net/secrets/<secret-name>)"
-            )
-        }
-    }
-  }
-
-  /** Builds the Spark Snowflake connector options from the JDBC URL and private key.
-    */
   private def getSnowflakeOptions: Map[String, String] = {
-    val jdbcUrl = getJdbcUrl
-
-    // Parse JDBC URL to extract parameters
-    val jdbcParams: Map[String, String] = {
-      val queryString = new URI(jdbcUrl.replace("jdbc:snowflake://", "http://")).getQuery
-      if (queryString != null && queryString.nonEmpty) {
-        queryString.split("&").map(_.split("=", 2)).collect { case Array(k, v) => k -> v }.toMap
-      } else {
-        Map.empty
-      }
-    }
-
-    // Get the PEM Base64 content for Snowflake connector (without headers)
-    val pemContent = getPrivateKeyPem()
-    val pemBase64 = pemContent
-      .replaceAll("-----BEGIN.*-----", "")
-      .replaceAll("-----END.*-----", "")
-      .replaceAll("\\s", "")
-
-    Map(
-      "sfURL" -> jdbcUrl.split("\\?").head.replace("jdbc:snowflake://", ""),
-      "pem_private_key" -> pemBase64,
-      "sfUser" -> jdbcParams.getOrElse("user", throw new IllegalStateException("User missing in SNOWFLAKE_JDBC_URL")),
-      "sfDatabase" -> jdbcParams.getOrElse("db", throw new IllegalStateException("DB missing in SNOWFLAKE_JDBC_URL")),
-      "sfSchema" -> jdbcParams.getOrElse("schema",
-                                         throw new IllegalStateException("Schema missing in SNOWFLAKE_JDBC_URL")),
-      "sfWarehouse" -> jdbcParams.getOrElse("warehouse",
-                                            throw new IllegalStateException("Warehouse missing in SNOWFLAKE_JDBC_URL"))
-    )
+    val pem = SnowflakeConnector.getPrivateKeyPem(sys.env)
+    SnowflakeConnector.buildSparkConnectorOptions(getJdbcUrl, pem)
   }
 
   private def queryDistinctPartitions(tableName: String,
@@ -212,14 +141,7 @@ case object Snowflake extends Format {
     snowflakeLogger.info(s"Executing partition query: $query")
 
     val sfOptions = getSnowflakeOptions
-
-    val snowflakeDF = sparkSession.read
-      .format("net.snowflake.spark.snowflake")
-      .options(sfOptions)
-      .option("query", query)
-      .load()
-
-    val df = snowflakeDF.toDF(snowflakeDF.columns.map(_.toLowerCase): _*)
+    val df = SnowflakeConnector.read(sparkSession, sfOptions, query)
 
     // Convert DataFrame to list of partition maps
     // Snowflake returns column names in uppercase, so we need to handle that
