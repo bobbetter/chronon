@@ -23,20 +23,21 @@ import org.apache.avro.Schema.Field
 import org.apache.avro.file.SeekableByteArrayInput
 import org.apache.avro.generic.{GenericData, GenericRecord}
 import org.apache.avro.io._
-import com.linkedin.avro.fastserde.FastGenericDatumReader
-import com.linkedin.avro.fastserde.FastGenericDatumWriter
+import com.linkedin.avro.fastserde.{FastGenericDatumReader, FastGenericDatumWriter, FastSerdeCache}
 import java.util.concurrent.ConcurrentHashMap
+import java.net.URLClassLoader
 
-import java.io.ByteArrayOutputStream
+import java.io.{ByteArrayOutputStream, File}
 
 class AvroCodec(val schemaStr: String) extends Serializable {
   @transient private lazy val parser = new Schema.Parser()
   @transient lazy val schema: Schema = parser.parse(schemaStr)
 
-  // we reuse a lot of intermediate
   // lazy vals so that spark can serialize & ship the codec to executors
-  @transient private lazy val datumWriter = new FastGenericDatumWriter[GenericRecord](schema)
-  @transient private lazy val datumReader = new FastGenericDatumReader[GenericRecord](schema)
+  @transient private lazy val datumWriter =
+    new FastGenericDatumWriter[GenericRecord](schema, AvroCodec.sharedFastSerdeCache)
+  @transient private lazy val datumReader =
+    new FastGenericDatumReader[GenericRecord](schema, AvroCodec.sharedFastSerdeCache)
 
   @transient private lazy val outputStream = new ByteArrayOutputStream()
   @transient private var jsonEncoder: JsonEncoder = null
@@ -130,6 +131,39 @@ class ArrayRow(values: Array[Any], millis: Long, mutation: Boolean = false) exte
 }
 
 object AvroCodec {
+
+  // JVM-wide FastSerdeCache with the correct javac classpath.
+  // Initialized lazily on the first task thread to call encode/decode.
+  // In Flink, the default FastSerdeCache fails because it captures the classpath
+  // on a ForkJoinPool thread whose context classloader is the system classloader
+  // (missing the Chronon assembly JAR). By capturing here — on a task thread whose
+  // context classloader is Flink's user-code classloader — javac sees all required
+  // Avro classes and compilation succeeds.
+  private[serde] lazy val sharedFastSerdeCache: FastSerdeCache = {
+    val classPath = buildCompileClassPath(Thread.currentThread().getContextClassLoader)
+    new FastSerdeCache(classPath)
+  }
+
+  private def buildCompileClassPath(loader: ClassLoader): String = {
+    val paths = scala.collection.mutable.Set[String]()
+    var cl = loader
+    while (cl != null) {
+      cl match {
+        case urlCl: URLClassLoader =>
+          urlCl.getURLs.foreach { url =>
+            try paths += new File(url.toURI).getAbsolutePath
+            catch { case _: Exception => paths += url.getPath }
+          }
+        case _ =>
+      }
+      cl = cl.getParent
+    }
+    Option(System.getProperty("java.class.path")).foreach { cp =>
+      paths ++= cp.split(File.pathSeparator)
+    }
+    paths.filterNot(_.isEmpty).mkString(File.pathSeparator)
+  }
+
   // creating new codecs is expensive - so we want to do it once per process
   // but at the same-time we want to avoid contention across threads - hence thread-local
   private val codecMap: ConcurrentHashMap[String, ThreadLocal[AvroCodec]] =
