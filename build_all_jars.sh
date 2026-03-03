@@ -9,13 +9,9 @@ echo "Building chronon-spark-assembly.jar..."
 echo "Building chronon-aws-assembly.jar..."
 ./mill cloud_aws.assembly
 
-echo "Building chronon-flink-assembly.jar..."
-./mill flink.assembly
-
-echo "Building flink-connectors out.jar..."
-./mill flink_connectors.kinesis.assembly
-
-echo "Building chronon-flink-aws uber-jar..."
+# flink_aws is an uber-JAR that bundles flink core, flink_connectors/kinesis,
+# cloud_aws, and Spark deps into a single JAR used by both local and remote Flink.
+echo "Building chronon-flink-aws-assembly.jar..."
 ./mill flink_aws.assembly
 
 echo "All JARs built successfully."
