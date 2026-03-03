@@ -26,7 +26,6 @@ import org.apache.avro.io._
 import com.linkedin.avro.fastserde.{FastGenericDatumReader, FastGenericDatumWriter, FastSerdeCache}
 import java.util.concurrent.ConcurrentHashMap
 import java.net.URLClassLoader
-
 import java.io.{ByteArrayOutputStream, File}
 
 class AvroCodec(val schemaStr: String) extends Serializable {
@@ -146,6 +145,7 @@ object AvroCodec {
 
   private def buildCompileClassPath(loader: ClassLoader): String = {
     val paths = scala.collection.mutable.Set[String]()
+    // Walk classloader hierarchy for URLClassLoader URLs (covers Spark executors).
     var cl = loader
     while (cl != null) {
       cl match {
@@ -159,6 +159,13 @@ object AvroCodec {
       cl = cl.getParent
     }
     Option(System.getProperty("java.class.path")).foreach { cp =>
+      paths ++= cp.split(File.pathSeparator)
+    }
+    // In Flink, java.class.path only contains /opt/flink/lib/*.jar. The user JAR
+    // is distributed via the blob store under an extensionless filename that javac
+    // can't recognize as a JAR. The CLASSPATH env var holds the original mounted
+    // path (with .jar extension) that javac can use.
+    Option(System.getenv("CLASSPATH")).foreach { cp =>
       paths ++= cp.split(File.pathSeparator)
     }
     paths.filterNot(_.isEmpty).mkString(File.pathSeparator)
