@@ -27,7 +27,7 @@ object FlinkSerDeProvider {
       case None if topicInfo.params.contains(RegistryHostKey) => SchemaRegistrySerDeClass
       case _ =>
         throw new IllegalArgumentException(
-          s"Unsupported SerDe type: $serDe. Supported values are 'custom', 'schema_registry', 'pubsub_schema', or 'glue_registry'.")
+          s"Unsupported SerDe type: $serDe. Supported values are 'custom', 'schema_registry', 'pubsub_schema' or 'glue_registry'.")
     }
     loadSchemaSerDe(className, topicInfo)
   }
