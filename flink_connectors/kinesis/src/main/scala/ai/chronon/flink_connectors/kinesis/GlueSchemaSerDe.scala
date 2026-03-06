@@ -123,8 +123,7 @@ class GlueSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
       case "JSON" =>
         new JsonSchemaSerDe(schemaDefinition, schemaName)
       case other =>
-        throw new IllegalArgumentException(
-          s"Unsupported schema format: $other. Supported formats are AVRO and JSON.")
+        throw new IllegalArgumentException(s"Unsupported schema format: $other. Supported formats are AVRO and JSON.")
     }
   }
 
