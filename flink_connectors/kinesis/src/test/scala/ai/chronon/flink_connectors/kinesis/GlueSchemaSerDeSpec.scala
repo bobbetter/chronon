@@ -95,26 +95,6 @@ class GlueSchemaSerDeSpec extends AnyFlatSpec {
     }
   }
 
-  it should "fail if the schema type is not AVRO" in {
-    val topicInfo = TopicInfo("test-stream", "kinesis",
-      Map(
-        GlueSchemaSerDe.RegionKey -> "us-east-1",
-        GlueSchemaSerDe.RegistryNameKey -> "test-registry",
-        GlueSchemaSerDe.SchemaNameKey -> "test-schema"
-      ))
-    val mockGlueClient = mock[GlueClient]
-    val response = GetSchemaVersionResponse.builder()
-      .dataFormat(DataFormat.JSON)
-      .schemaDefinition("{}")
-      .build()
-    when(mockGlueClient.getSchemaVersion(any[GetSchemaVersionRequest]())).thenReturn(response)
-
-    val glueSchemaSerDe = new MockGlueSchemaSerDe(topicInfo, mockGlueClient)
-    assertThrows[IllegalArgumentException] {
-      glueSchemaSerDe.schema
-    }
-  }
-
   it should "succeed if the schema is found and is of type AVRO" in {
     val topicInfo = TopicInfo("test-stream", "kinesis",
       Map(
@@ -134,5 +114,97 @@ class GlueSchemaSerDeSpec extends AnyFlatSpec {
     val glueSchemaSerDe = new MockGlueSchemaSerDe(topicInfo, mockGlueClient)
     val deSerSchema = glueSchemaSerDe.schema
     assert(deSerSchema != null)
+  }
+
+  it should "auto-detect JSON format and parse JSON Schema" in {
+    val jsonSchema =
+      """{
+        |  "title": "login_event",
+        |  "type": "object",
+        |  "properties": {
+        |    "user_id": { "type": "string" },
+        |    "ts": { "type": "integer" },
+        |    "success": { "type": "boolean" }
+        |  }
+        |}""".stripMargin
+
+    val topicInfo = TopicInfo("test-stream", "kinesis",
+      Map(
+        GlueSchemaSerDe.RegionKey -> "us-east-1",
+        GlueSchemaSerDe.RegistryNameKey -> "test-registry",
+        GlueSchemaSerDe.SchemaNameKey -> "login_event"
+      ))
+    val mockGlueClient = mock[GlueClient]
+    val response = GetSchemaVersionResponse.builder()
+      .dataFormat(DataFormat.JSON)
+      .schemaDefinition(jsonSchema)
+      .versionNumber(1L)
+      .build()
+    when(mockGlueClient.getSchemaVersion(any[GetSchemaVersionRequest]())).thenReturn(response)
+
+    val serDe = new MockGlueSchemaSerDe(topicInfo, mockGlueClient)
+    val schema = serDe.schema
+    assert(schema != null)
+    assert(schema.fields.length == 3)
+    assert(schema.fields.exists(_.name == "user_id"))
+    assert(schema.fields.exists(_.name == "ts"))
+    assert(schema.fields.exists(_.name == "success"))
+  }
+
+  it should "deserialize JSON messages when Glue schema is JSON format" in {
+    val jsonSchema =
+      """{
+        |  "title": "login_event",
+        |  "type": "object",
+        |  "properties": {
+        |    "user_id": { "type": "string" },
+        |    "ts": { "type": "integer" },
+        |    "score": { "type": "number" }
+        |  }
+        |}""".stripMargin
+
+    val topicInfo = TopicInfo("test-stream", "kinesis",
+      Map(
+        GlueSchemaSerDe.RegionKey -> "us-east-1",
+        GlueSchemaSerDe.RegistryNameKey -> "test-registry",
+        GlueSchemaSerDe.SchemaNameKey -> "login_event"
+      ))
+    val mockGlueClient = mock[GlueClient]
+    val response = GetSchemaVersionResponse.builder()
+      .dataFormat(DataFormat.JSON)
+      .schemaDefinition(jsonSchema)
+      .versionNumber(1L)
+      .build()
+    when(mockGlueClient.getSchemaVersion(any[GetSchemaVersionRequest]())).thenReturn(response)
+
+    val serDe = new MockGlueSchemaSerDe(topicInfo, mockGlueClient)
+
+    val message = """{"user_id": "abc123", "ts": 1700000000000, "score": 0.95}"""
+    val mutation = serDe.fromBytes(message.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+
+    assert(mutation.after != null)
+    assert(mutation.after(0) == "abc123")
+    assert(mutation.after(1) == 1700000000000L)
+    assert(mutation.after(2) == 0.95)
+  }
+
+  it should "fail for unsupported schema formats" in {
+    val topicInfo = TopicInfo("test-stream", "kinesis",
+      Map(
+        GlueSchemaSerDe.RegionKey -> "us-east-1",
+        GlueSchemaSerDe.RegistryNameKey -> "test-registry",
+        GlueSchemaSerDe.SchemaNameKey -> "test-schema"
+      ))
+    val mockGlueClient = mock[GlueClient]
+    val response = GetSchemaVersionResponse.builder()
+      .dataFormat(DataFormat.PROTOBUF)
+      .schemaDefinition("{}")
+      .build()
+    when(mockGlueClient.getSchemaVersion(any[GetSchemaVersionRequest]())).thenReturn(response)
+
+    val glueSchemaSerDe = new MockGlueSchemaSerDe(topicInfo, mockGlueClient)
+    assertThrows[IllegalArgumentException] {
+      glueSchemaSerDe.schema
+    }
   }
 }
