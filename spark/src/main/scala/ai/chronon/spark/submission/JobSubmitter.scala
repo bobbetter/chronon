@@ -42,6 +42,10 @@ trait JobSubmitter {
 
   def close(): Unit = {}
 
+  // Returns true if a cluster must be created before submitting the job. False if the submitter can submit directly to
+  // an existing cluster (e.g. EKS).
+  def isClusterCreateNeeded(isLongRunning: Boolean): Boolean = true
+
   def ensureClusterReady(clusterName: String, clusterConf: Option[Map[String, String]])(implicit
       ec: ExecutionContext): Option[String] = Some(clusterName)
 
@@ -62,7 +66,13 @@ trait JobSubmitter {
 
   def kvStoreApiProperties: Map[String, String] = Map.empty
 
-  def buildFlinkPlatformArgs(env: Map[String, String], version: String, artifactPrefix: String): Seq[String] = Seq.empty
+  /** Returns infra/cloud-specific submission properties for Flink jobs.
+    * Values here are consumed by submitters in submit() and never passed to FlinkJob.main.
+    * Override per cloud to populate FlinkMainJarURI, FlinkCheckpointUri, EKS/connector keys, etc.
+    */
+  def buildFlinkSubmissionProps(env: Map[String, String],
+                                version: String,
+                                artifactPrefix: String): Map[String, String] = Map.empty
 
   /** Key used in submissionProperties to pass the cluster identifier to submit().
     * Override per cloud: GCP uses ClusterName, AWS uses ClusterId.

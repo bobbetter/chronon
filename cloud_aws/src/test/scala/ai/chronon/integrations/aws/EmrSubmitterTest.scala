@@ -7,12 +7,13 @@ import io.fabric8.kubernetes.client.Config
 import org.junit.Assert.assertEquals
 import org.mockito.Mockito.when
 import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
 import org.scalatestplus.mockito.MockitoSugar
 import software.amazon.awssdk.services.ec2.Ec2Client
 import software.amazon.awssdk.services.emr.EmrClient
 import software.amazon.awssdk.services.emr.model.{AddJobFlowStepsRequest, AddJobFlowStepsResponse}
 
-class EmrSubmitterTest extends AnyFlatSpec with MockitoSugar {
+class EmrSubmitterTest extends AnyFlatSpec with Matchers with MockitoSugar {
   "EmrSubmitterClient" should "return job id when a job is submitted and assert EMR request args" in {
     val stepId = "mock-step-id"
     val clusterId = "j-MOCKCLUSTERID123"
@@ -139,6 +140,153 @@ class EmrSubmitterTest extends AnyFlatSpec with MockitoSugar {
     assertEquals(actual(EksServiceAccount), eksServiceAccount)
     assertEquals(actual(EksNamespace), eksNamespace)
     assert(!actual.contains(ClusterId))
+  }
+
+  // --- buildFlinkSubmissionProps ---
+
+  private val testArtifactPrefix = "s3://zipline-artifacts-test"
+  private val testVersion = "1.0.0"
+  private val baseFlinkEnv = Map(
+    "FLINK_STATE_URI" -> "s3://test-bucket/flink-state",
+    "FLINK_EKS_SERVICE_ACCOUNT" -> "zipline-flink-sa",
+    "FLINK_EKS_NAMESPACE" -> "zipline-flink"
+  )
+  private val kinesisConnectorJarUri =
+    s"$testArtifactPrefix/release/$testVersion/jars/connectors_kinesis_deploy.jar"
+
+  private def createTestSubmitter(): EmrSubmitter =
+    new EmrSubmitter("test-customer", mock[EmrClient], mock[Ec2Client], Some(mock[EksFlinkSubmitter]))
+
+  "buildFlinkSubmissionProps" should "include flink jar URI, checkpoint URI, EKS account and namespace" in {
+    val submitter = createTestSubmitter()
+    val props = submitter.buildFlinkSubmissionProps(baseFlinkEnv, testVersion, testArtifactPrefix)
+
+    props(FlinkMainJarURI) shouldBe s"$testArtifactPrefix/release/$testVersion/jars/flink_assembly_deploy.jar"
+    props(FlinkCheckpointUri) shouldBe "s3://test-bucket/flink-state/checkpoints"
+    props(EksServiceAccount) shouldBe "zipline-flink-sa"
+    props(EksNamespace) shouldBe "zipline-flink"
+  }
+
+  it should "include kinesis connector jar when ENABLE_KINESIS is true" in {
+    val submitter = createTestSubmitter()
+    val env = baseFlinkEnv + ("ENABLE_KINESIS" -> "true")
+
+    val props = submitter.buildFlinkSubmissionProps(env, testVersion, testArtifactPrefix)
+
+    props(FlinkKinesisConnectorJarURI) shouldBe kinesisConnectorJarUri
+  }
+
+  it should "omit kinesis connector jar when ENABLE_KINESIS is false or absent" in {
+    val submitter = createTestSubmitter()
+
+    val props = submitter.buildFlinkSubmissionProps(baseFlinkEnv, testVersion, testArtifactPrefix)
+
+    props.contains(FlinkKinesisConnectorJarURI) shouldBe false
+  }
+
+  it should "throw exception when FLINK_STATE_URI is not set" in {
+    val submitter = createTestSubmitter()
+    val env = baseFlinkEnv - "FLINK_STATE_URI"
+
+    intercept[IllegalArgumentException] {
+      submitter.buildFlinkSubmissionProps(env, testVersion, testArtifactPrefix)
+    }
+  }
+
+  it should "throw exception when FLINK_EKS_SERVICE_ACCOUNT is not set" in {
+    val submitter = createTestSubmitter()
+    val env = baseFlinkEnv - "FLINK_EKS_SERVICE_ACCOUNT"
+
+    intercept[IllegalArgumentException] {
+      submitter.buildFlinkSubmissionProps(env, testVersion, testArtifactPrefix)
+    }
+  }
+
+  it should "throw exception when FLINK_EKS_NAMESPACE is not set" in {
+    val submitter = createTestSubmitter()
+    val env = baseFlinkEnv - "FLINK_EKS_NAMESPACE"
+
+    intercept[IllegalArgumentException] {
+      submitter.buildFlinkSubmissionProps(env, testVersion, testArtifactPrefix)
+    }
+  }
+
+  // --- status / kill routing ---
+
+  "status" should "delegate to EksFlinkSubmitter for flink: prefixed job IDs" in {
+    import org.mockito.Mockito.{verify, when}
+    import ai.chronon.api.JobStatusType
+
+    val mockEks = mock[EksFlinkSubmitter]
+    when(mockEks.status("my-deployment", "zipline-flink")).thenReturn(JobStatusType.RUNNING)
+
+    val submitter = new EmrSubmitter("test-customer", mock[EmrClient], mock[Ec2Client], Some(mockEks))
+    val result = submitter.status("flink:zipline-flink:my-deployment")
+
+    result shouldBe JobStatusType.RUNNING
+    verify(mockEks).status("my-deployment", "zipline-flink")
+  }
+
+  "kill" should "delegate to EksFlinkSubmitter for flink: prefixed job IDs" in {
+    import org.mockito.Mockito.verify
+
+    val mockEks = mock[EksFlinkSubmitter]
+    val submitter = new EmrSubmitter("test-customer", mock[EmrClient], mock[Ec2Client], Some(mockEks))
+    submitter.kill("flink:zipline-flink:my-deployment")
+
+    verify(mockEks).delete("my-deployment", "zipline-flink")
+  }
+
+  "submit" should "return flink:namespace:deploymentName for FlinkJob" in {
+    import org.mockito.Mockito.when
+
+    val mockEks = mock[EksFlinkSubmitter]
+    when(
+      mockEks.submit(
+        jobId = org.mockito.ArgumentMatchers.anyString(),
+        mainClass = org.mockito.ArgumentMatchers.anyString(),
+        mainJarUri = org.mockito.ArgumentMatchers.anyString(),
+        jarUris = org.mockito.ArgumentMatchers.any(),
+        flinkCheckpointUri = org.mockito.ArgumentMatchers.anyString(),
+        maybeSavepointUri = org.mockito.ArgumentMatchers.any(),
+        maybeFlinkJarsUri = org.mockito.ArgumentMatchers.any(),
+        jobProperties = org.mockito.ArgumentMatchers.any(),
+        args = org.mockito.ArgumentMatchers.any(),
+        serviceAccount = org.mockito.ArgumentMatchers.anyString(),
+        namespace = org.mockito.ArgumentMatchers.anyString()
+      )
+    ).thenReturn("flink-abc123")
+
+    val submitter = new EmrSubmitter("test-customer", mock[EmrClient], mock[Ec2Client], Some(mockEks))
+    val jobId = submitter.submit(
+      jobType = FlinkJob,
+      submissionProperties = Map(
+        JobId -> "test-job-id",
+        MainClass -> "ai.chronon.flink.FlinkJob",
+        JarURI -> "s3://bucket/cloud_aws_lib_deploy.jar",
+        FlinkMainJarURI -> "s3://bucket/flink_assembly_deploy.jar",
+        FlinkCheckpointUri -> "s3://bucket/checkpoints",
+        EksServiceAccount -> "zipline-flink-sa",
+        EksNamespace -> "zipline-flink"
+      ),
+      jobProperties = Map.empty,
+      files = List.empty,
+      labels = Map.empty
+    )
+
+    jobId shouldBe "flink:zipline-flink:flink-abc123"
+  }
+
+  // --- isClusterCreateNeeded ---
+
+  "isClusterCreateNeeded" should "return true for non-long-running jobs (EMR batch)" in {
+    val submitter = createTestSubmitter()
+    submitter.isClusterCreateNeeded(isLongRunning = false) shouldBe true
+  }
+
+  it should "return false for long-running jobs (routed to EKS)" in {
+    val submitter = createTestSubmitter()
+    submitter.isClusterCreateNeeded(isLongRunning = true) shouldBe false
   }
 
   it should "test Kinesis Flink job end-to-end on EMR on EKS. Do NOT enable in CI / CD" ignore {

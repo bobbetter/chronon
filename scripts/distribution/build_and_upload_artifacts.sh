@@ -157,11 +157,17 @@ fi
 
 if [ "$BUILD_AWS" = true ]; then
     ./mill cloud_aws.assembly
+    ./mill flink_connectors.kinesis.assembly
 
     SRC_CLOUD_AWS_JAR="$CHRONON_ROOT_DIR/out/cloud_aws/assembly.dest/out.jar"
+    SRC_FLINK_KINESIS_JAR="$CHRONON_ROOT_DIR/out/flink_connectors/kinesis/assembly.dest/out.jar"
 
     if [ ! -f "$SRC_CLOUD_AWS_JAR" ]; then
         echo "$SRC_CLOUD_AWS_JAR not found"
+        exit 1
+    fi
+    if [ ! -f "$SRC_FLINK_KINESIS_JAR" ]; then
+        echo "$SRC_FLINK_KINESIS_JAR not found"
         exit 1
     fi
 fi
@@ -197,6 +203,7 @@ GCP_CUSTOMER_IDS=("canary")
 
 FLINK_JAR="flink_assembly_deploy.jar"
 FLINK_PUBSUB_JAR="connectors_pubsub_deploy.jar"
+FLINK_KINESIS_JAR="connectors_kinesis_deploy.jar"
 SERVICE_JAR="service_assembly_deploy.jar"
 CLOUD_AWS_JAR="cloud_aws_lib_deploy.jar"
 CLOUD_GCP_JAR="cloud_gcp_lib_deploy.jar"
@@ -252,6 +259,7 @@ function upload_to_aws() {
                   aws s3 cp "$EXPECTED_ZIPLINE_WHEEL" "$NEW_ELEMENT_WHEEL_PATH" --metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
                 fi
                 aws s3 cp "$SRC_FLINK_JAR" "$NEW_ELEMENT_JAR_PATH/$FLINK_JAR" --metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+                aws s3 cp "$SRC_FLINK_KINESIS_JAR" "$NEW_ELEMENT_JAR_PATH/$FLINK_KINESIS_JAR" --metadata="zipline_user=$USER,updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
               done
               echo "Succeeded"
               break;;

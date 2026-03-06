@@ -1,7 +1,7 @@
 package ai.chronon.integrations.aws
 
 import ai.chronon.spark.submission.JobSubmitterConstants.MaxRetainedCheckpoints
-import org.junit.Assert.{assertEquals, assertFalse}
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.scalatest.flatspec.AnyFlatSpec
 
 class EksFlinkSubmitterTest extends AnyFlatSpec {
@@ -40,15 +40,17 @@ class EksFlinkSubmitterTest extends AnyFlatSpec {
     assertFalse(cfg.contains("pipeline.jars"))
   }
 
-  it should "use SmallTaskManager defaults when no TM memory is specified" in {
+  // No TM memory in jobProperties defaults to TaskManager64G (conservative production default)
+  it should "default to 64G tier when no TM memory is specified" in {
     val cfg = config()
-    assertEquals("1", cfg("taskmanager.numberOfTaskSlots"))
+    assertEquals("64G", cfg("taskmanager.memory.process.size"))
+    assertEquals("4", cfg("taskmanager.numberOfTaskSlots"))
     assertEquals("4G", cfg("jobmanager.memory.process.size"))
-    // TM memory intentionally absent — Flink uses its own defaults, pod resource falls back to 4G
-    assertFalse(cfg.contains("taskmanager.memory.process.size"))
-    assertEquals("4G", cfg.getOrElse("taskmanager.memory.process.size", "4G"))
-    assertFalse(cfg.contains("taskmanager.memory.network.min"))
-    assertFalse(cfg.contains("taskmanager.memory.managed.fraction"))
+    assertEquals("1G", cfg("taskmanager.memory.network.min"))
+    assertEquals("2G", cfg("taskmanager.memory.network.max"))
+    assertEquals("0.5f", cfg("taskmanager.memory.managed.fraction"))
+    assertEquals("512m", cfg("taskmanager.memory.jvm-metaspace.size"))
+    assertEquals("1G", cfg("taskmanager.memory.task.off-heap.size"))
   }
 
   it should "use SmallTaskManager defaults for sub-32G TM memory (e.g. 8G)" in {
@@ -89,5 +91,47 @@ class EksFlinkSubmitterTest extends AnyFlatSpec {
   it should "allow jobProperties to override any default config key" in {
     val cfg = config(Map("state.checkpoints.num-retained" -> "5"))
     assertEquals("5", cfg("state.checkpoints.num-retained"))
+  }
+
+  "sanitizeDeploymentName" should "lowercase and replace invalid chars with dashes" in {
+    assertEquals("flink-my-job-123", EksFlinkSubmitter.sanitizeDeploymentName("flink-My_Job.123"))
+  }
+
+  it should "truncate to 45 characters" in {
+    val long = "flink-" + "a" * 50
+    val result = EksFlinkSubmitter.sanitizeDeploymentName(long)
+    assertTrue(s"Expected <= 45 chars, got ${result.length}", result.length <= 45)
+  }
+
+  it should "strip trailing dashes after truncation" in {
+    // Construct a name whose 45th character lands on a dash
+    val name = "a" * 44 + "-extra"
+    val result = EksFlinkSubmitter.sanitizeDeploymentName(name)
+    assertFalse(s"Expected no trailing dash, got: $result", result.endsWith("-"))
+  }
+
+  it should "strip leading and trailing dashes" in {
+    assertEquals("foo-bar", EksFlinkSubmitter.sanitizeDeploymentName("--foo-bar--"))
+  }
+
+  "eksAdditionalFlinkJars" should "resolve jar names against the base path" in {
+    val jars = EksFlinkSubmitter.eksAdditionalFlinkJars("s3://my-bucket/libs/")
+    EksFlinkSubmitter.EksOnlyAdditionalJarNames.foreach { name =>
+      assertTrue(s"Expected $name in jars", jars.contains(s"s3://my-bucket/libs/$name"))
+    }
+  }
+
+  it should "append a trailing slash to the base path if missing" in {
+    val withSlash    = EksFlinkSubmitter.eksAdditionalFlinkJars("s3://my-bucket/libs/")
+    val withoutSlash = EksFlinkSubmitter.eksAdditionalFlinkJars("s3://my-bucket/libs")
+    assertEquals(withSlash.toList, withoutSlash.toList)
+  }
+
+  it should "use DefaultS3FlinkJarsBasePath as the fallback base" in {
+    val base = EksFlinkSubmitter.DefaultS3FlinkJarsBasePath
+    val jars = EksFlinkSubmitter.eksAdditionalFlinkJars(base)
+    EksFlinkSubmitter.EksOnlyAdditionalJarNames.foreach { name =>
+      assertTrue(jars.exists(_.endsWith(name)))
+    }
   }
 }

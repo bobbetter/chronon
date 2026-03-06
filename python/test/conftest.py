@@ -28,12 +28,12 @@ import copy
 @pytest.fixture(scope="module",autouse=True)
 def clean_imports_and_path():
     original_path = copy.copy(sys.path)
-    modules_to_clean = ['joins', 'staging_queries', 'group_bys', 'models']
-    yield 
+    modules_to_clean = ['joins', 'staging_queries', 'group_bys', 'models', "model_transforms"]
+    yield
     sys.path = original_path
-    for mod_name in modules_to_clean:
-        if mod_name in sys.modules:
-            del sys.modules[mod_name]
+    to_clean = [mod_name for mod_name in sys.modules if any([mod_name.startswith(m) for m in modules_to_clean])]
+    for mod in to_clean:
+        del sys.modules[mod]
 
 @pytest.fixture
 def rootdir():
@@ -47,11 +47,15 @@ def teams_json(rootdir):
 
 @pytest.fixture
 def repo(rootdir):
-    return os.path.join(rootdir, 'sample/')
+    path =  os.path.join(rootdir, 'sample/')
+    sys.path.insert(0, path)
+    return path
 
 @pytest.fixture
 def canary(rootdir):
-    return os.path.join(rootdir, 'canary/')
+    path = os.path.join(rootdir, 'canary/')
+    sys.path.insert(0, path)
+    return path
 
 @pytest.fixture
 def test_online_group_by(repo):

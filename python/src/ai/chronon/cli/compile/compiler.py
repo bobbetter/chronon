@@ -88,13 +88,18 @@ class Compiler:
                 if os.path.exists(output_dir):
                     shutil.rmtree(output_dir)
                 shutil.move(staging_dir, output_dir)
+                if self.compile_context.format != Format.JSON:
+                    console.print(f"Compilation successful. Compiled files saved to {output_dir}")
             else:
-                console.print(
-                    f"Staging directory {staging_dir} does not exist. "
-                    "Happens when every chronon config fails to compile or when no chronon configs exist."
-                )
+                if self.compile_context.format != Format.JSON:
+                    console.print(
+                        f"Staging directory {staging_dir} does not exist. "
+                        "Happens when every chronon config fails to compile or when no chronon configs exist."
+                    )
         else:
             # Clean up staging directory when there are errors (don't move to output)
+            if self.compile_context.format != Format.JSON:
+                console.print("Compilation errors detected. Not saving compiled files to output directory.")
             staging_dir = self.compile_context.staging_output_dir()
             if os.path.exists(staging_dir):
                 shutil.rmtree(staging_dir)

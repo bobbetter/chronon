@@ -272,6 +272,7 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     spark.sql("DROP TABLE IF EXISTS test_db.input_table_alt")
     spark.sql("DROP TABLE IF EXISTS test_db.output_table_alt")
     spark.sql("DROP TABLE IF EXISTS test_db.left_table_alt")
+    spark.sql("DROP TABLE IF EXISTS test_db.output_table" + Constants.archiveReuseTableSuffix)
 
     setupTestTables()
     mockKVStore.reset()

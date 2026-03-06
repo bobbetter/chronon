@@ -636,9 +636,9 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
 
       val su = new SemanticUtils(tableUtils)
 
-      if (!isSensorNode) {
+      val archivedTableOpt = if (!isSensorNode) {
         su.checkSemanticHashAndArchive(outputTable, incomingSemanticHash)
-      }
+      } else None
 
       val inputTableToMissingPartitions = inputTablePartitionStatuses
         .filter(_.missingPartitions.nonEmpty)
@@ -655,7 +655,35 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
         )
       } else {
 
-        run(metadata, node.content, Option(range))
+        try {
+          run(metadata, node.content, Option(range))
+        } catch {
+          case e: Exception =>
+            archivedTableOpt.foreach { archivedTable =>
+              try {
+                // Another writer may have already succeeded with the new semantic hash.
+                // Only rollback if the output table is missing or still has the old hash.
+                val currentHash = if (tableUtils.tableReachable(outputTable)) {
+                  tableUtils.getTableProperties(outputTable).flatMap(_.get(Constants.SemanticHashKey))
+                } else None
+
+                if (currentHash.contains(incomingSemanticHash)) {
+                  logger.info(
+                    s"Skipping rollback for $outputTable: another writer already produced it with hash $incomingSemanticHash")
+                } else {
+                  if (tableUtils.tableReachable(outputTable)) {
+                    tableUtils.sql(s"DROP TABLE IF EXISTS $outputTable")
+                  }
+                  su.renameTable(archivedTable, outputTable)
+                  logger.info(s"Rolled back archival: restored $archivedTable to $outputTable")
+                }
+              } catch {
+                case rollbackEx: Exception =>
+                  logger.error(s"Failed to rollback archival for $outputTable from $archivedTable", rollbackEx)
+              }
+            }
+            throw e
+        }
 
         try {
 

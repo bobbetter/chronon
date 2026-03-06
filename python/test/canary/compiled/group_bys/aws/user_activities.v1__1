@@ -417,7 +417,8 @@
           "spark.sql.catalog.spark_catalog.warehouse": "s3://zipline-warehouse-dev/data/tables/",
           "spark.sql.defaultUrlStreamHandlerFactory.enabled": "false",
           "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
-          "spark.sql.shuffle.partitions": "10"
+          "spark.sql.shuffle.partitions": "10",
+          "taskmanager.memory.process.size": "4G"
         },
         "modeConfigs": {
           "backfill": {
@@ -441,7 +442,8 @@
             "spark.sql.catalog.spark_catalog.warehouse": "s3://zipline-warehouse-dev/data/tables/",
             "spark.sql.defaultUrlStreamHandlerFactory.enabled": "false",
             "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
-            "spark.sql.shuffle.partitions": "10"
+            "spark.sql.shuffle.partitions": "10",
+            "taskmanager.memory.process.size": "4G"
           }
         }
       },
@@ -452,7 +454,8 @@
           "CHRONON_ONLINE_ARGS": "-Ztasks=1",
           "CLOUD_PROVIDER": "aws",
           "CUSTOMER_ID": "dev",
-          "FLINK_STATE_URI": "s3://zipline-warehouse-dev/flink-state",
+          "ENABLE_KINESIS": "true",
+          "FLINK_STATE_URI": "s3://zipline-warehouse-canary/flink-state",
           "FRONTEND_URL": "http://localhost:3000",
           "HUB_URL": "http://localhost:3903",
           "SPARK_CLUSTER_NAME": "zipline-canary-emr",
@@ -466,7 +469,8 @@
             "CHRONON_ONLINE_ARGS": "-Ztasks=1",
             "CLOUD_PROVIDER": "aws",
             "CUSTOMER_ID": "dev",
-            "FLINK_STATE_URI": "s3://zipline-warehouse-dev/flink-state",
+            "ENABLE_KINESIS": "true",
+            "FLINK_STATE_URI": "s3://zipline-warehouse-canary/flink-state",
             "FRONTEND_URL": "http://localhost:3000",
             "HUB_URL": "http://localhost:3903",
             "SPARK_CLUSTER_NAME": "zipline-canary-emr",
@@ -506,7 +510,7 @@
           "timeColumn": "event_time_ms"
         },
         "table": "data.aws_exports_user_activities__0",
-        "topic": "kafka://user-activities-v2/serde=custom/provider_class=ai.chronon.flink.deser.MockCustomSchemaProvider/schema_name=user-activities"
+        "topic": "kinesis://user-activities/serde=glue_registry/registry_name=zipline-canary/schema_name=user-activities"
       }
     }
   ]

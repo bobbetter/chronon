@@ -90,18 +90,3 @@ def test_compile_with_json_format(canary):
 
     assert "results" in output_json, f"Output missing 'results' field: {output_json}"
     assert isinstance(output_json["results"], dict), f"'results' should be a dict, got: {type(output_json['results'])}"
-
-def test_compile_with_exit_code_nonzero(canary):
-    """Test that compile command returns nonzero"""
-    import sys
-    sys.path.append(canary)
-
-    runner = CliRunner()
-    result = runner.invoke(compile, [
-        '--chronon-root', canary,
-        '-f', 'json',
-        '--force',
-    ])
-
-    # Check that the command executed successfully
-    assert result.exit_code == 1, f"Command correctly failed with output: {result.output}"

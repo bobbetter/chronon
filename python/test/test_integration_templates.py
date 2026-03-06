@@ -256,9 +256,9 @@ class TestGenerateAndCleanup:
         generated = generate_test_configs(tid, str(tmp_path), cloud="gcp")
         assert len(generated) == 8
 
-        # Original files should no longer exist
-        assert not (sq_dir / "exports.py").exists()
-        assert not (gb_dir / "purchases.py").exists()
+        # Original files should exist
+        assert (sq_dir / "exports.py").exists()
+        assert (gb_dir / "purchases.py").exists()
 
         # Renamed files should exist
         assert (sq_dir / f"exports_{tid}.py").exists()

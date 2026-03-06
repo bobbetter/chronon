@@ -259,7 +259,14 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
       dfRearranged
     }
 
-    if (!isBenchmarkMode) {
+    val crossCatalogPersist =
+      sparkSession.conf.get("spark.chronon.cross_catalog.persist", "false").toBoolean
+
+    // When reading from one catalog (e.g. Delta via UCSingleCatalog) and writing to another
+    // (e.g. Iceberg via REST), we must materialize the DataFrame before the write so that
+    // DeltaSparkSessionExtension's PreprocessTableWithDVsStrategy doesn't see TahoeFileIndex
+    // in the write plan as a temporary fix until this PR is merged https://github.com/delta-io/delta/pull/5804
+    if (!isBenchmarkMode || crossCatalogPersist) {
       finalizedDf.cache()
     }
 
@@ -273,7 +280,7 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
       .insertInto(tableName)
     logger.info(s"Finished writing to $tableName")
 
-    if (!isBenchmarkMode) {
+    if (!isBenchmarkMode || crossCatalogPersist) {
       logger.info(s"Table $tableName has been written with ${finalizedDf.count()} rows.")
       finalizedDf.unpersist()
     }

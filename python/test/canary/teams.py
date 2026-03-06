@@ -120,10 +120,11 @@ aws = Team(
             "SPARK_CLUSTER_NAME": "zipline-canary-emr",
             "ARTIFACT_PREFIX": "s3://zipline-artifacts-dev",
             "WAREHOUSE_PREFIX": "s3://zipline-warehouse-dev",
-            "FLINK_STATE_URI": "s3://zipline-warehouse-dev/flink-state",
-            "CHRONON_ONLINE_ARGS": " -Ztasks=4",
+            "FLINK_STATE_URI": "s3://zipline-warehouse-canary/flink-state",
+            "CHRONON_ONLINE_ARGS": " -Ztasks=1",
             "FRONTEND_URL": "http://localhost:3000",
             "HUB_URL": "http://localhost:3903",
+            "ENABLE_KINESIS": "true",
         },
         modeEnvironments={
             RunMode.UPLOAD: {
@@ -153,6 +154,7 @@ aws = Team(
             "spark.driver.cores": "1",
             "spark.executor.memory": "512m",
             "spark.executor.cores": "1",
+            "taskmanager.memory.process.size": "4G",
         },
         modeConfigs={
             RunMode.BACKFILL: {
@@ -170,6 +172,71 @@ aws = Team(
                 release_label="emr-7.12.0"
             )
         }
+    ),
+)
+
+quickstart = Team(
+    description="K8s team for local Kind cluster development (cloud_k8s/local)",
+    email="dev@example.com",
+    outputNamespace="quickstart",
+    conf=ConfigProperties(
+        common={
+            "spark.chronon.partition.column": "ds",
+            # Iceberg catalog via JDBC (PostgreSQL in-cluster)
+            "spark.sql.catalog.iceberg": "org.apache.iceberg.spark.SparkCatalog",
+            "spark.sql.catalog.iceberg.type": "jdbc",
+            "spark.sql.catalog.iceberg.uri": "jdbc:postgresql://postgres.chronon.svc.cluster.local:5432/iceberg_catalog",
+            "spark.sql.catalog.iceberg.jdbc.user": "chronon",
+            "spark.sql.catalog.iceberg.jdbc.password": "chronon",
+            "spark.sql.catalog.iceberg.warehouse": "s3a://warehouse/",
+            # S3A configuration for MinIO
+            "spark.hadoop.fs.s3a.endpoint": "http://minio.chronon.svc.cluster.local:9000",
+            "spark.hadoop.fs.s3a.access.key": "minioadmin",
+            "spark.hadoop.fs.s3a.secret.key": "minioadmin",
+            "spark.hadoop.fs.s3a.path.style.access": "true",
+            "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
+            "spark.hadoop.fs.s3a.connection.ssl.enabled": "false",
+            "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+            "spark.sql.defaultCatalog": "iceberg",
+            "spark.chronon.coalesce.factor": "10",
+            "spark.default.parallelism": "10",
+            "spark.sql.shuffle.partitions": "10",
+        },
+        modeConfigs={
+            RunMode.BACKFILL: {
+                "spark.driver.memory": "512m",
+                "spark.executor.memory": "1g",
+                "spark.executor.cores": "1",
+                "spark.executor.instances": "1",
+            },
+            RunMode.UPLOAD: {
+                "spark.driver.memory": "512m",
+                "spark.executor.memory": "512m",
+            },
+        },
+    ),
+    env=EnvironmentVariables(
+        common={
+            "VERSION": "latest",
+            "K8S_NAMESPACE": "chronon",
+            "SPARK_IMAGE": "chronon-spark-k8s:latest",
+            "SPARK_SERVICE_ACCOUNT": "spark",
+            "SPARK_EVENT_LOG_ENABLED": "true",
+            "SPARK_EVENT_LOG_DIR": "s3a://chronon-spark-logs/event-logs",
+            "ARTIFACT_PREFIX": "s3a://warehouse",
+            "FLINK_STATE_URI": "s3a://warehouse",
+            "WAREHOUSE_PREFIX": "s3a://warehouse",
+            "SPARK_HISTORY_SERVER_URL": "http://spark-history-server:18080",
+            "HUB_URL": "http://localhost:3903",
+            "FRONTEND_URL": "http://localhost:3000",
+            "EVAL_URL": "http://localhost:3904",
+            "ONLINE_CLASS": "ai.chronon.integrations.cloud_k8s.LocalRedisApiImpl",
+        },
+        modeEnvironments={
+            RunMode.BACKFILL: {},
+            RunMode.UPLOAD: {},
+            RunMode.STREAMING: {},
+        },
     ),
 )
 
@@ -212,5 +279,74 @@ azure = Team(
             "spark.executor.memory": "512m",
             "spark.executor.cores": "1",
         },
+    ),
+)
+
+aws_databricks = Team(
+    outputNamespace="data",
+    env=EnvironmentVariables(
+        common={
+            "CLOUD_PROVIDER": "aws",
+            "CUSTOMER_ID": "dev",
+            "VERSION": "latest",
+            "AWS_REGION": "us-west-2",
+            "SPARK_CLUSTER_NAME": "zipline-canary-emr",
+            "ARTIFACT_PREFIX": "s3://zipline-artifacts-dev",
+            "WAREHOUSE_PREFIX": "s3://zipline-warehouse-dev",
+            "DATABRICKS_HOST": "https://dbc-050d6f00-dcb3.cloud.databricks.com",
+            "FRONTEND_URL": "http://localhost:3000",
+            "HUB_URL": "http://localhost:3903",
+        },
+    ),
+    conf=ConfigProperties(
+        common={
+            # Delta + Iceberg extensions in same session
+            "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension,org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+            # DeltaCatalog required by UCSingleCatalog for Delta reads
+            "spark.sql.catalog.spark_catalog": "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+            "spark.databricks.delta.deletionVectors.enabled": "false",
+
+            # UC read catalog (Delta via UCSingleCatalog)
+            # Token injected by hub via DATABRICKS_OAUTH_TOKEN env var
+            "spark.sql.catalog.workspace": "io.unitycatalog.spark.UCSingleCatalog",
+            "spark.sql.catalog.workspace.uri": "https://dbc-050d6f00-dcb3.cloud.databricks.com/api/2.1/unity-catalog",
+            "spark.sql.catalog.workspace.token": "${DATABRICKS_OAUTH_TOKEN}",
+
+            # UC write catalog (Iceberg via REST)
+            "spark.sql.catalog.workspace_iceberg": "org.apache.iceberg.spark.SparkCatalog",
+            "spark.sql.catalog.workspace_iceberg.type": "rest",
+            "spark.sql.catalog.workspace_iceberg.uri": "https://dbc-050d6f00-dcb3.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest",
+            "spark.sql.catalog.workspace_iceberg.token": "${DATABRICKS_OAUTH_TOKEN}",
+            "spark.sql.catalog.workspace_iceberg.warehouse": "workspace",
+
+            # Chronon write config
+            "spark.chronon.table_write.format": "iceberg",
+            "spark.chronon.partition.column": "ds",
+            "spark.chronon.partition.format": "yyyy-MM-dd",
+
+            # Cross-catalog persist: materialize before write to avoid DV lineage issue
+            "spark.chronon.cross_catalog.persist": "true",
+
+            "spark.sql.warehouse.dir": "s3://zipline-warehouse-dev/data/uc-poc/warehouse/",
+            "spark.chronon.coalesce.factor": "10",
+            "spark.default.parallelism": "10",
+            "spark.sql.shuffle.partitions": "10",
+            "spark.driver.memory": "512m",
+            "spark.driver.cores": "1",
+            "spark.executor.memory": "512m",
+            "spark.executor.cores": "1",
+        },
+    ),
+    clusterConf=ClusterConfigProperties(
+        common={
+            "emr.config": generate_emr_cluster_config(
+                instance_count=3,
+                subnet_name="zipline-canary-subnet-main",
+                security_group_name="zipline-canary-sg",
+                instance_type="m5.xlarge",
+                idle_timeout=300,
+                release_label="emr-7.12.0"
+            )
+        }
     ),
 )
