@@ -1,4 +1,4 @@
-package ai.chronon.flink_connectors.kinesis
+package ai.chronon.online.serde
 
 import ai.chronon.api._
 import org.scalatest.flatspec.AnyFlatSpec

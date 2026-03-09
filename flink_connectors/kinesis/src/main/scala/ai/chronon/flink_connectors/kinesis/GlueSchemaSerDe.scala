@@ -2,7 +2,7 @@ package ai.chronon.flink_connectors.kinesis
 
 import ai.chronon.api.StructType
 import ai.chronon.online.TopicInfo
-import ai.chronon.online.serde.{AvroCodec, AvroConversions, AvroSerDe, Mutation, SerDe}
+import ai.chronon.online.serde.{AvroCodec, AvroSerDe, JsonSchemaSerDe, Mutation, SerDe}
 import org.apache.avro.Schema
 import org.slf4j.LoggerFactory
 import software.amazon.awssdk.auth.credentials.{
@@ -30,10 +30,6 @@ import software.amazon.awssdk.services.glue.model.{
   *   - region: AWS region (optional, uses AWS default region provider chain if not set)
   *   - version_number: Specific schema version (optional, defaults to latest)
   *   - aws_access_key_id / aws_secret_access_key: Explicit credentials (optional, both required if either is set)
-  *
-  * Local development:
-  *   Set GLUE_LOCAL_SCHEMA_DIR env var to a directory containing schema files.
-  *   Avro schemas: {schema_name}.avsc, JSON schemas: {schema_name}.json
   */
 class GlueSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
   import GlueSchemaSerDe._
@@ -57,7 +53,10 @@ class GlueSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
       case (Some(accessKeyId), Some(secretAccessKey)) =>
         val credentials = AwsBasicCredentials.create(accessKeyId, secretAccessKey)
         clientBuilder.credentialsProvider(StaticCredentialsProvider.create(credentials))
+      case (None, None) =>
+        clientBuilder.credentialsProvider(DefaultCredentialsProvider.builder().build())
       case _ =>
+        // This case should never be reached due to validation above
         clientBuilder.credentialsProvider(DefaultCredentialsProvider.builder().build())
     }
 
@@ -69,11 +68,6 @@ class GlueSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
   private def retrieveSchema(topicInfo: TopicInfo): SerDe = {
     val schemaName =
       topicInfo.params.getOrElse(SchemaNameKey, throw new IllegalArgumentException(s"$SchemaNameKey not set"))
-
-    val localSchemaDir = Option(System.getenv("GLUE_LOCAL_SCHEMA_DIR"))
-    if (localSchemaDir.isDefined) {
-      return loadLocalSchema(localSchemaDir.get, schemaName)
-    }
 
     val registryName =
       topicInfo.params.getOrElse(RegistryNameKey, throw new IllegalArgumentException(s"$RegistryNameKey not set"))
@@ -125,30 +119,6 @@ class GlueSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
       case other =>
         throw new IllegalArgumentException(s"Unsupported schema format: $other. Supported formats are AVRO and JSON.")
     }
-  }
-
-  private def loadLocalSchema(dir: String, schemaName: String): SerDe = {
-    val basePath = java.nio.file.Paths.get(dir)
-    val avscFile = basePath.resolve(s"$schemaName.avsc")
-    val jsonFile = basePath.resolve(s"$schemaName.json")
-
-    if (java.nio.file.Files.exists(avscFile)) {
-      logger.info(s"Loading local Avro schema from $avscFile")
-      val schemaStr =
-        new String(java.nio.file.Files.readAllBytes(avscFile), java.nio.charset.StandardCharsets.UTF_8)
-      val avroSchema: Schema = AvroCodec.of(schemaStr).schema
-      return new AvroSerDe(avroSchema)
-    }
-
-    if (java.nio.file.Files.exists(jsonFile)) {
-      logger.info(s"Loading local JSON schema from $jsonFile")
-      val schemaStr =
-        new String(java.nio.file.Files.readAllBytes(jsonFile), java.nio.charset.StandardCharsets.UTF_8)
-      return new JsonSchemaSerDe(schemaStr, schemaName)
-    }
-
-    throw new IllegalArgumentException(
-      s"GLUE_LOCAL_SCHEMA_DIR is set but no schema file found: tried $avscFile and $jsonFile")
   }
 
   override def schema: StructType = delegate.schema

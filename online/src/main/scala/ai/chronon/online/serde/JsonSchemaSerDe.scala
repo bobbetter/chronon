@@ -1,14 +1,12 @@
-package ai.chronon.flink_connectors.kinesis
+package ai.chronon.online.serde
 
 import ai.chronon.api._
-import ai.chronon.online.serde.{Mutation, SerDe}
 import com.fasterxml.jackson.databind.ObjectMapper
 
 import scala.jdk.CollectionConverters._
 import scala.util.Try
 
 /** SerDe for JSON-encoded messages with schemas defined in JSON Schema format.
-  * Used by [[GlueSchemaSerDe]] when the Glue registry schema format is JSON (not Avro).
   *
   * Supports JSON Schema types:
   *   integer -> LongType, number -> DoubleType, string -> StringType,
