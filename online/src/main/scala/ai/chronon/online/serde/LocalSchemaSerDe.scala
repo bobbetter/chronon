@@ -52,8 +52,7 @@ class LocalSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
       return new JsonSchemaSerDe(schemaStr, schemaName)
     }
 
-    throw new IllegalArgumentException(
-      s"No schema file found for '$schemaName' in $dir: tried $avscFile and $jsonFile")
+    throw new IllegalArgumentException(s"No schema file found for '$schemaName' in $dir: tried $avscFile and $jsonFile")
   }
 
   override def schema: StructType = delegate.schema
