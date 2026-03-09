@@ -277,6 +277,71 @@ class EmrSubmitterTest extends AnyFlatSpec with Matchers with MockitoSugar {
     jobId shouldBe "flink:zipline-flink:flink-abc123"
   }
 
+  it should "use single quotes for regular confs and double quotes for Databricks token confs" in {
+    val stepId = "mock-step-id"
+    val clusterId = "j-MOCKCLUSTERID123"
+
+    val mockEmrClient = mock[EmrClient]
+    val mockEc2Client = mock[Ec2Client]
+    val mockEksSubmitter = mock[EksFlinkSubmitter]
+
+    val requestCaptor = org.mockito.ArgumentCaptor.forClass(classOf[AddJobFlowStepsRequest])
+    when(
+      mockEmrClient.addJobFlowSteps(requestCaptor.capture())
+    ).thenReturn(AddJobFlowStepsResponse.builder().stepIds(stepId).build())
+
+    val submitter = new EmrSubmitter("canary", mockEmrClient, mockEc2Client, Some(mockEksSubmitter), awsRegion = "us-west-2")
+    submitter.submit(
+      jobType = SparkJob,
+      submissionProperties = Map(
+        MainClass -> "some-main-class",
+        JarURI -> "s3://jar-uri",
+        ClusterId -> clusterId,
+        "DATABRICKS_HOST" -> "https://my-workspace.cloud.databricks.com",
+        "DATABRICKS_SECRET_NAME" -> "my-secret"
+      ),
+      jobProperties = Map(
+        "spark.executor.memory" -> "4g",
+        "spark.sql.catalog.workspace.token" -> "$DATABRICKS_OAUTH_TOKEN"
+      ),
+      files = List.empty,
+      labels = Map.empty,
+      "arg1"
+    )
+
+    val actualArgs = requestCaptor.getValue.steps().get(0).hadoopJarStep().args().toScala.mkString(" ")
+    // Regular confs use single quotes (no shell expansion)
+    assert(actualArgs.contains("--conf 'spark.executor.memory=4g'"))
+    // Token confs use double quotes (shell expansion for $DATABRICKS_OAUTH_TOKEN)
+    assert(actualArgs.contains("""--conf "spark.sql.catalog.workspace.token=$DATABRICKS_OAUTH_TOKEN""""))
+    // Token fetch script is present
+    assert(actualArgs.contains("aws secretsmanager get-secret-value"))
+    assert(actualArgs.contains("DATABRICKS_OAUTH_TOKEN="))
+  }
+
+  it should "throw exception when only DATABRICKS_HOST is set without DATABRICKS_SECRET_NAME" in {
+    val mockEmrClient = mock[EmrClient]
+    val mockEc2Client = mock[Ec2Client]
+    val mockEksSubmitter = mock[EksFlinkSubmitter]
+
+    val submitter = new EmrSubmitter("canary", mockEmrClient, mockEc2Client, Some(mockEksSubmitter), awsRegion = "us-west-2")
+    intercept[IllegalArgumentException] {
+      submitter.submit(
+        jobType = SparkJob,
+        submissionProperties = Map(
+          MainClass -> "some-main-class",
+          JarURI -> "s3://jar-uri",
+          ClusterId -> "j-CLUSTER",
+          "DATABRICKS_HOST" -> "https://my-workspace.cloud.databricks.com"
+        ),
+        jobProperties = Map.empty,
+        files = List.empty,
+        labels = Map.empty,
+        "arg1"
+      )
+    }
+  }
+
   // --- isClusterCreateNeeded ---
 
   "isClusterCreateNeeded" should "return true for non-long-running jobs (EMR batch)" in {

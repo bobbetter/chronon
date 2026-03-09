@@ -2,7 +2,7 @@ package ai.chronon.api.test.planner
 
 import ai.chronon.api.Extensions.{WindowUtils, MetadataOps}
 import ai.chronon.api.planner.TableDependencies
-import ai.chronon.api.{Builders, TimeUnit, Window}
+import ai.chronon.api.{Builders, Operation, TimeUnit, Window}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
@@ -277,5 +277,61 @@ class TableDependenciesTest extends AnyFlatSpec with Matchers {
     val result = TableDependencies.fromJoinSources(null)
 
     result should be(empty)
+  }
+
+  "TableDependencies.fromSource with timePartitioned" should "set timePartitioned on TableInfo" in {
+    val query = Builders.Query(
+      partitionColumn = "created_at",
+      timeColumn = "UNIX_TIMESTAMP(created_at) * 1000"
+    )
+    query.setTimePartitioned(true)
+
+    val source = Builders.Source.events(query, table = "test_db.events")
+    val result = TableDependencies.fromSource(source)
+
+    result should be(defined)
+    val tableInfo = result.get.getTableInfo
+    tableInfo.getTable should equal("test_db.events")
+    tableInfo.getPartitionColumn should equal("created_at")
+    tableInfo.timePartitioned should be(true)
+  }
+
+  it should "fail when timePartitioned is true but partitionColumn is not set" in {
+    val query = Builders.Query(
+      timeColumn = "UNIX_TIMESTAMP(created_at) * 1000"
+    )
+    query.setTimePartitioned(true)
+
+    val source = Builders.Source.events(query, table = "test_db.events")
+
+    an[IllegalArgumentException] should be thrownBy {
+      TableDependencies.fromSource(source)
+    }
+  }
+
+  "TableDependencies.fromGroupBy with timePartitioned" should "propagate timePartitioned through sources" in {
+    val query = Builders.Query(
+      partitionColumn = "created_at",
+      timeColumn = "UNIX_TIMESTAMP(created_at) * 1000"
+    )
+    query.setTimePartitioned(true)
+
+    val source = Builders.Source.events(query, table = "test_db.events")
+    val groupBy = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(
+        Builders.Aggregation(
+          inputColumn = "value",
+          operation = Operation.SUM,
+          windows = Seq(new Window(7, TimeUnit.DAYS))
+        )
+      )
+    )
+
+    val deps = TableDependencies.fromGroupBy(groupBy)
+    deps should not be empty
+    deps.head.getTableInfo.timePartitioned should be(true)
+    deps.head.getTableInfo.getPartitionColumn should equal("created_at")
   }
 }

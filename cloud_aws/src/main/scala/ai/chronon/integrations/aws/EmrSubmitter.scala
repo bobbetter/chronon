@@ -2,6 +2,7 @@ package ai.chronon.integrations.aws
 
 import ai.chronon.api.JobStatusType
 import ai.chronon.integrations.aws.EmrSubmitter.{
+  DatabricksOAuthTokenVar,
   DefaultClusterIdleTimeout,
   DefaultClusterInstanceCount,
   DefaultClusterInstanceType
@@ -198,28 +199,35 @@ class EmrSubmitter(customerId: String,
   }
 
   private def createStepConfig(filesToMount: List[String],
-                               mainClass: String,
-                               jarUri: String,
+                               submissionProperties: Map[String, String],
                                jobProperties: Map[String, String],
                                args: String*): StepConfig = {
-    // TODO: see if we can use the spark.files or --files instead of doing this ourselves
     // Copy files from s3 to cluster
+    // TODO: see if we can use the spark.files or --files instead of doing this ourselves
     val awsS3CpArgs = filesToMount.map(file => s"aws s3 cp $file /mnt/zipline/")
+    val tokenFetchScript = maybeBuildDatabricksTokenFetchScript(submissionProperties)
+
     // Escape single quotes for safe shell interpolation inside bash -c '...'
+    // Values referencing the Databricks OAuth token use double quotes to allow shell variable expansion
     val confArgs = jobProperties
       .map { case (k, v) =>
-        val escapedKey = k.replace("'", "'\\''")
-        val escapedValue = v.replace("'", "'\\''")
-        s"--conf '${escapedKey}=${escapedValue}'"
+        if (v.contains(DatabricksOAuthTokenVar)) {
+          val escapedKey = k.replace("\"", "\\\"")
+          val escapedValue = v.replace("\"", "\\\"")
+          s"""--conf "$escapedKey=$escapedValue""""
+        } else {
+          val escapedKey = k.replace("'", "'\\''")
+          val escapedValue = v.replace("'", "'\\''")
+          s"--conf '$escapedKey=$escapedValue'"
+        }
       }
       .mkString(" ")
-    val sparkSubmitArgs =
-      List(s"spark-submit $confArgs --class $mainClass $jarUri ${args.mkString(" ")}")
-    val finalArgs = List(
-      "bash",
-      "-c",
-      (awsS3CpArgs ++ sparkSubmitArgs).mkString("; \n")
-    )
+    val mainClass = submissionProperties(MainClass)
+    val jarUri = submissionProperties(JarURI)
+    val sparkSubmitCmd =
+      s"${tokenFetchScript.getOrElse("")}spark-submit $confArgs --class $mainClass $jarUri ${args.mkString(" ")}"
+
+    val finalArgs = List("bash", "-c", (awsS3CpArgs ++ List(sparkSubmitCmd)).mkString("; \n"))
     logger.debug(s"Step config args: $finalArgs")
     StepConfig
       .builder()
@@ -235,6 +243,29 @@ class EmrSubmitter(customerId: String,
           .build()
       )
       .build()
+  }
+
+  private def maybeBuildDatabricksTokenFetchScript(submissionProperties: Map[String, String]): Option[String] = {
+    val databricksHost = submissionProperties.get("DATABRICKS_HOST")
+    val databricksSecretName = submissionProperties.get("DATABRICKS_SECRET_NAME")
+    (databricksHost, databricksSecretName) match {
+      case (Some(host), Some(secretName)) => Some(buildDatabricksTokenFetchScript(host, secretName))
+      case (Some(_), None) | (None, Some(_)) =>
+        throw new IllegalArgumentException("Both DATABRICKS_HOST and DATABRICKS_SECRET_NAME must be set together")
+      case _ => None
+    }
+  }
+
+  private def buildDatabricksTokenFetchScript(host: String, secretName: String): String = {
+    require(awsRegion.nonEmpty, "AWS_REGION must be set when using Databricks OAuth token fetch")
+    val tokenUrl = s"${host.stripSuffix("/")}/oidc/v1/token"
+    Seq(
+      s"""SECRET_JSON=$$(aws secretsmanager get-secret-value --secret-id '$secretName' --query 'SecretString' --output text --region '$awsRegion')""",
+      s"""DB_CLIENT_ID=$$(echo "$$SECRET_JSON" | jq -r '.client_id')""",
+      s"""DB_CLIENT_SECRET=$$(echo "$$SECRET_JSON" | jq -r '.client_secret')""",
+      s"""DATABRICKS_OAUTH_TOKEN=$$(curl --fail -s -X POST '$tokenUrl' -H 'Content-Type: application/x-www-form-urlencoded' -u "$$DB_CLIENT_ID:$$DB_CLIENT_SECRET" -d 'grant_type=client_credentials&scope=all-apis' | jq -r '.access_token')""",
+      s"""{ [ -n "$$DATABRICKS_OAUTH_TOKEN" ] && [ "$$DATABRICKS_OAUTH_TOKEN" != "null" ]; } || { echo "Failed to fetch Databricks OAuth token" >&2; exit 1; }"""
+    ).mkString(" && ") + "; "
   }
 
   /** Finds an EMR cluster by name, paginating through all results.
@@ -497,11 +528,7 @@ class EmrSubmitter(customerId: String,
 
       case TypeSparkJob =>
         val existingJobId = submissionProperties.getOrElse(ClusterId, throw new RuntimeException("JobFlowId not found"))
-        val stepConfig = createStepConfig(files,
-                                          submissionProperties(MainClass),
-                                          submissionProperties(JarURI),
-                                          jobProperties,
-                                          userArgs: _*)
+        val stepConfig = createStepConfig(files, submissionProperties, jobProperties, userArgs: _*)
 
         val request = AddJobFlowStepsRequest
           .builder()
@@ -675,6 +702,8 @@ class EmrSubmitter(customerId: String,
 }
 
 object EmrSubmitter {
+  private val DatabricksOAuthTokenVar = "$DATABRICKS_OAUTH_TOKEN"
+
   def apply(k8sConfig: Option[Config] = None): EmrSubmitter = {
     val customerId = sys.env.getOrElse("CUSTOMER_ID", throw new Exception("CUSTOMER_ID not set")).toLowerCase
     val awsRegion = sys.env.getOrElse("AWS_REGION", sys.env.getOrElse("AWS_DEFAULT_REGION", ""))
