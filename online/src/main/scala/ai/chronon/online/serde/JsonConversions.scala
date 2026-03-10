@@ -66,7 +66,7 @@ object JsonConversions {
     if (fieldDef.containsKey("$ref")) {
       return resolveRef(fieldDef.get("$ref").toString, rootDefs) match {
         case Some(resolved) => jsonTypeToChronon(resolved, rootDefs)
-        case None           => throw new IllegalArgumentException(s"Unresolved JSON Schema $$ref: '${fieldDef.get("$ref")}'")
+        case None => throw new IllegalArgumentException(s"Unresolved JSON Schema $$ref: '${fieldDef.get("$ref")}'")
       }
     }
 
