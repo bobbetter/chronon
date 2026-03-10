@@ -155,7 +155,7 @@ class EmrSubmitterTest extends AnyFlatSpec with Matchers with MockitoSugar {
     s"$testArtifactPrefix/release/$testVersion/jars/connectors_kinesis_deploy.jar"
 
   private def createTestSubmitter(): EmrSubmitter =
-    new EmrSubmitter("test-customer", mock[EmrClient], mock[Ec2Client], Some(mock[EksFlinkSubmitter]))
+    new EmrSubmitter("test-customer", mock[EmrClient], mock[Ec2Client], Some(mock[EksFlinkSubmitter]), awsRegion = "us-west-2")
 
   "buildFlinkSubmissionProps" should "include flink jar URI, checkpoint URI, EKS account and namespace" in {
     val submitter = createTestSubmitter()
@@ -340,6 +340,42 @@ class EmrSubmitterTest extends AnyFlatSpec with Matchers with MockitoSugar {
         "arg1"
       )
     }
+  }
+
+  // --- getJobUrl / getSparkUrl ---
+
+  "getJobUrl" should "return regionalized EMR console URL for Spark jobs" in {
+    val submitter = createTestSubmitter()
+    val url = submitter.getJobUrl("j-1794O33LZQKP:s-ABC123")
+    url shouldBe Some("https://us-west-2.console.aws.amazon.com/emr/home?region=us-west-2#/clusterDetails/j-1794O33LZQKP")
+  }
+
+  it should "return EKS URL for Flink jobs" in {
+    val submitter = new EmrSubmitter("test-customer", mock[EmrClient], mock[Ec2Client], Some(mock[EksFlinkSubmitter]),
+      awsRegion = "us-west-2", eksClusterName = Some("test-eks-cluster"))
+    val url = submitter.getJobUrl("flink:zipline-flink:my-deployment")
+    url shouldBe Some("https://us-west-2.console.aws.amazon.com/eks/clusters/test-eks-cluster/deployments/my-deployment?namespace=zipline-flink&region=us-west-2")
+  }
+
+  it should "return None for invalid job ID format" in {
+    val submitter = createTestSubmitter()
+    submitter.getJobUrl("invalid-no-colon") shouldBe None
+  }
+
+  "getSparkUrl" should "return persistent SHS URL for Spark jobs" in {
+    val submitter = createTestSubmitter()
+    val url = submitter.getSparkUrl("j-1794O33LZQKP:s-ABC123")
+    url shouldBe Some("https://p-1794o33lzqkp-shs.emrappui-prod.us-west-2.amazonaws.com/shs/")
+  }
+
+  it should "return None for Flink jobs" in {
+    val submitter = createTestSubmitter()
+    submitter.getSparkUrl("flink:zipline-flink:my-deployment") shouldBe None
+  }
+
+  it should "return None for invalid job ID format" in {
+    val submitter = createTestSubmitter()
+    submitter.getSparkUrl("invalid-no-colon") shouldBe None
   }
 
   // --- isClusterCreateNeeded ---

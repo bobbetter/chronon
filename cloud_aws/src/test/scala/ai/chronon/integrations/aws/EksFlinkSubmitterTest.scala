@@ -134,4 +134,55 @@ class EksFlinkSubmitterTest extends AnyFlatSpec {
       assertTrue(jars.exists(_.endsWith(name)))
     }
   }
+
+  "EksFlinkSubmitter with ingressBaseUrl" should "not set web.base-url in flinkConfiguration" in {
+    val submitterWithIngress = new EksFlinkSubmitter(ingressBaseUrl = Some("https://hub.example.com"))
+    val cfg = submitterWithIngress.buildFlinkConfiguration(checkpointUri, Map.empty)
+    assertFalse("web.base-url is not honoured by the EMR Flink image and must not be set", cfg.contains("web.base-url"))
+  }
+
+  "EmrSubmitter.getFlinkUrl" should "return ingress URL for flink job IDs when ingressBaseUrl is set" in {
+    val emr = new EmrSubmitter(
+      customerId = "test",
+      emrClient = null,
+      ec2Client = null,
+      ingressBaseUrl = Some("http://localhost:3000")
+    )
+    assertEquals(Some("http://localhost:3000/flink/my-deployment/"),
+      emr.getFlinkUrl("flink:zipline-flink:my-deployment"))
+  }
+
+  it should "return None when ingressBaseUrl is not set" in {
+    val emr = new EmrSubmitter(customerId = "test", emrClient = null, ec2Client = null)
+    assertEquals(None, emr.getFlinkUrl("flink:zipline-flink:my-deployment"))
+  }
+
+  it should "return None for non-flink job IDs" in {
+    val emr = new EmrSubmitter(
+      customerId = "test",
+      emrClient = null,
+      ec2Client = null,
+      ingressBaseUrl = Some("http://localhost:3000")
+    )
+    assertEquals(None, emr.getFlinkUrl("j-ABC123:s-XYZ"))
+  }
+
+  it should "normalize a trailing slash in ingressBaseUrl" in {
+    val emr = new EmrSubmitter(
+      customerId = "test",
+      emrClient = null,
+      ec2Client = null,
+      ingressBaseUrl = Some("http://localhost:3000/")
+    )
+    assertEquals(Some("http://localhost:3000/flink/my-deployment/"),
+      emr.getFlinkUrl("flink:zipline-flink:my-deployment"))
+  }
+
+  "EksFlinkSubmitter.createFlinkIngress" should "throw IllegalArgumentException when host cannot be extracted" in {
+    // "not-a-valid-url" parses as a relative URI, so getHost returns null — triggering the fast-fail
+    val submitterWithBadUrl = new EksFlinkSubmitter(ingressBaseUrl = Some("not-a-valid-url"))
+    assertThrows[IllegalArgumentException] {
+      submitterWithBadUrl.createFlinkIngress(null, "my-deployment", "default", "some-uid")
+    }
+  }
 }

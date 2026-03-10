@@ -35,7 +35,8 @@ class EmrSubmitter(customerId: String,
                    override val dqMetricsDataset: String = "",
                    flinkEksServiceAccount: Option[String] = None,
                    flinkEksNamespace: Option[String] = None,
-                   eksClusterName: Option[String] = None)
+                   eksClusterName: Option[String] = None,
+                   ingressBaseUrl: Option[String] = None)
     extends JobSubmitter {
 
   private val ClusterApplications = List(
@@ -540,7 +541,7 @@ class EmrSubmitter(customerId: String,
 
         logger.info(s"EMR step id: $responseStepId")
         logger.info(
-          s"Safe to exit. Follow the job status at: https://console.aws.amazon.com/emr/home#/clusterDetails/$existingJobId")
+          s"Safe to exit. Follow the job status at: https://$awsRegion.console.aws.amazon.com/emr/home?region=$awsRegion#/clusterDetails/$existingJobId")
         // Return composite ID so status/kill/getJobUrl can resolve both cluster and step
         s"$existingJobId:$responseStepId"
     }
@@ -648,8 +649,27 @@ class EmrSubmitter(customerId: String,
       } else None
     } else if (jobId.contains(":")) {
       val parts = jobId.split(":")
-      Some(s"https://console.aws.amazon.com/emr/home?region=$awsRegion#/clusterDetails/${parts(0)}/step/${parts(1)}")
+      Some(s"https://$awsRegion.console.aws.amazon.com/emr/home?region=$awsRegion#/clusterDetails/${parts(0)}")
     } else None
+  }
+
+  // Base SHS URL only — EMR DescribeStep API doesn't provide yarnApplicationId for deep linking
+  override def getSparkUrl(jobId: String): Option[String] = {
+    if (jobId.startsWith("flink:")) {
+      None
+    } else if (jobId.contains(":")) {
+      val clusterId = jobId.split(":")(0)
+      val clusterIdLower = clusterId.stripPrefix("j-").toLowerCase
+      Some(s"https://p-$clusterIdLower-shs.emrappui-prod.$awsRegion.amazonaws.com/shs/")
+    } else None
+  }
+
+  override def getFlinkUrl(jobId: String): Option[String] = {
+    if (!jobId.startsWith("flink:")) return None
+    val parts = jobId.split(":", 3)
+    if (parts.length != 3) return None
+    val deploymentName = parts(2)
+    ingressBaseUrl.map(base => s"${base.stripSuffix("/")}/flink/$deploymentName/")
   }
 
   override def deprecatedClusterNameEnvVars: Seq[String] = Seq(EmrClusterNameEnvVar)
@@ -707,16 +727,18 @@ object EmrSubmitter {
   def apply(k8sConfig: Option[Config] = None): EmrSubmitter = {
     val customerId = sys.env.getOrElse("CUSTOMER_ID", throw new Exception("CUSTOMER_ID not set")).toLowerCase
     val awsRegion = sys.env.getOrElse("AWS_REGION", sys.env.getOrElse("AWS_DEFAULT_REGION", ""))
+    val ingressBaseUrl = sys.env.get("HUB_BASE_URL")
 
     new EmrSubmitter(
       customerId,
       EmrClient.builder().build(),
       Ec2Client.builder().build(),
-      eksFlinkSubmitter = Some(new EksFlinkSubmitter(k8sConfig)),
+      eksFlinkSubmitter = Some(new EksFlinkSubmitter(k8sConfig, ingressBaseUrl = ingressBaseUrl)),
       awsRegion = awsRegion,
       flinkEksServiceAccount = sys.env.get("FLINK_EKS_SERVICE_ACCOUNT"),
       flinkEksNamespace = sys.env.get("FLINK_EKS_NAMESPACE"),
-      eksClusterName = sys.env.get("EKS_CLUSTER_NAME")
+      eksClusterName = sys.env.get("EKS_CLUSTER_NAME"),
+      ingressBaseUrl = ingressBaseUrl
     )
   }
 
