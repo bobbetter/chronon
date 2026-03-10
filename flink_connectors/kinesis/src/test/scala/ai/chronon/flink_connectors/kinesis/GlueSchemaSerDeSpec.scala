@@ -8,10 +8,18 @@ import org.scalatest.flatspec.AnyFlatSpec
 import software.amazon.awssdk.services.glue.GlueClient
 import software.amazon.awssdk.services.glue.model.{DataFormat, GetSchemaVersionRequest, GetSchemaVersionResponse}
 
+import java.nio.file.Files
+import java.nio.charset.StandardCharsets
+
 class MockGlueSchemaSerDe(topicInfo: TopicInfo, mockGlueClient: GlueClient) extends GlueSchemaSerDe(topicInfo) {
   override def buildGlueClient(): GlueClient = {
     mockGlueClient
   }
+}
+
+class MockGlueSchemaSerDeWithLocalDir(topicInfo: TopicInfo, localDir: String) extends GlueSchemaSerDe(topicInfo) {
+  override def localSchemaDirOverride: Option[String] = Some(localDir)
+  override def buildGlueClient(): GlueClient = throw new UnsupportedOperationException("should not call Glue")
 }
 
 class GlueSchemaSerDeSpec extends AnyFlatSpec {
@@ -186,6 +194,24 @@ class GlueSchemaSerDeSpec extends AnyFlatSpec {
     assert(mutation.after(0) == "abc123")
     assert(mutation.after(1) == 1700000000000L)
     assert(mutation.after(2) == 0.95)
+  }
+
+  it should "fall back to LocalSchemaSerDe when LOCAL_SCHEMA_DIR override is set" in {
+    val tmpDir = Files.createTempDirectory("glue-local-fallback-test")
+    val avroSchemaStr =
+      """{ "type": "record", "name": "test_schema", "fields": [ { "type": "string", "name": "id" } ] }"""
+    Files.write(tmpDir.resolve("test-schema.avsc"), avroSchemaStr.getBytes(StandardCharsets.UTF_8))
+
+    val topicInfo = TopicInfo("test-stream", "kinesis",
+      Map(
+        GlueSchemaSerDe.RegistryNameKey -> "test-registry",
+        GlueSchemaSerDe.SchemaNameKey -> "test-schema"
+      ))
+
+    val serDe = new MockGlueSchemaSerDeWithLocalDir(topicInfo, tmpDir.toString)
+    val schema = serDe.schema
+    assert(schema != null)
+    assert(schema.fields.exists(_.name == "id"))
   }
 
   it should "fail for unsupported schema formats" in {

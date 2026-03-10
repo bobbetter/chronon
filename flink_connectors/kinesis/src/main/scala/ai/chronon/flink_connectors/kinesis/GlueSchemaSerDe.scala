@@ -2,7 +2,7 @@ package ai.chronon.flink_connectors.kinesis
 
 import ai.chronon.api.StructType
 import ai.chronon.online.TopicInfo
-import ai.chronon.online.serde.{AvroCodec, AvroSerDe, JsonSchemaSerDe, Mutation, SerDe}
+import ai.chronon.online.serde.{AvroCodec, AvroSerDe, JsonSchemaSerDe, LocalSchemaSerDe, Mutation, SerDe}
 import org.apache.avro.Schema
 import org.slf4j.LoggerFactory
 import software.amazon.awssdk.auth.credentials.{
@@ -63,9 +63,21 @@ class GlueSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
     clientBuilder.build()
   }
 
+  protected[flink_connectors] def localSchemaDirOverride: Option[String] =
+    Option(System.getenv(LocalSchemaSerDe.SchemaDirEnvVar))
+
   private lazy val delegate: SerDe = retrieveSchema(topicInfo)
 
   private def retrieveSchema(topicInfo: TopicInfo): SerDe = {
+    // In dev environments, LOCAL_SCHEMA_DIR can be set to bypass Glue and load schemas from the local filesystem.
+    // This allows using the same topic config (serde=glue_registry/...) in both dev and prod.
+    localSchemaDirOverride match {
+      case Some(dir) =>
+        logger.info(s"${LocalSchemaSerDe.SchemaDirEnvVar} is set — using LocalSchemaSerDe instead of Glue")
+        return new LocalSchemaSerDe(topicInfo, dir)
+      case None =>
+    }
+
     val schemaName =
       topicInfo.params.getOrElse(SchemaNameKey, throw new IllegalArgumentException(s"$SchemaNameKey not set"))
 

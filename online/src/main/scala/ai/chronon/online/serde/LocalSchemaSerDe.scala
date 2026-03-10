@@ -9,14 +9,12 @@ import java.nio.file.{Files, Paths}
 
 /** SerDe that loads schema files from the local filesystem, auto-detecting format by extension (.avsc or .json).
   *
-  * Configure via topic string:
-  *   kafka://topic-name/serde=localfs/schema_name=my-schema/[schema_dir=/path/to/schemas]
+  * Intended for dev use: set LOCAL_SCHEMA_DIR to bypass remote schema registries.
   *
   * Parameters:
   *   - schema_name: Base name of the schema file, without extension (required)
-  *   - schema_dir: Directory containing schema files (optional; falls back to LOCAL_SCHEMA_DIR env var)
   */
-class LocalSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
+class LocalSchemaSerDe(topicInfo: TopicInfo, schemaDir: String) extends SerDe {
   import LocalSchemaSerDe._
 
   @transient private lazy val logger = LoggerFactory.getLogger(getClass)
@@ -24,13 +22,6 @@ class LocalSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
   private lazy val delegate: SerDe = {
     val schemaName =
       topicInfo.params.getOrElse(SchemaNameKey, throw new IllegalArgumentException(s"$SchemaNameKey not set"))
-
-    val schemaDir = topicInfo.params
-      .get(SchemaDirKey)
-      .orElse(Option(System.getenv(SchemaDirEnvVar)))
-      .getOrElse(throw new IllegalArgumentException(
-        s"Schema directory not set: provide '$SchemaDirKey' in topic params or set the $SchemaDirEnvVar env var"))
-
     loadSchema(schemaDir, schemaName)
   }
 
@@ -62,6 +53,5 @@ class LocalSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
 
 object LocalSchemaSerDe {
   val SchemaNameKey = "schema_name"
-  val SchemaDirKey = "schema_dir"
   val SchemaDirEnvVar = "LOCAL_SCHEMA_DIR"
 }
