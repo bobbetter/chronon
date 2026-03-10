@@ -93,6 +93,14 @@ struct TableInfo {
     * This only takes effect for the external tables -> Chronon tables entrypoint. All chronon tables are partitioned.
     **/
     300: optional string triggerExpr
+
+    /**
+    * Indicates the source table uses a timestamp or date column for time-based filtering
+    * instead of traditional Hive-style string partitioning. When true, partitionColumn
+    * should reference the timestamp/date column. The engine derives virtual partitions
+    * via MIN/MAX of that column and uses a MAX-based sensor check.
+    **/
+    400: optional bool timePartitioned
 }
 
 struct TableDependency {

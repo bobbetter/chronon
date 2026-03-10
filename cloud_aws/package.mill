@@ -13,7 +13,7 @@ trait CloudAwsModule extends Cross.Module[String] with build.BaseModule {
   // Versions force-overridden to fix CVEs from uber-jar transitive deps.
   // Also used by patchAssemblyMetadata to write correct pom.properties.
   private val avroVersion = build.Constants.avroVersion
-  private val jettyVersion = "12.0.12"
+  private val jettyVersion = "12.0.32"
   private val nimbusJoseJwtVersion = "9.37.4"
 
   def moduleDeps = Seq(build.spark(crossValue), build.aggregator(crossValue), build.api(crossValue), build.online(crossValue))

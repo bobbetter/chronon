@@ -1,10 +1,12 @@
 package ai.chronon.spark.catalog
 
+import ai.chronon.api.PartitionSpec
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import org.apache.spark.sql.catalyst.util.QuotingUtils
 import org.apache.spark.sql.connector.catalog.Identifier
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.functions.{col, date_format, min, max}
+import org.apache.spark.sql.types.{DateType, StructType}
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.util.{Failure, Success, Try}
@@ -105,6 +107,58 @@ trait Format {
 
   // Does this format support sub partitions filters
   def supportSubPartitionsFilter: Boolean
+
+  // Returns the max date present in a timestamp/date column, formatted as a partition date string.
+  // Used by sensors to check if data covers a required date range.
+  def maxTimestampDate(tableName: String, timestampColumn: String, partitionSpec: PartitionSpec)(implicit
+      sparkSession: SparkSession): Option[String] = {
+    import sparkSession.implicits._
+    Try {
+      val df = sparkSession.read.table(tableName)
+      df.select(date_format(max(col(timestampColumn)).cast(DateType), partitionSpec.format).as("max_date"))
+        .as[String]
+        .collect()
+        .headOption
+        .flatMap(v => Option(v))
+    } match {
+      case Success(result) => result
+      case Failure(e) =>
+        logger.warn(s"Failed to get max timestamp date for $tableName: ${e.getMessage}")
+        None
+    }
+  }
+
+  // Derive virtual partitions from MIN/MAX of a timestamp/date column.
+  // Returns all dates between min and max as formatted date strings.
+  def virtualPartitions(tableName: String, timestampColumn: String, partitionSpec: PartitionSpec)(implicit
+      sparkSession: SparkSession): List[String] = {
+    import sparkSession.implicits._
+    Try {
+      val df = sparkSession.read.table(tableName)
+      // Cast to date first (truncates to date in session timezone), then compute min/max
+      // Compute min/max first, then cast — allows Spark to use Parquet file-level statistics
+      val result = df
+        .select(
+          date_format(min(col(timestampColumn)).cast(DateType), partitionSpec.format).as("min_date"),
+          date_format(max(col(timestampColumn)).cast(DateType), partitionSpec.format).as("max_date")
+        )
+        .as[(String, String)]
+        .collect()
+        .headOption
+
+      result
+        .flatMap { case (minDate, maxDate) =>
+          if (minDate == null || maxDate == null) None
+          else Some(partitionSpec.expandRange(minDate, maxDate))
+        }
+        .getOrElse(List.empty)
+    } match {
+      case Success(partitions) => partitions
+      case Failure(e) =>
+        logger.warn(s"Failed to get virtual partitions for $tableName: ${e.getMessage}")
+        List.empty
+    }
+  }
 
 }
 

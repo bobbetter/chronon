@@ -294,6 +294,7 @@ aws_databricks = Team(
             "ARTIFACT_PREFIX": "s3://zipline-artifacts-dev",
             "WAREHOUSE_PREFIX": "s3://zipline-warehouse-dev",
             "DATABRICKS_HOST": "https://dbc-050d6f00-dcb3.cloud.databricks.com",
+            "DATABRICKS_SECRET_NAME": "canary-zipline-databricks-sp",
             "FRONTEND_URL": "http://localhost:3000",
             "HUB_URL": "http://localhost:3903",
         },
@@ -307,16 +308,16 @@ aws_databricks = Team(
             "spark.databricks.delta.deletionVectors.enabled": "false",
 
             # UC read catalog (Delta via UCSingleCatalog)
-            # Token injected by hub via DATABRICKS_OAUTH_TOKEN env var
+            # Token resolved at runtime on EMR via shell variable expansion (must use $VAR not ${VAR})
             "spark.sql.catalog.workspace": "io.unitycatalog.spark.UCSingleCatalog",
             "spark.sql.catalog.workspace.uri": "https://dbc-050d6f00-dcb3.cloud.databricks.com/api/2.1/unity-catalog",
-            "spark.sql.catalog.workspace.token": "${DATABRICKS_OAUTH_TOKEN}",
+            "spark.sql.catalog.workspace.token": "$DATABRICKS_OAUTH_TOKEN",
 
             # UC write catalog (Iceberg via REST)
             "spark.sql.catalog.workspace_iceberg": "org.apache.iceberg.spark.SparkCatalog",
             "spark.sql.catalog.workspace_iceberg.type": "rest",
             "spark.sql.catalog.workspace_iceberg.uri": "https://dbc-050d6f00-dcb3.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest",
-            "spark.sql.catalog.workspace_iceberg.token": "${DATABRICKS_OAUTH_TOKEN}",
+            "spark.sql.catalog.workspace_iceberg.token": "$DATABRICKS_OAUTH_TOKEN",
             "spark.sql.catalog.workspace_iceberg.warehouse": "workspace",
 
             # Chronon write config

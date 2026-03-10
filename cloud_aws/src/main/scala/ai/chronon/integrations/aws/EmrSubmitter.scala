@@ -2,6 +2,7 @@ package ai.chronon.integrations.aws
 
 import ai.chronon.api.JobStatusType
 import ai.chronon.integrations.aws.EmrSubmitter.{
+  DatabricksOAuthTokenVar,
   DefaultClusterIdleTimeout,
   DefaultClusterInstanceCount,
   DefaultClusterInstanceType
@@ -34,7 +35,8 @@ class EmrSubmitter(customerId: String,
                    override val dqMetricsDataset: String = "",
                    flinkEksServiceAccount: Option[String] = None,
                    flinkEksNamespace: Option[String] = None,
-                   eksClusterName: Option[String] = None)
+                   eksClusterName: Option[String] = None,
+                   ingressBaseUrl: Option[String] = None)
     extends JobSubmitter {
 
   private val ClusterApplications = List(
@@ -198,28 +200,35 @@ class EmrSubmitter(customerId: String,
   }
 
   private def createStepConfig(filesToMount: List[String],
-                               mainClass: String,
-                               jarUri: String,
+                               submissionProperties: Map[String, String],
                                jobProperties: Map[String, String],
                                args: String*): StepConfig = {
-    // TODO: see if we can use the spark.files or --files instead of doing this ourselves
     // Copy files from s3 to cluster
+    // TODO: see if we can use the spark.files or --files instead of doing this ourselves
     val awsS3CpArgs = filesToMount.map(file => s"aws s3 cp $file /mnt/zipline/")
+    val tokenFetchScript = maybeBuildDatabricksTokenFetchScript(submissionProperties)
+
     // Escape single quotes for safe shell interpolation inside bash -c '...'
+    // Values referencing the Databricks OAuth token use double quotes to allow shell variable expansion
     val confArgs = jobProperties
       .map { case (k, v) =>
-        val escapedKey = k.replace("'", "'\\''")
-        val escapedValue = v.replace("'", "'\\''")
-        s"--conf '${escapedKey}=${escapedValue}'"
+        if (v.contains(DatabricksOAuthTokenVar)) {
+          val escapedKey = k.replace("\"", "\\\"")
+          val escapedValue = v.replace("\"", "\\\"")
+          s"""--conf "$escapedKey=$escapedValue""""
+        } else {
+          val escapedKey = k.replace("'", "'\\''")
+          val escapedValue = v.replace("'", "'\\''")
+          s"--conf '$escapedKey=$escapedValue'"
+        }
       }
       .mkString(" ")
-    val sparkSubmitArgs =
-      List(s"spark-submit $confArgs --class $mainClass $jarUri ${args.mkString(" ")}")
-    val finalArgs = List(
-      "bash",
-      "-c",
-      (awsS3CpArgs ++ sparkSubmitArgs).mkString("; \n")
-    )
+    val mainClass = submissionProperties(MainClass)
+    val jarUri = submissionProperties(JarURI)
+    val sparkSubmitCmd =
+      s"${tokenFetchScript.getOrElse("")}spark-submit $confArgs --class $mainClass $jarUri ${args.mkString(" ")}"
+
+    val finalArgs = List("bash", "-c", (awsS3CpArgs ++ List(sparkSubmitCmd)).mkString("; \n"))
     logger.debug(s"Step config args: $finalArgs")
     StepConfig
       .builder()
@@ -235,6 +244,29 @@ class EmrSubmitter(customerId: String,
           .build()
       )
       .build()
+  }
+
+  private def maybeBuildDatabricksTokenFetchScript(submissionProperties: Map[String, String]): Option[String] = {
+    val databricksHost = submissionProperties.get("DATABRICKS_HOST")
+    val databricksSecretName = submissionProperties.get("DATABRICKS_SECRET_NAME")
+    (databricksHost, databricksSecretName) match {
+      case (Some(host), Some(secretName)) => Some(buildDatabricksTokenFetchScript(host, secretName))
+      case (Some(_), None) | (None, Some(_)) =>
+        throw new IllegalArgumentException("Both DATABRICKS_HOST and DATABRICKS_SECRET_NAME must be set together")
+      case _ => None
+    }
+  }
+
+  private def buildDatabricksTokenFetchScript(host: String, secretName: String): String = {
+    require(awsRegion.nonEmpty, "AWS_REGION must be set when using Databricks OAuth token fetch")
+    val tokenUrl = s"${host.stripSuffix("/")}/oidc/v1/token"
+    Seq(
+      s"""SECRET_JSON=$$(aws secretsmanager get-secret-value --secret-id '$secretName' --query 'SecretString' --output text --region '$awsRegion')""",
+      s"""DB_CLIENT_ID=$$(echo "$$SECRET_JSON" | jq -r '.client_id')""",
+      s"""DB_CLIENT_SECRET=$$(echo "$$SECRET_JSON" | jq -r '.client_secret')""",
+      s"""DATABRICKS_OAUTH_TOKEN=$$(curl --fail -s -X POST '$tokenUrl' -H 'Content-Type: application/x-www-form-urlencoded' -u "$$DB_CLIENT_ID:$$DB_CLIENT_SECRET" -d 'grant_type=client_credentials&scope=all-apis' | jq -r '.access_token')""",
+      s"""{ [ -n "$$DATABRICKS_OAUTH_TOKEN" ] && [ "$$DATABRICKS_OAUTH_TOKEN" != "null" ]; } || { echo "Failed to fetch Databricks OAuth token" >&2; exit 1; }"""
+    ).mkString(" && ") + "; "
   }
 
   /** Finds an EMR cluster by name, paginating through all results.
@@ -497,11 +529,7 @@ class EmrSubmitter(customerId: String,
 
       case TypeSparkJob =>
         val existingJobId = submissionProperties.getOrElse(ClusterId, throw new RuntimeException("JobFlowId not found"))
-        val stepConfig = createStepConfig(files,
-                                          submissionProperties(MainClass),
-                                          submissionProperties(JarURI),
-                                          jobProperties,
-                                          userArgs: _*)
+        val stepConfig = createStepConfig(files, submissionProperties, jobProperties, userArgs: _*)
 
         val request = AddJobFlowStepsRequest
           .builder()
@@ -513,7 +541,7 @@ class EmrSubmitter(customerId: String,
 
         logger.info(s"EMR step id: $responseStepId")
         logger.info(
-          s"Safe to exit. Follow the job status at: https://console.aws.amazon.com/emr/home#/clusterDetails/$existingJobId")
+          s"Safe to exit. Follow the job status at: https://$awsRegion.console.aws.amazon.com/emr/home?region=$awsRegion#/clusterDetails/$existingJobId")
         // Return composite ID so status/kill/getJobUrl can resolve both cluster and step
         s"$existingJobId:$responseStepId"
     }
@@ -621,8 +649,27 @@ class EmrSubmitter(customerId: String,
       } else None
     } else if (jobId.contains(":")) {
       val parts = jobId.split(":")
-      Some(s"https://console.aws.amazon.com/emr/home?region=$awsRegion#/clusterDetails/${parts(0)}/step/${parts(1)}")
+      Some(s"https://$awsRegion.console.aws.amazon.com/emr/home?region=$awsRegion#/clusterDetails/${parts(0)}")
     } else None
+  }
+
+  // Base SHS URL only — EMR DescribeStep API doesn't provide yarnApplicationId for deep linking
+  override def getSparkUrl(jobId: String): Option[String] = {
+    if (jobId.startsWith("flink:")) {
+      None
+    } else if (jobId.contains(":")) {
+      val clusterId = jobId.split(":")(0)
+      val clusterIdLower = clusterId.stripPrefix("j-").toLowerCase
+      Some(s"https://p-$clusterIdLower-shs.emrappui-prod.$awsRegion.amazonaws.com/shs/")
+    } else None
+  }
+
+  override def getFlinkUrl(jobId: String): Option[String] = {
+    if (!jobId.startsWith("flink:")) return None
+    val parts = jobId.split(":", 3)
+    if (parts.length != 3) return None
+    val deploymentName = parts(2)
+    ingressBaseUrl.map(base => s"${base.stripSuffix("/")}/flink/$deploymentName/")
   }
 
   override def deprecatedClusterNameEnvVars: Seq[String] = Seq(EmrClusterNameEnvVar)
@@ -675,19 +722,23 @@ class EmrSubmitter(customerId: String,
 }
 
 object EmrSubmitter {
+  private val DatabricksOAuthTokenVar = "$DATABRICKS_OAUTH_TOKEN"
+
   def apply(k8sConfig: Option[Config] = None): EmrSubmitter = {
     val customerId = sys.env.getOrElse("CUSTOMER_ID", throw new Exception("CUSTOMER_ID not set")).toLowerCase
     val awsRegion = sys.env.getOrElse("AWS_REGION", sys.env.getOrElse("AWS_DEFAULT_REGION", ""))
+    val ingressBaseUrl = sys.env.get("HUB_BASE_URL")
 
     new EmrSubmitter(
       customerId,
       EmrClient.builder().build(),
       Ec2Client.builder().build(),
-      eksFlinkSubmitter = Some(new EksFlinkSubmitter(k8sConfig)),
+      eksFlinkSubmitter = Some(new EksFlinkSubmitter(k8sConfig, ingressBaseUrl = ingressBaseUrl)),
       awsRegion = awsRegion,
       flinkEksServiceAccount = sys.env.get("FLINK_EKS_SERVICE_ACCOUNT"),
       flinkEksNamespace = sys.env.get("FLINK_EKS_NAMESPACE"),
-      eksClusterName = sys.env.get("EKS_CLUSTER_NAME")
+      eksClusterName = sys.env.get("EKS_CLUSTER_NAME"),
+      ingressBaseUrl = ingressBaseUrl
     )
   }
 

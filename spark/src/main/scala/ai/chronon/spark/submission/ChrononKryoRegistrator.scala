@@ -117,6 +117,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "ai.chronon.spark.KeyWithHash",
       "java.math.BigDecimal",
       "java.math.BigInteger",
+      "java.time.Instant",
       "java.time.LocalDate",
       "java.time.LocalDateTime",
       "java.util.ArrayList",
