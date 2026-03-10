@@ -44,8 +44,8 @@ object JsonConversions {
     }
 
   private def parseObjectSchema(schema: util.Map[String, AnyRef],
-                                 title: String,
-                                 rootDefs: util.Map[String, AnyRef]): StructType = {
+                                title: String,
+                                rootDefs: util.Map[String, AnyRef]): StructType = {
     val properties = Option(schema.get("properties"))
       .map(_.asInstanceOf[util.Map[String, AnyRef]])
       .getOrElse(util.Collections.emptyMap[String, AnyRef]())
@@ -61,8 +61,7 @@ object JsonConversions {
   private[serde] def jsonTypeToChronon(fieldDef: util.Map[String, AnyRef]): DataType =
     jsonTypeToChronon(fieldDef, rootDefs = util.Collections.emptyMap())
 
-  private def jsonTypeToChronon(fieldDef: util.Map[String, AnyRef],
-                                 rootDefs: util.Map[String, AnyRef]): DataType = {
+  private def jsonTypeToChronon(fieldDef: util.Map[String, AnyRef], rootDefs: util.Map[String, AnyRef]): DataType = {
     // Resolve $ref before inspecting the type — format: "#/definitions/<group>/<TypeName>"
     if (fieldDef.containsKey("$ref")) {
       return resolveRef(fieldDef.get("$ref").toString, rootDefs) match {
@@ -128,8 +127,7 @@ object JsonConversions {
   }
 
   /** Resolves a JSON Schema $ref of the form "#/definitions/<group>/<TypeName>" against the root schema map. */
-  private def resolveRef(ref: String,
-                          rootDefs: util.Map[String, AnyRef]): Option[util.Map[String, AnyRef]] = {
+  private def resolveRef(ref: String, rootDefs: util.Map[String, AnyRef]): Option[util.Map[String, AnyRef]] = {
     // Only internal refs starting with "#/" are supported
     if (!ref.startsWith("#/")) return None
     val parts = ref.stripPrefix("#/").split("/")
