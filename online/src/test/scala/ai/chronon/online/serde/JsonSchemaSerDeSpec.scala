@@ -736,4 +736,48 @@ class JsonSchemaSerDeSpec extends AnyFlatSpec with Matchers {
     metaRow(metaStruct.indexWhere(_.name == "region")) shouldBe "US"
     metaRow(metaStruct.indexWhere(_.name == "count")) shouldBe 42L
   }
+
+  // --- Extra fields in payload not present in schema ---
+
+  it should "silently ignore top-level fields in the payload that are absent from the schema" in {
+    val serDe = new JsonSchemaSerDe(flatSchema, "user_event")
+    // "unknown_field" and "records" array are not in the schema
+    val message = """{"user_id": "u1", "ts": 1700000000000, "score": 0.5, "active": true, "unknown_field": "ignored", "records": [{"a": 1}, {"b": 2}]}"""
+    val mutation = serDe.fromBytes(message.getBytes(StandardCharsets.UTF_8))
+
+    val s = serDe.schema
+    s.fields.length shouldBe 4  // schema shape is unchanged
+    mutation.after(s.indexWhere(_.name == "user_id")) shouldBe "u1"
+    mutation.after(s.indexWhere(_.name == "ts")) shouldBe 1700000000000L
+  }
+
+  it should "silently ignore extra fields inside a nested struct that are absent from the schema" in {
+    val nestedSchema =
+      """{
+        |  "title": "event",
+        |  "type": "object",
+        |  "properties": {
+        |    "id": { "type": "string" },
+        |    "metadata": {
+        |      "type": "object",
+        |      "title": "metadata",
+        |      "properties": {
+        |        "region": { "type": "string" }
+        |      }
+        |    }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(nestedSchema, "event")
+    // "device_id", "session_id", "records" are not in the metadata schema
+    val message = """{"id": "e1", "metadata": {"region": "US", "device_id": "abc", "session_id": "xyz", "records": [1, 2, 3]}}"""
+    val mutation = serDe.fromBytes(message.getBytes(StandardCharsets.UTF_8))
+
+    val s = serDe.schema
+    mutation.after(s.indexWhere(_.name == "id")) shouldBe "e1"
+    val metaRow = mutation.after(s.indexWhere(_.name == "metadata")).asInstanceOf[Array[Any]]
+    val metaStruct = s.fields.find(_.name == "metadata").get.fieldType.asInstanceOf[StructType]
+    metaStruct.fields.length shouldBe 1  // only "region" is in schema
+    metaRow(metaStruct.indexWhere(_.name == "region")) shouldBe "US"
+  }
 }
