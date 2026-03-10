@@ -63,8 +63,10 @@ class GlueSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
     clientBuilder.build()
   }
 
-  protected[flink_connectors] def localSchemaDirOverride: Option[String] =
-    Option(System.getenv(LocalSchemaSerDe.SchemaDirEnvVar))
+  protected[flink_connectors] def localSchemaDirOverride: Option[String] = {
+    val v = System.getenv(LocalSchemaSerDe.SchemaDirEnvVar)
+    if (v != null && v.trim.nonEmpty) Some(v) else None
+  }
 
   private lazy val delegate: SerDe = retrieveSchema(topicInfo)
 

@@ -687,7 +687,7 @@ class JsonSchemaSerDeSpec extends AnyFlatSpec with Matchers {
     elemStruct.fields.find(_.name == "value").get.fieldType shouldBe DoubleType
   }
 
-  it should "fall back to StringType for an unresolvable $ref" in {
+  it should "throw for an unresolvable $ref" in {
     val schema =
       """{
         |  "title": "broken",
@@ -698,7 +698,8 @@ class JsonSchemaSerDeSpec extends AnyFlatSpec with Matchers {
         |}""".stripMargin
 
     val serDe = new JsonSchemaSerDe(schema, "broken")
-    serDe.schema.fields.find(_.name == "x").get.fieldType shouldBe StringType
+    val ex = intercept[IllegalArgumentException] { serDe.schema }
+    ex.getMessage should include("#/definitions/missing/Type")
   }
 
   it should "deserialize a nested struct accessed via $ref" in {

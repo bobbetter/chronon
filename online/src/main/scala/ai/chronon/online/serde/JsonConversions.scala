@@ -66,7 +66,7 @@ object JsonConversions {
     if (fieldDef.containsKey("$ref")) {
       return resolveRef(fieldDef.get("$ref").toString, rootDefs) match {
         case Some(resolved) => jsonTypeToChronon(resolved, rootDefs)
-        case None           => StringType
+        case None           => throw new IllegalArgumentException(s"Unresolved JSON Schema $$ref: '${fieldDef.get("$ref")}'")
       }
     }
 
@@ -194,22 +194,22 @@ object JsonConversions {
         }
       case DateType =>
         value match {
-          case s: String => java.sql.Date.valueOf(java.time.LocalDate.parse(s))
+          case s: String => Try(java.sql.Date.valueOf(java.time.LocalDate.parse(s))).getOrElse(null)
           case _         => null
         }
       case TimestampType =>
         value match {
-          case s: String => java.sql.Timestamp.from(java.time.Instant.parse(s))
+          case s: String => Try(java.sql.Timestamp.from(java.time.Instant.parse(s))).getOrElse(null)
           case _         => null
         }
       case BinaryType =>
         value match {
-          case s: String => util.Base64.getDecoder.decode(s)
+          case s: String => Try(util.Base64.getDecoder.decode(s)).getOrElse(null)
           case _         => null
         }
       case DecimalType(_, _) =>
         value match {
-          case s: String               => new java.math.BigDecimal(s)
+          case s: String               => Try(new java.math.BigDecimal(s)).getOrElse(null)
           case d: java.lang.Double     => java.math.BigDecimal.valueOf(d)
           case i: java.lang.Integer    => new java.math.BigDecimal(i)
           case l: java.math.BigInteger => new java.math.BigDecimal(l)
