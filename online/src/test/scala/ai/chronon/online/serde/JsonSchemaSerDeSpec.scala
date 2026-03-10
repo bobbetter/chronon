@@ -149,7 +149,305 @@ class JsonSchemaSerDeSpec extends AnyFlatSpec with Matchers {
     serDe.schema.fields.find(_.name == "values").get.fieldType shouldBe ListType(StringType)
   }
 
+  // --- Nullable type arrays ---
+
+  it should "parse nullable string type [\"string\", \"null\"]" in {
+    val schema =
+      """{
+        |  "title": "nullable_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "name": { "type": ["string", "null"] }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "nullable_test")
+    serDe.schema.fields.find(_.name == "name").get.fieldType shouldBe StringType
+  }
+
+  it should "parse nullable integer type [\"integer\", \"null\"]" in {
+    val schema =
+      """{
+        |  "title": "nullable_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "count": { "type": ["integer", "null"] }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "nullable_test")
+    serDe.schema.fields.find(_.name == "count").get.fieldType shouldBe LongType
+  }
+
+  it should "parse nullable number type [\"number\", \"null\"]" in {
+    val schema =
+      """{
+        |  "title": "nullable_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "ratio": { "type": ["number", "null"] }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "nullable_test")
+    serDe.schema.fields.find(_.name == "ratio").get.fieldType shouldBe DoubleType
+  }
+
+  it should "parse nullable boolean type [\"boolean\", \"null\"]" in {
+    val schema =
+      """{
+        |  "title": "nullable_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "flag": { "type": ["boolean", "null"] }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "nullable_test")
+    serDe.schema.fields.find(_.name == "flag").get.fieldType shouldBe BooleanType
+  }
+
+  it should "parse nullable array type [\"array\", \"null\"] with items" in {
+    val schema =
+      """{
+        |  "title": "nullable_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "tags": { "type": ["array", "null"], "items": { "type": "string" } }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "nullable_test")
+    serDe.schema.fields.find(_.name == "tags").get.fieldType shouldBe ListType(StringType)
+  }
+
+  // --- Format annotations ---
+
+  it should "parse date format as DateType" in {
+    val schema =
+      """{
+        |  "title": "format_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "birth_date": { "type": "string", "format": "date" }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "format_test")
+    serDe.schema.fields.find(_.name == "birth_date").get.fieldType shouldBe DateType
+  }
+
+  it should "parse date-time format as TimestampType" in {
+    val schema =
+      """{
+        |  "title": "format_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "created_at": { "type": "string", "format": "date-time" }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "format_test")
+    serDe.schema.fields.find(_.name == "created_at").get.fieldType shouldBe TimestampType
+  }
+
+  it should "parse base64 contentEncoding as BinaryType" in {
+    val schema =
+      """{
+        |  "title": "format_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "payload": { "type": "string", "contentEncoding": "base64" }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "format_test")
+    serDe.schema.fields.find(_.name == "payload").get.fieldType shouldBe BinaryType
+  }
+
+  it should "parse number with decimal format as DecimalType" in {
+    val schema =
+      """{
+        |  "title": "format_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "amount": { "type": "number", "format": "decimal", "precision": 10, "scale": 2 }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "format_test")
+    serDe.schema.fields.find(_.name == "amount").get.fieldType shouldBe DecimalType(10, 2)
+  }
+
+  it should "still parse plain string as StringType (regression)" in {
+    val schema =
+      """{
+        |  "title": "regression_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "name": { "type": "string" }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "regression_test")
+    serDe.schema.fields.find(_.name == "name").get.fieldType shouldBe StringType
+  }
+
+  it should "still parse plain number as DoubleType (regression)" in {
+    val schema =
+      """{
+        |  "title": "regression_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "ratio": { "type": "number" }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "regression_test")
+    serDe.schema.fields.find(_.name == "ratio").get.fieldType shouldBe DoubleType
+  }
+
+  // --- Mutation/reversal support ---
+
+  it should "produce before-populated Mutation when is_before is true" in {
+    val reversalSchema =
+      """{
+        |  "title": "reversal_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "user_id": { "type": "string" },
+        |    "is_before": { "type": "boolean" }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(reversalSchema, "reversal_test")
+    val message = """{"user_id": "u1", "is_before": true}"""
+    val mutation = serDe.fromBytes(message.getBytes(StandardCharsets.UTF_8))
+
+    mutation.before should not be null
+    mutation.after shouldBe null
+  }
+
+  it should "produce after-populated Mutation when is_before is false" in {
+    val reversalSchema =
+      """{
+        |  "title": "reversal_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "user_id": { "type": "string" },
+        |    "is_before": { "type": "boolean" }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(reversalSchema, "reversal_test")
+    val message = """{"user_id": "u1", "is_before": false}"""
+    val mutation = serDe.fromBytes(message.getBytes(StandardCharsets.UTF_8))
+
+    mutation.after should not be null
+    mutation.before shouldBe null
+  }
+
+  it should "produce after-populated Mutation when is_before is absent from schema" in {
+    val serDe = new JsonSchemaSerDe(flatSchema, "user_event")
+    val message = """{"user_id": "u42", "ts": 1700000000000, "score": 0.99, "active": true}"""
+    val mutation = serDe.fromBytes(message.getBytes(StandardCharsets.UTF_8))
+
+    mutation.after should not be null
+    mutation.before shouldBe null
+  }
+
   // --- Deserialization ---
+
+  it should "deserialize nullable fields with a value and with null" in {
+    val schema =
+      """{
+        |  "title": "nullable_deser",
+        |  "type": "object",
+        |  "properties": {
+        |    "count": { "type": ["integer", "null"] },
+        |    "label": { "type": ["string", "null"] }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "nullable_deser")
+    val s = serDe.schema
+
+    val withValues = serDe.fromBytes("""{"count": 42, "label": "hello"}""".getBytes(StandardCharsets.UTF_8))
+    withValues.after(s.indexWhere(_.name == "count")) shouldBe 42L
+    withValues.after(s.indexWhere(_.name == "label")) shouldBe "hello"
+
+    val withNulls = serDe.fromBytes("""{"count": null, "label": null}""".getBytes(StandardCharsets.UTF_8))
+    assert(withNulls.after(s.indexWhere(_.name == "count")) == null)
+    assert(withNulls.after(s.indexWhere(_.name == "label")) == null)
+  }
+
+  it should "deserialize date string to java.sql.Date" in {
+    val schema =
+      """{
+        |  "title": "date_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "birth_date": { "type": "string", "format": "date" }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "date_test")
+    val message = """{"birth_date": "2024-01-15"}"""
+    val mutation = serDe.fromBytes(message.getBytes(StandardCharsets.UTF_8))
+
+    mutation.after(0) shouldBe java.sql.Date.valueOf("2024-01-15")
+  }
+
+  it should "deserialize date-time string to java.sql.Timestamp" in {
+    val schema =
+      """{
+        |  "title": "ts_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "created_at": { "type": "string", "format": "date-time" }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "ts_test")
+    val message = """{"created_at": "2024-01-15T10:30:00Z"}"""
+    val mutation = serDe.fromBytes(message.getBytes(StandardCharsets.UTF_8))
+
+    mutation.after(0) shouldBe java.sql.Timestamp.from(java.time.Instant.parse("2024-01-15T10:30:00Z"))
+  }
+
+  it should "deserialize base64 string to Array[Byte]" in {
+    val schema =
+      """{
+        |  "title": "binary_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "payload": { "type": "string", "contentEncoding": "base64" }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "binary_test")
+    val message = """{"payload": "aGVsbG8="}"""
+    val mutation = serDe.fromBytes(message.getBytes(StandardCharsets.UTF_8))
+
+    mutation.after(0).asInstanceOf[Array[Byte]] shouldBe "hello".getBytes(StandardCharsets.UTF_8)
+  }
+
+  it should "deserialize decimal string to BigDecimal" in {
+    val schema =
+      """{
+        |  "title": "decimal_test",
+        |  "type": "object",
+        |  "properties": {
+        |    "amount": { "type": "number", "format": "decimal", "precision": 10, "scale": 2 }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "decimal_test")
+    val message = """{"amount": "123.45"}"""
+    val mutation = serDe.fromBytes(message.getBytes(StandardCharsets.UTF_8))
+
+    mutation.after(0) shouldBe new java.math.BigDecimal("123.45")
+  }
 
   it should "deserialize flat JSON message" in {
     val serDe = new JsonSchemaSerDe(flatSchema, "user_event")
