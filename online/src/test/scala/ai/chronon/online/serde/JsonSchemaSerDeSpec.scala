@@ -613,4 +613,127 @@ class JsonSchemaSerDeSpec extends AnyFlatSpec with Matchers {
     val mutation = serDe.fromBytes(message.getBytes(StandardCharsets.UTF_8))
     mutation.after(0) shouldBe "hello\nworld \u00e9"
   }
+
+  // --- $ref resolution ---
+
+  it should "parse a $ref field as the referenced struct type" in {
+    val schema =
+      """{
+        |  "title": "event",
+        |  "type": "object",
+        |  "properties": {
+        |    "id": { "type": "string" },
+        |    "meta": { "$ref": "#/definitions/common/Meta" }
+        |  },
+        |  "definitions": {
+        |    "common": {
+        |      "Meta": {
+        |        "type": "object",
+        |        "title": "Meta",
+        |        "properties": {
+        |          "region": { "type": "string" },
+        |          "count":  { "type": "integer" }
+        |        }
+        |      }
+        |    }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "event")
+    val parsed = serDe.schema
+
+    parsed.fields.length shouldBe 2
+    val metaType = parsed.fields.find(_.name == "meta").get.fieldType
+    metaType shouldBe a[StructType]
+    val metaStruct = metaType.asInstanceOf[StructType]
+    metaStruct.name shouldBe "Meta"
+    metaStruct.fields.length shouldBe 2
+    metaStruct.fields.find(_.name == "region").get.fieldType shouldBe StringType
+    metaStruct.fields.find(_.name == "count").get.fieldType shouldBe LongType
+  }
+
+  it should "parse an array whose items use $ref" in {
+    val schema =
+      """{
+        |  "title": "batch",
+        |  "type": "object",
+        |  "properties": {
+        |    "items": {
+        |      "type": "array",
+        |      "items": { "$ref": "#/definitions/records/Record" }
+        |    }
+        |  },
+        |  "definitions": {
+        |    "records": {
+        |      "Record": {
+        |        "type": "object",
+        |        "title": "Record",
+        |        "properties": {
+        |          "name":  { "type": "string" },
+        |          "value": { "type": "number" }
+        |        }
+        |      }
+        |    }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "batch")
+    val itemsType = serDe.schema.fields.find(_.name == "items").get.fieldType
+    itemsType shouldBe a[ListType]
+    val elemType = itemsType.asInstanceOf[ListType].elementType
+    elemType shouldBe a[StructType]
+    val elemStruct = elemType.asInstanceOf[StructType]
+    elemStruct.fields.find(_.name == "name").get.fieldType shouldBe StringType
+    elemStruct.fields.find(_.name == "value").get.fieldType shouldBe DoubleType
+  }
+
+  it should "fall back to StringType for an unresolvable $ref" in {
+    val schema =
+      """{
+        |  "title": "broken",
+        |  "type": "object",
+        |  "properties": {
+        |    "x": { "$ref": "#/definitions/missing/Type" }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "broken")
+    serDe.schema.fields.find(_.name == "x").get.fieldType shouldBe StringType
+  }
+
+  it should "deserialize a nested struct accessed via $ref" in {
+    val schema =
+      """{
+        |  "title": "event",
+        |  "type": "object",
+        |  "properties": {
+        |    "id":   { "type": "string" },
+        |    "meta": { "$ref": "#/definitions/common/Meta" }
+        |  },
+        |  "definitions": {
+        |    "common": {
+        |      "Meta": {
+        |        "type": "object",
+        |        "title": "Meta",
+        |        "properties": {
+        |          "region": { "type": "string" },
+        |          "count":  { "type": "integer" }
+        |        }
+        |      }
+        |    }
+        |  }
+        |}""".stripMargin
+
+    val serDe = new JsonSchemaSerDe(schema, "event")
+    val message = """{"id": "e1", "meta": {"region": "US", "count": 42}}"""
+    val mutation = serDe.fromBytes(message.getBytes(StandardCharsets.UTF_8))
+
+    val s = serDe.schema
+    mutation.after(s.indexWhere(_.name == "id")) shouldBe "e1"
+
+    val metaRow = mutation.after(s.indexWhere(_.name == "meta")).asInstanceOf[Array[Any]]
+    val metaStruct = s.fields.find(_.name == "meta").get.fieldType.asInstanceOf[StructType]
+    metaRow(metaStruct.indexWhere(_.name == "region")) shouldBe "US"
+    metaRow(metaStruct.indexWhere(_.name == "count")) shouldBe 42L
+  }
 }

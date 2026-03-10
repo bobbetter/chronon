@@ -33,7 +33,8 @@ object JsonConversions {
     */
   def toChrononSchema(schemaDef: util.Map[String, AnyRef], fallbackName: String): StructType = {
     val title = Option(schemaDef.get("title")).map(_.toString).getOrElse(fallbackName)
-    parseObjectSchema(schemaDef, title)
+    // Root map is passed as-is so $ref resolution can reach the top-level "definitions" block
+    parseObjectSchema(schemaDef, title, rootDefs = schemaDef)
   }
 
   /** Converts a parsed JSON object (as produced by Jackson) into a Chronon row array. */
@@ -42,20 +43,34 @@ object JsonConversions {
       convertValue(jsonMap.get(field.name), field.fieldType)
     }
 
-  private def parseObjectSchema(schema: util.Map[String, AnyRef], title: String): StructType = {
+  private def parseObjectSchema(schema: util.Map[String, AnyRef],
+                                 title: String,
+                                 rootDefs: util.Map[String, AnyRef]): StructType = {
     val properties = Option(schema.get("properties"))
       .map(_.asInstanceOf[util.Map[String, AnyRef]])
       .getOrElse(util.Collections.emptyMap[String, AnyRef]())
 
     val fields = properties.asScala.map { case (fieldName, fieldDef) =>
-      StructField(fieldName, jsonTypeToChronon(fieldDef.asInstanceOf[util.Map[String, AnyRef]]))
+      StructField(fieldName, jsonTypeToChronon(fieldDef.asInstanceOf[util.Map[String, AnyRef]], rootDefs))
     }.toArray
 
     StructType(title, fields)
   }
 
   // Visible for testing
-  private[serde] def jsonTypeToChronon(fieldDef: util.Map[String, AnyRef]): DataType = {
+  private[serde] def jsonTypeToChronon(fieldDef: util.Map[String, AnyRef]): DataType =
+    jsonTypeToChronon(fieldDef, rootDefs = util.Collections.emptyMap())
+
+  private def jsonTypeToChronon(fieldDef: util.Map[String, AnyRef],
+                                 rootDefs: util.Map[String, AnyRef]): DataType = {
+    // Resolve $ref before inspecting the type — format: "#/definitions/<group>/<TypeName>"
+    if (fieldDef.containsKey("$ref")) {
+      return resolveRef(fieldDef.get("$ref").toString, rootDefs) match {
+        case Some(resolved) => jsonTypeToChronon(resolved, rootDefs)
+        case None           => StringType
+      }
+    }
+
     // JSON Schema nullable fields use "type": ["string", "null"] — extract the non-null type
     val jsonType: String = fieldDef.get("type") match {
       case list: util.List[_] =>
@@ -93,22 +108,43 @@ object JsonConversions {
             m.put("type", "string")
             m
           }
-        ListType(jsonTypeToChronon(items))
+        ListType(jsonTypeToChronon(items, rootDefs))
       case "object" =>
         if (fieldDef.containsKey("additionalProperties")) {
           val valueType = fieldDef.get("additionalProperties") match {
             case props: util.Map[_, _] =>
-              jsonTypeToChronon(props.asInstanceOf[util.Map[String, AnyRef]])
+              jsonTypeToChronon(props.asInstanceOf[util.Map[String, AnyRef]], rootDefs)
             case _ => StringType
           }
           MapType(StringType, valueType)
         } else if (fieldDef.containsKey("properties")) {
           val nestedTitle = Option(fieldDef.get("title")).map(_.toString).getOrElse("nested")
-          parseObjectSchema(fieldDef, nestedTitle)
+          parseObjectSchema(fieldDef, nestedTitle, rootDefs)
         } else {
           MapType(StringType, StringType)
         }
       case _ => StringType
+    }
+  }
+
+  /** Resolves a JSON Schema $ref of the form "#/definitions/<group>/<TypeName>" against the root schema map. */
+  private def resolveRef(ref: String,
+                          rootDefs: util.Map[String, AnyRef]): Option[util.Map[String, AnyRef]] = {
+    // Only internal refs starting with "#/" are supported
+    if (!ref.startsWith("#/")) return None
+    val parts = ref.stripPrefix("#/").split("/")
+    // Walk the root map one segment at a time
+    var current: AnyRef = rootDefs
+    for (part <- parts) {
+      current = current match {
+        case m: util.Map[_, _] => m.asInstanceOf[util.Map[String, AnyRef]].get(part)
+        case _                 => null
+      }
+      if (current == null) return None
+    }
+    current match {
+      case m: util.Map[_, _] => Some(m.asInstanceOf[util.Map[String, AnyRef]])
+      case _                 => None
     }
   }
 
