@@ -175,12 +175,12 @@ object JsonConversions {
         }
       case DecimalType(_, _) =>
         value match {
-          case s: String            => new java.math.BigDecimal(s)
-          case d: java.lang.Double  => java.math.BigDecimal.valueOf(d)
-          case i: java.lang.Integer => new java.math.BigDecimal(i)
+          case s: String               => new java.math.BigDecimal(s)
+          case d: java.lang.Double     => java.math.BigDecimal.valueOf(d)
+          case i: java.lang.Integer    => new java.math.BigDecimal(i)
           case l: java.math.BigInteger => new java.math.BigDecimal(l)
-          case l: java.lang.Long    => new java.math.BigDecimal(l)
-          case _                    => null
+          case l: java.lang.Long       => new java.math.BigDecimal(l)
+          case _                       => null
         }
       case ListType(elemType) =>
         value match {
