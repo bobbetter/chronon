@@ -102,23 +102,21 @@ class SemanticUtilsTest extends AnyFlatSpec with BeforeAndAfterEach {
     assertTrue(s"Archived reuse table $expectedReuseTable should exist", spark.catalog.tableExists(expectedReuseTable))
   }
 
-  it should "checkSemanticHashAndArchive should archive when table has no semantic hash" in {
+  it should "checkSemanticHashAndArchive should not archive when table has no semantic hash" in {
     val tableName = s"$testDb.test_table_no_hash"
     val newHash = "hash789"
 
     createTestTable(tableName, None)
     assertTrue(spark.catalog.tableExists(tableName))
 
-    // Should archive when no hash exists
+    // Should not archive when no hash exists — hash will be set after successful job completion
     val archivedTableOpt = semanticUtils.checkSemanticHashAndArchive(tableName, newHash)
 
-    // Original table should be archived to the reuse table
-    assertFalse(spark.catalog.tableExists(tableName))
+    // Should return None since table was not archived
+    assertEquals(None, archivedTableOpt)
 
-    // Should return the reuse table name
-    val expectedReuseTable = tableName + Constants.archiveReuseTableSuffix
-    assertEquals(Some(expectedReuseTable), archivedTableOpt)
-    assertTrue(s"Archived reuse table $expectedReuseTable should exist", spark.catalog.tableExists(expectedReuseTable))
+    // Table should still exist
+    assertTrue(spark.catalog.tableExists(tableName))
   }
 
   it should "checkSemanticHashAndArchive should handle non-existent table gracefully" in {

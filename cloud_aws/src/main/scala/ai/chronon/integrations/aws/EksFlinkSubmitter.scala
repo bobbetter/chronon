@@ -3,6 +3,7 @@ package ai.chronon.integrations.aws
 import ai.chronon.api.JobStatusType
 import ai.chronon.spark.submission.JobSubmitterConstants.{MaxRetainedCheckpoints, additionalFlinkJars}
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource
+import io.fabric8.kubernetes.api.model.networking.v1.IngressBuilder
 import io.fabric8.kubernetes.client.{Config, KubernetesClientBuilder}
 import io.fabric8.kubernetes.client.dsl.base.CustomResourceDefinitionContext
 import org.slf4j.LoggerFactory
@@ -14,7 +15,7 @@ import scala.jdk.CollectionConverters._
   * Uses IRSA (IAM Roles for Service Accounts) for AWS credential access — no explicit credentials
   * are passed; the pod's service account role is assumed automatically via web identity tokens.
   */
-class EksFlinkSubmitter(k8sConfig: Option[Config] = None) {
+class EksFlinkSubmitter(k8sConfig: Option[Config] = None, ingressBaseUrl: Option[String] = None) {
   import EksFlinkSubmitter._
 
   private val logger = LoggerFactory.getLogger(getClass)
@@ -256,17 +257,95 @@ class EksFlinkSubmitter(k8sConfig: Option[Config] = None) {
       )
       resource.setAdditionalProperty("spec", spec)
 
-      client
+      val created = client
         .genericKubernetesResources(flinkDeploymentCrdContext)
         .inNamespace(namespace)
         .resource(resource)
         .create()
 
       logger.info(s"Created FlinkDeployment: $deploymentName in namespace: $namespace")
+
+      if (ingressBaseUrl.isDefined) {
+        try {
+          createFlinkIngress(client, deploymentName, namespace, created.getMetadata.getUid)
+        } catch {
+          case e: Exception =>
+            logger.warn(
+              s"FlinkDeployment '$deploymentName' (namespace=$namespace, uid=${created.getMetadata.getUid}) " +
+                s"was created successfully but ingress setup failed — Flink UI may be unavailable: ${e.getMessage}",
+              e
+            )
+        }
+      }
+
       deploymentName
     } finally {
       client.close()
     }
+  }
+
+  // Create an Ingress resource for the Flink REST UI, with rules specific to this deployment. This allows
+  // nginx-ingress to route /flink/{deploymentName} to the correct Flink
+  // REST service, and ensures the Ingress is automatically deleted when the FlinkDeployment is removed.
+  private[aws] def createFlinkIngress(client: io.fabric8.kubernetes.client.KubernetesClient,
+                                      deploymentName: String,
+                                      namespace: String,
+                                      ownerUid: String): Unit = {
+    // Extract host from ingressBaseUrl so the ingress rule is host-specific, matching at the
+    // same specificity level as the hub catch-all ingress. Without a host, nginx-ingress prefers
+    // host-specific rules (even with path: /) over wildcard-host rules with longer paths.
+    val host = ingressBaseUrl
+      .flatMap { url =>
+        scala.util.Try(new java.net.URI(url).getHost).toOption.filter(_ != null)
+      }
+      .getOrElse(throw new IllegalArgumentException(
+        s"Could not extract host from ingressBaseUrl: $ingressBaseUrl — cannot create host-specific ingress rule"
+      ))
+
+    val ingress = new IngressBuilder()
+      .withNewMetadata()
+      .withName(deploymentName)
+      .withNamespace(namespace)
+      // Owner reference ensures Kubernetes GC deletes the Ingress when the FlinkDeployment
+      // is removed for any reason (crash, operator cleanup, manual delete).
+      .addNewOwnerReference()
+      .withApiVersion("flink.apache.org/v1beta1")
+      .withKind("FlinkDeployment")
+      .withName(deploymentName)
+      .withUid(ownerUid)
+      .withController(true)
+      .withBlockOwnerDeletion(true)
+      .endOwnerReference()
+      .addToAnnotations("nginx.ingress.kubernetes.io/use-regex", "true")
+      .addToAnnotations("nginx.ingress.kubernetes.io/rewrite-target", "/$2")
+      .addToAnnotations("nginx.ingress.kubernetes.io/proxy-read-timeout", "3600")
+      .addToAnnotations("nginx.ingress.kubernetes.io/proxy-send-timeout", "3600")
+      .addToAnnotations("nginx.ingress.kubernetes.io/proxy-http-version", "1.1")
+      .endMetadata()
+      .withNewSpec()
+      .withIngressClassName("nginx-hub")
+      .addNewRule()
+      .withHost(host)
+      .withNewHttp()
+      .addNewPath()
+      .withPath(s"/flink/$deploymentName(/|$$)(.*)")
+      .withPathType("ImplementationSpecific")
+      .withNewBackend()
+      .withNewService()
+      .withName(s"$deploymentName-rest")
+      .withNewPort()
+      .withNumber(8081)
+      .endPort()
+      .endService()
+      .endBackend()
+      .endPath()
+      .endHttp()
+      .endRule()
+      .endSpec()
+      .build()
+
+    client.network().v1().ingresses().inNamespace(namespace).resource(ingress).create()
+    logger.info(s"Created Ingress: $deploymentName in namespace: $namespace")
   }
 
   // Builds the init container, volume, volume mounts, and env vars for downloading JARs from S3.

@@ -75,16 +75,52 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
     val tableInfo = conf.sourceTableDependency.tableInfo
     val hasPartitionColumn = Option(tableInfo.partitionColumn).isDefined
     val hasTriggerExpr = Option(tableInfo.triggerExpr).isDefined
+    val isTimePartitioned = tableInfo.isSetTimePartitioned && tableInfo.timePartitioned
 
     // Case 1: No partitions or trigger expression defined -> return success
-    if (!hasPartitionColumn && !hasTriggerExpr) {
+    if (!hasPartitionColumn && !hasTriggerExpr && !isTimePartitioned) {
       logger.info(
         s"Input table ${tableName} has no partitions or trigger expression defined. Checking table existence.")
       if (tableUtils.tableReachable(tableName)) return Success(())
       else return Failure(new RuntimeException(s"Table ${tableName} was not found."))
     }
 
-    // Case 2: No partitions but trigger expression is defined
+    // Case 2: Time-partitioned table — check MAX(partitionColumn) covers range
+    if (isTimePartitioned && hasPartitionColumn) {
+      val partCol = tableInfo.partitionColumn
+      val spec = tableInfo.partitionSpec(tableUtils.partitionSpec)
+      @tailrec
+      def retryMaxCheck(attempt: Long): Try[Unit] = {
+        Try {
+          logger.info(s"Executing time-partitioned sensor check for ${tableName} column ${partCol}")
+          val maxValueStr = tableUtils
+            .maxTimestampDate(tableName, partCol, Some(spec))
+            .getOrElse(throw new RuntimeException(s"Could not determine MAX(${partCol}) for ${tableName}"))
+
+          val maxPartition = range.end
+          logger.info(s"MAX(${partCol}) = ${maxValueStr}, required end = ${maxPartition}")
+
+          if (maxValueStr >= maxPartition) {
+            logger.info(s"Time-partitioned sensor succeeded: ${maxValueStr} >= ${maxPartition}")
+            ()
+          } else {
+            throw new RuntimeException(s"Time-partitioned sensor: MAX(${partCol}) = ${maxValueStr} < ${maxPartition}")
+          }
+        } match {
+          case Success(_) => Success(())
+          case Failure(e) if attempt < retryCount =>
+            logger.warn(s"Attempt ${attempt + 1} failed: ${e.getMessage}. Retrying in ${retryIntervalMin} minutes")
+            Thread.sleep(retryIntervalMin * 60 * 1000)
+            retryMaxCheck(attempt + 1)
+          case Failure(e) =>
+            Failure(
+              new RuntimeException(s"Sensor timed out after ${retryIntervalMin * attempt} minutes. ${e.getMessage}", e))
+        }
+      }
+      return retryMaxCheck(0)
+    }
+
+    // Case 3: No partitions but trigger expression is defined
     if (!hasPartitionColumn && hasTriggerExpr) {
       val triggerExpr = tableInfo.triggerExpr
       @tailrec
@@ -136,7 +172,7 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
       return retryTriggerExpr(0)
     }
 
-    // Case 3: Use existing partition check logic
+    // Case 4: Use existing partition check logic
     val spec = tableInfo.partitionSpec(tableUtils.partitionSpec)
 
     @tailrec
@@ -558,7 +594,10 @@ class BatchNodeRunner(node: Node, tableUtils: TableUtils, api: Api) extends Node
       .filterNot(_._2.forall(td => td.isSetIsSoftNodeDependency && td.isSoftNodeDependency))
       .map { case (table, deps) =>
         val inputPartitionSpec = deps.head.tableInfo.partitionSpec(tableUtils.partitionSpec)
-        val existingPartitions = tableUtils.partitions(table, tablePartitionSpec = Some(inputPartitionSpec))
+        val isTimePartitioned = deps.head.tableInfo.isSetTimePartitioned && deps.head.tableInfo.timePartitioned
+        val existingPartitions = tableUtils.partitions(table,
+                                                       tablePartitionSpec = Some(inputPartitionSpec),
+                                                       timePartitioned = isTimePartitioned)
 
         val missingPartitionsAcrossDeps = deps.flatMap { td =>
           val inputPartSpec = Option(td.getTableInfo)

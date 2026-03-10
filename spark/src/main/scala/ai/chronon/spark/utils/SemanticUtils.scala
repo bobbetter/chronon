@@ -60,22 +60,29 @@ class SemanticUtils(tableUtils: TableUtils) {
 
       val existingSemanticHashOpt = getSemanticHash(outputTable)
 
-      if (!existingSemanticHashOpt.contains(incomingSemanticHash)) {
+      existingSemanticHashOpt match {
+        case Some(existingHash) if existingHash != incomingSemanticHash =>
+          logger.info(
+            s"Semantic hash has changed for table $outputTable. " +
+              s"Existing: $existingHash, New: $incomingSemanticHash. " +
+              s"Going to archive the table."
+          )
+          val archived = archiveForReuse(outputTable)
+          Some(archived)
 
-        logger.info(
-          s"Semantic hash has changed for table $outputTable. " +
-            s"Existing: $existingSemanticHashOpt, New: $incomingSemanticHash. " +
-            s"Going to archive the table."
-        )
+        case Some(_) =>
+          // Hash matches, no archival needed
+          None
 
-        val archived = archiveForReuse(outputTable)
-
-        Some(archived)
-
-      } else {
-
-        None
-
+        case None =>
+          // Hash missing — likely a legacy table or first run with semantic hashing.
+          // Don't archive; schema compatibility is enforced during write.
+          // The hash will be set after the job succeeds.
+          logger.info(
+            s"No semantic hash found for table $outputTable. " +
+              s"Skipping archival — hash will be set after successful job completion."
+          )
+          None
       }
 
     } catch {
@@ -103,9 +110,7 @@ class SemanticUtils(tableUtils: TableUtils) {
 
   def setSemanticHash(outputTable: String, semanticHash: String): Unit = {
 
-    val tableProps = tableUtils.getTableProperties(outputTable)
-
-    val existingHashOpt = tableProps.flatMap(_.get(Constants.SemanticHashKey))
+    val existingHashOpt = getSemanticHash(outputTable)
 
     if (existingHashOpt.contains(semanticHash)) {
 
@@ -118,7 +123,7 @@ class SemanticUtils(tableUtils: TableUtils) {
 
         val alterStmt = CreationUtils.alterTablePropertiesSql(
           outputTable,
-          tableProps.getOrElse(Map.empty) ++ Map(Constants.SemanticHashKey -> semanticHash)
+          Map(Constants.SemanticHashKey -> semanticHash)
         )
 
         tableUtils.sql(alterStmt)

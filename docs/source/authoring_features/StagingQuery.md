@@ -117,3 +117,39 @@ Because of this, you often want to write your `StagingQuery` using various templ
 ## `StagingQuery` in Production
 
 Once merged into production, your `StagingQuery` will get scheduled for daily run within your `{team}_staging_queries` DAG in airflow. The compute task will get an upstream `PartitionSensor` for each of your table dependencies, which will wait for that day's partition to land before kicking off the compute. See above for an example of how to set dependencies.
+
+## Time-Partitioned Input Tables
+
+When a `StagingQuery` reads from a table that uses a timestamp or date column instead of Hive-style string partitions (common in BigQuery, Snowflake, and Delta Lake), you can declare the dependency as time-partitioned. This tells the orchestration sensor to check data availability via `SELECT DATE(MAX(column))` instead of checking for discrete partition existence.
+
+```python
+v1 = StagingQuery(
+    query="""
+        SELECT
+            user_id,
+            event_value,
+            DATE(event_ts) as ds
+        FROM warehouse.user_events
+        WHERE event_ts >= {{ start_date }}
+          AND event_ts < {{ end_date(offset=1) }}
+    """,
+    startPartition="2024-01-01",
+    metaData=MetaData(
+        dependencies=[
+            TableDependency(
+                table_info=TableInfo(
+                    table="warehouse.user_events",
+                    partition_column="event_ts",
+                    time_partitioned=True,
+                ),
+            ),
+        ],
+    ),
+)
+```
+
+Key points:
+
+* The query should produce a `ds` column (e.g. via `DATE(event_ts) as ds`) so the output table is partitioned by date as usual.
+* Use `{{ end_date(offset=1) }}` for exclusive upper bounds on timestamp comparisons, since `{{ end_date }}` resolves to the last date in the range, not the day after.
+* The `time_partitioned=True` flag on the `TableDependency` tells the sensor to verify data coverage using `MAX(event_ts)` rather than checking for Hive partitions. Under the hood, Chronon computes `SELECT DATE(MAX(event_ts))` and compares it against the required date range.

@@ -1,9 +1,13 @@
 package ai.chronon.integrations.cloud_azure
 
+import ai.chronon.api.PartitionSpec
 import ai.chronon.spark.catalog.Format
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.types.StructType
 import org.slf4j.LoggerFactory
+
+import java.time.ZoneOffset
+import scala.util.{Failure, Success, Try}
 
 /** Snowflake Format implementation for reading tables and partition metadata via Spark Snowflake connector.
   *
@@ -179,6 +183,64 @@ case object Snowflake extends Format {
       s"$baseQuery WHERE $partitionFilters"
     } else {
       baseQuery
+    }
+  }
+
+  override def maxTimestampDate(tableName: String, timestampColumn: String, partitionSpec: PartitionSpec)(implicit
+      sparkSession: SparkSession): Option[String] = {
+    Try {
+      val sfOptions = getSnowflakeOptions
+      val query = s"SELECT MAX($timestampColumn)::DATE AS max_val FROM $tableName"
+      snowflakeLogger.info(s"Executing max timestamp date query: $query")
+
+      val result = SnowflakeConnector
+        .read(sparkSession, sfOptions, query)
+        .collect()
+        .headOption
+
+      result.flatMap { row =>
+        if (row.isNullAt(0)) None
+        else {
+          val utcMillis = row.getDate(0).toLocalDate.atStartOfDay(ZoneOffset.UTC).toInstant.toEpochMilli
+          Some(partitionSpec.at(utcMillis))
+        }
+      }
+    } match {
+      case Success(result) => result
+      case Failure(e) =>
+        snowflakeLogger.warn(s"Failed to get max timestamp date for $tableName: ${e.getMessage}")
+        None
+    }
+  }
+
+  override def virtualPartitions(tableName: String, timestampColumn: String, partitionSpec: PartitionSpec)(implicit
+      sparkSession: SparkSession): List[String] = {
+    Try {
+      val sfOptions = getSnowflakeOptions
+      val query =
+        s"SELECT MIN($timestampColumn)::DATE AS min_val, MAX($timestampColumn)::DATE AS max_val FROM $tableName"
+      snowflakeLogger.info(s"Executing virtual partitions query: $query")
+
+      val result = SnowflakeConnector
+        .read(sparkSession, sfOptions, query)
+        .collect()
+        .headOption
+
+      result
+        .flatMap { row =>
+          if (row.isNullAt(0) || row.isNullAt(1)) None
+          else {
+            val minMillis = row.getDate(0).toLocalDate.atStartOfDay(ZoneOffset.UTC).toInstant.toEpochMilli
+            val maxMillis = row.getDate(1).toLocalDate.atStartOfDay(ZoneOffset.UTC).toInstant.toEpochMilli
+            Some(partitionSpec.expandRange(partitionSpec.at(minMillis), partitionSpec.at(maxMillis)))
+          }
+        }
+        .getOrElse(List.empty)
+    } match {
+      case Success(partitions) => partitions
+      case Failure(e) =>
+        snowflakeLogger.warn(s"Failed to get virtual partitions for $tableName: ${e.getMessage}")
+        List.empty
     }
   }
 }
