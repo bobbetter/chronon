@@ -63,22 +63,22 @@ class DiffResult:
         # Detect version changes first
         remaining_deleted, remaining_added = self.detect_version_changes(deleted_names)
 
-        def added_signage():
-            return Text("➕ Added", style=f"{STYLE_DIM} {STYLE_SUCCESS}")
+        def adding_signage():
+            return Text("➕ Adding", style=f"{STYLE_DIM} {STYLE_SUCCESS}")
 
-        def updated_signage():
+        def updating_signage():
             return Text(
-                "❗ Changed in place (no version change)", style=f"{STYLE_DIM} {STYLE_WARNING}"
+                "❗ Changing in place (no version change)", style=f"{STYLE_DIM} {STYLE_WARNING}"
             )
 
-        def deleted_signage():
-            return Text("🗑️ Deleted", style=STYLE_ERROR)
+        def deleting_signage():
+            return Text("🗑️ Deleting", style=STYLE_ERROR)
 
         def version_bumped_signage():
             return Text("⬆️ Version changed", style=f"{STYLE_DIM} {STYLE_INFO}")
 
-        added = [(added_signage(), name) for name in remaining_added]
-        updated = [(updated_signage(), name) for name in self.updated]
+        added = [(adding_signage(), name) for name in remaining_added]
+        updated = [(updating_signage(), name) for name in self.updated]
         version_bumped = [
             (version_bumped_signage(), f"{base_name} (v{old_ver} -> v{new_ver})")
             for base_name, old_ver, new_ver in self.version_bumped
@@ -93,7 +93,7 @@ class DiffResult:
         result_order = version_bumped_sorted + added_sorted
 
         if remaining_deleted:
-            deleted = [(deleted_signage(), name) for name in remaining_deleted]
+            deleted = [(deleting_signage(), name) for name in remaining_deleted]
             deleted_sorted = sorted(deleted, key=lambda t: t[1])
             result_order += deleted_sorted
 

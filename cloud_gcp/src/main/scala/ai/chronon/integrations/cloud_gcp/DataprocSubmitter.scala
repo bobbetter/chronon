@@ -1,7 +1,6 @@
 package ai.chronon.integrations.cloud_gcp
 import ai.chronon.api.Builders.MetaData
 import ai.chronon.api.JobStatusType
-import ai.chronon.spark.submission.JobSubmitterConstants
 import ai.chronon.spark.submission.JobSubmitterConstants._
 import ai.chronon.spark.submission.{JobSubmitter, JobType, FlinkJob => TypeFlinkJob, SparkJob => TypeSparkJob}
 import com.google.api.gax.rpc.ApiException
@@ -653,6 +652,10 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
       }.recover { case ex: Exception =>
         logger.error(s"Failed to create cluster $clusterName asynchronously", ex)
       }
+    } else {
+      logger.error(s"Cluster $clusterName does not exist and no cluster configuration provided to create it.")
+      throw new IllegalArgumentException(
+        s"Cluster $clusterName does not exist and no cluster configuration provided to create it. Please provide one.")
     }
   }
 
@@ -671,16 +674,21 @@ class DataprocSubmitter(jobControllerClient: JobControllerClient,
     GcpLocationEnvVar -> region
   )
 
-  override def buildFlinkPlatformArgs(env: Map[String, String],
-                                      version: String,
-                                      artifactPrefix: String): Seq[String] = {
+  override def buildFlinkSubmissionProps(env: Map[String, String],
+                                         version: String,
+                                         artifactPrefix: String): Map[String, String] = {
+    val flinkJarUri = s"$artifactPrefix/release/$version/jars/$flinkJarName"
+    val flinkStateUri = env.getOrElse(
+      "FLINK_STATE_URI",
+      throw new IllegalArgumentException("FLINK_STATE_URI must be set for GROUP_BY_STREAMING"))
+    val base = Map(
+      FlinkMainJarURI -> flinkJarUri,
+      FlinkCheckpointUri -> s"$flinkStateUri/checkpoints"
+    )
     val enablePubSub = env.getOrElse("ENABLE_PUBSUB", "false").toBoolean
-    if (enablePubSub) {
-      val pubSubConnectorJarUri = s"$artifactPrefix/release/$version/jars/connectors_pubsub_deploy.jar"
-      Seq(s"$FlinkPubSubJarUriArgKeyword=$pubSubConnectorJarUri")
-    } else {
-      Seq.empty
-    }
+    if (enablePubSub)
+      base + (FlinkPubSubConnectorJarURI -> s"$artifactPrefix/release/$version/jars/connectors_pubsub_deploy.jar")
+    else base
   }
 }
 

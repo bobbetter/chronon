@@ -110,19 +110,35 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
   def partitions(tableName: String,
                  subPartitionsFilter: Map[String, String] = Map.empty,
                  partitionRange: Option[PartitionRange] = None,
-                 tablePartitionSpec: Option[PartitionSpec] = None): List[String] = {
+                 tablePartitionSpec: Option[PartitionSpec] = None,
+                 timePartitioned: Boolean = false): List[String] = {
     val rangeWheres = andPredicates(partitionRange.map(_.whereClauses).getOrElse(Seq.empty))
 
     val effectivePartColumn = tablePartitionSpec.map(_.column).getOrElse(partitionSpec.column)
+    val effectiveSpec = tablePartitionSpec.getOrElse(partitionSpec)
 
     val partitions = tableFormatProvider
       .readFormat(tableName)
       .map((format) => {
-        logger.info(
-          s"Getting partitions for ${tableName} with partitionColumnName ${effectivePartColumn} and subpartitions: ${subPartitionsFilter}")
-        val partitions =
+        if (timePartitioned) {
+          logger.info(
+            s"Getting virtual partitions for time-partitioned table ${tableName} using column ${effectivePartColumn}")
+          val allPartitions = format.virtualPartitions(tableName, effectivePartColumn, effectiveSpec)(sparkSession)
+          // Filter by range if provided
+          partitionRange match {
+            case Some(range) =>
+              allPartitions.filter(p =>
+                (Option(range.start).isEmpty || p >= range.start) &&
+                  (Option(range.end).isEmpty || p <= range.end))
+            case None => allPartitions
+          }
+        } else {
+          logger.info(
+            s"Getting partitions for ${tableName} with partitionColumnName ${effectivePartColumn} and subpartitions: ${subPartitionsFilter}")
           format.primaryPartitions(tableName, effectivePartColumn, rangeWheres, subPartitionsFilter)(sparkSession)
-
+        }
+      })
+      .map { partitions =>
         if (partitions.isEmpty) {
           logger.info(s"No partitions found for table: $tableName with subpartition filters ${subPartitionsFilter}")
         } else {
@@ -130,14 +146,27 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
             s"Found ${partitions.size}, between (${partitions.min}, ${partitions.max}) partitions for table: $tableName")
         }
         partitions
-      })
+      }
       .getOrElse(List.empty)
 
     // if table is yyyyMMdd and global partitionSpec is yyyy-MM-dd, partitions will use yyyyMMdd
     // downstream range arithmetic requires yyyy-MM-dd - so we need to translate to global
-    tablePartitionSpec
-      .map(ps => partitions.map(date => ps.translate(date, partitionSpec)))
-      .getOrElse(partitions)
+    if (!timePartitioned) {
+      tablePartitionSpec
+        .map(ps => partitions.map(date => ps.translate(date, partitionSpec)))
+        .getOrElse(partitions)
+    } else {
+      partitions
+    }
+  }
+
+  def maxTimestampDate(tableName: String,
+                       timestampColumn: String,
+                       tablePartitionSpec: Option[PartitionSpec] = None): Option[String] = {
+    val effectiveSpec = tablePartitionSpec.getOrElse(partitionSpec)
+    tableFormatProvider
+      .readFormat(tableName)
+      .flatMap(_.maxTimestampDate(tableName, timestampColumn, effectiveSpec)(sparkSession))
   }
 
   def tableCoversRange(table: String, range: PartitionRange): Boolean = {
@@ -259,7 +288,14 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
       dfRearranged
     }
 
-    if (!isBenchmarkMode) {
+    val crossCatalogPersist =
+      sparkSession.conf.get("spark.chronon.cross_catalog.persist", "false").toBoolean
+
+    // When reading from one catalog (e.g. Delta via UCSingleCatalog) and writing to another
+    // (e.g. Iceberg via REST), we must materialize the DataFrame before the write so that
+    // DeltaSparkSessionExtension's PreprocessTableWithDVsStrategy doesn't see TahoeFileIndex
+    // in the write plan as a temporary fix until this PR is merged https://github.com/delta-io/delta/pull/5804
+    if (!isBenchmarkMode || crossCatalogPersist) {
       finalizedDf.cache()
     }
 
@@ -273,7 +309,7 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
       .insertInto(tableName)
     logger.info(s"Finished writing to $tableName")
 
-    if (!isBenchmarkMode) {
+    if (!isBenchmarkMode || crossCatalogPersist) {
       logger.info(s"Table $tableName has been written with ${finalizedDf.count()} rows.")
       finalizedDf.unpersist()
     }
@@ -648,7 +684,7 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
       partitionColumn: Option[String] = None
   ): Seq[String] = {
     val col = partitionColumn.getOrElse(this.partitionColumn)
-    // Use >= start and < next(end) which works for both partitioned and clustered tables.
+    // Use >= start and < next(end) which works for both partitioned and time-partitioned tables.
     // For partitioned tables with daily partitions (e.g., ds='2024-01-10'), this is equivalent
     // to <= end since there are no values between discrete partition dates.
     val startClause = Option(range.start).map(s => s"$col >= '$s'")
@@ -662,6 +698,7 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
              range: Option[PartitionRange] = None): DataFrame = {
 
     val maybeQuery = Option(query)
+    val isTimePartitioned = maybeQuery.exists(q => q.isSetTimePartitioned && q.timePartitioned)
 
     val queryPartitionColumn = maybeQuery.flatMap(q => Option(q.partitionColumn)).getOrElse(partitionColumn)
 
@@ -676,7 +713,13 @@ class TableUtils(@transient val sparkSession: SparkSession) extends Serializable
     val scanDf = scanDfBase(selects, table, wheres, rangeWheres, fallbackSelects)
 
     if (queryPartitionColumn != partitionColumn) {
-      scanDf.withColumnRenamed(queryPartitionColumn, partitionColumn)
+      val renamed = scanDf.withColumnRenamed(queryPartitionColumn, partitionColumn)
+      if (isTimePartitioned) {
+        // Convert timestamp/date column to formatted date string for downstream partition logic
+        renamed.withColumn(partitionColumn, date_format(col(partitionColumn).cast(DateType), partitionFormat))
+      } else {
+        renamed
+      }
     } else {
       scanDf
     }

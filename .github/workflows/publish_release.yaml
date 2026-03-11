@@ -35,8 +35,14 @@ jobs:
             echo "IS_LATEST=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Strip v From Start of Version
+        id: sanitized_version
+        run: |
+          echo "VERSION_NO_V=${VERSION#v}" >> $GITHUB_OUTPUT    
+
     outputs:
       is_latest: ${{ steps.check_latest.outputs.IS_LATEST }}
+      version_no_v: ${{ steps.sanitized_version.outputs.VERSION_NO_V }}
 
   # We need to rebuild the wheel to bake in the new version number
   build_python_wheel:
@@ -458,7 +464,7 @@ jobs:
 
       - name: Create engine manifest
         run: |
-          echo '{"version": "${{ env.VERSION }}", "cloud": "${{ matrix.cloud }}", "commit": "${{ github.sha }}"}' > build_output/engine_manifest.json
+          echo '{"version": "${{ needs.check_if_latest.outputs.version_no_v }}", "cloud": "${{ matrix.cloud }}", "commit": "${{ github.sha }}"}' > build_output/engine_manifest.json
 
       - name: Build and push engine image
         uses: docker/build-push-action@v6
@@ -471,7 +477,7 @@ jobs:
           push: true
           tags: |
             ziplineai/engine-${{ matrix.cloud }}:${{ github.sha }}
-            ${{ env.VERSION && format('ziplineai/engine-{0}:{1}', matrix.cloud, env.VERSION) || '' }}
+            ${{ env.VERSION && format('ziplineai/engine-{0}:{1}', matrix.cloud, needs.check_if_latest.outputs.version_no_v) || '' }}
             ${{ needs.check_if_latest.outputs.is_latest == 'true' && format('ziplineai/engine-{0}:latest', matrix.cloud) || '' }}
 
   build_and_publish_docker:
@@ -535,6 +541,7 @@ jobs:
           tags: |
             ziplineai/chronon-fetcher:${{ github.sha }}
             ${{ env.VERSION && format('ziplineai/chronon-fetcher:{0}', env.VERSION) || '' }}
+            ${{ env.VERSION && format('ziplineai/chronon-fetcher:{0}', needs.check_if_latest.outputs.version_no_v) || '' }}
             ${{ needs.check_if_latest.outputs.is_latest == 'true' && 'ziplineai/chronon-fetcher:latest' || '' }}
 
       - name: Clean up build artifacts

@@ -17,9 +17,9 @@ Right parts:
 - Listing dimension attributes (keyed by listing_id)
 """
 
-# Left side: Raw user activity events from PubSub export
+# Left side: Raw user activity events from Kinesis export
 source = EventSource(
-    # This will be the BigQuery table that receives the PubSub data
+    # This will be the Glue table that receives the Kinesis data
     table=exports.user_activities.table,
     query=Query(
         selects=selects(

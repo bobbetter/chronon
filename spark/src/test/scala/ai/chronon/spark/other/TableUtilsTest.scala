@@ -600,7 +600,7 @@ class TableUtilsTest extends AnyFlatSpec {
 
   it should "generate whereClauses with default partition column" in {
     val range = PartitionRange("2024-01-01", "2024-01-10")
-    // Uses exclusive end (< next(end)) which works for both partitioned and clustered tables
+    // Uses exclusive end (< next(end)) which works for both partitioned and time-partitioned tables
     val clauses = tableUtils.whereClauses(range)
     assertEquals(Seq("ds >= '2024-01-01'", "ds < '2024-01-11'"), clauses)
   }
@@ -621,6 +621,85 @@ class TableUtilsTest extends AnyFlatSpec {
     val range = PartitionRange("2024-01-01", null)
     val clauses = tableUtils.whereClauses(range)
     assertEquals(Seq("ds >= '2024-01-01'"), clauses)
+  }
+
+  it should "return virtual partitions for time-partitioned table" in {
+    val dbName = s"db_${System.nanoTime()}"
+    val tableName = s"$dbName.time_partitioned_test"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $dbName")
+
+    import spark.implicits._
+    // Create an unpartitioned table with a timestamp column spanning 5 days
+    // Use midday times to avoid timezone boundary issues (Spark uses UTC for date cast)
+    val data = Seq(
+      ("user1", java.sql.Timestamp.valueOf("2024-01-01 12:00:00")),
+      ("user2", java.sql.Timestamp.valueOf("2024-01-02 12:00:00")),
+      ("user3", java.sql.Timestamp.valueOf("2024-01-03 12:00:00")),
+      ("user1", java.sql.Timestamp.valueOf("2024-01-05 12:00:00"))
+    ).toDF("user_id", "created_at")
+
+    data.write.saveAsTable(tableName)
+
+    val partitions = tableUtils.partitions(tableName, timePartitioned = true,
+      tablePartitionSpec = Some(PartitionSpec("created_at", "yyyy-MM-dd", 24 * 60 * 60 * 1000)))
+
+    // Should return all dates from 2024-01-01 to 2024-01-05 (inclusive, including gap on 01-04)
+    assertEquals(List("2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"), partitions)
+
+    spark.sql(s"DROP TABLE IF EXISTS $tableName")
+    spark.sql(s"DROP DATABASE IF EXISTS $dbName")
+  }
+
+  it should "return empty list for virtual partitions on empty table" in {
+    val dbName = s"db_${System.nanoTime()}"
+    val tableName = s"$dbName.empty_time_partitioned"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $dbName")
+    spark.sql(s"CREATE TABLE $tableName (user_id STRING, created_at TIMESTAMP)")
+
+    val partitions = tableUtils.partitions(tableName, timePartitioned = true,
+      tablePartitionSpec = Some(PartitionSpec("created_at", "yyyy-MM-dd", 24 * 60 * 60 * 1000)))
+
+    assertEquals(List.empty, partitions)
+
+    spark.sql(s"DROP TABLE IF EXISTS $tableName")
+    spark.sql(s"DROP DATABASE IF EXISTS $dbName")
+  }
+
+  it should "scanDf with timePartitioned query derives virtual ds column" in {
+    val dbName = s"db_${System.nanoTime()}"
+    val tableName = s"$dbName.scan_time_partitioned"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $dbName")
+
+    import spark.implicits._
+    val data = Seq(
+      ("user1", 100, java.sql.Timestamp.valueOf("2024-01-01 12:00:00")),
+      ("user2", 200, java.sql.Timestamp.valueOf("2024-01-01 12:30:00")),
+      ("user3", 300, java.sql.Timestamp.valueOf("2024-01-02 12:00:00")),
+      ("user1", 400, java.sql.Timestamp.valueOf("2024-01-03 12:00:00"))
+    ).toDF("user_id", "value", "created_at")
+
+    data.write.saveAsTable(tableName)
+
+    val query = Builders.Query(
+      partitionColumn = "created_at",
+      timeColumn = "UNIX_TIMESTAMP(created_at) * 1000"
+    )
+    query.setTimePartitioned(true)
+
+    val range = PartitionRange("2024-01-01", "2024-01-02")
+    val result = tableUtils.scanDf(query, tableName, range = Some(range))
+
+    // Should have a "ds" column with formatted date strings
+    assertTrue(result.schema.fieldNames.contains("ds"))
+
+    val dsValues = result.select("ds").distinct().collect().map(_.getString(0)).sorted.toList
+    assertEquals(List("2024-01-01", "2024-01-02"), dsValues)
+
+    // Should only contain rows within the range (2024-01-01 and 2024-01-02)
+    assertEquals(3, result.count())
+
+    spark.sql(s"DROP TABLE IF EXISTS $tableName")
+    spark.sql(s"DROP DATABASE IF EXISTS $dbName")
   }
 
 }

@@ -331,25 +331,25 @@ def test_query_api_obj():
     assert query_obj.subPartitionsToWaitFor == sub_partitions_to_wait_for
 
 
-def test_query_with_clustered_flag():
+def test_query_with_time_partitioned_flag():
     """
-    Test Query with clustered flag for Delta Lake tables.
-    The clustered flag affects Airflow sensor logic, not WHERE clause generation.
+    Test Query with time_partitioned flag for tables using timestamp/date columns
+    instead of traditional Hive-style string partitioning.
     """
     query_obj = query.Query(
         selects={"key1": "key1", "value": "value"},
-        time_column="created_at",
+        time_column="UNIX_TIMESTAMP(created_at) * 1000",
         partition_column="created_at",
-        clustered=True,
+        time_partitioned=True,
     )
 
-    assert query_obj.clustered == True
+    assert query_obj.timePartitioned == True
     assert query_obj.partitionColumn == "created_at"
 
 
-def test_query_without_clustered_flag():
+def test_query_without_time_partitioned_flag():
     """
-    Test Query without clustered flag (default partitioned behavior).
+    Test Query without time_partitioned flag (default Hive-style partitioning).
     """
     query_obj = query.Query(
         selects={"key1": "key1"},
@@ -357,7 +357,7 @@ def test_query_without_clustered_flag():
     )
 
     assert query_obj.partitionColumn == "ds"
-    assert query_obj.clustered is None  # Not set
+    assert query_obj.timePartitioned is None  # Not set
 
 def test_online_schedule_validation():
     """Test that online_schedule validation works correctly."""

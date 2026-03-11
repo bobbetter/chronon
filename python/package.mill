@@ -77,7 +77,7 @@ object `package` extends PythonModule with RuffModule with PublishModule {
   def pyproject: T[String] = Task {
     super.pyproject() + """|
          |[project.scripts]
-         |zipline = "ai.chronon.repo.zipline:zipline"
+         |zipline = "ai.chronon.repo.zipline:main"
          |""".stripMargin
   }
 

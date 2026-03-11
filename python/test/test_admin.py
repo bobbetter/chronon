@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import re
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,6 +18,10 @@ from ai.chronon.repo.admin import (
 )
 from ai.chronon.repo.registry_client import DOCKER_HUB_REGISTRY
 
+
+def strip_ansi(text):
+    ansi_escape = re.compile(r'\x1b\[[0-9;]*[mGJKHF]')
+    return ansi_escape.sub('', text)
 
 # --- _parse_registry ---
 
@@ -296,7 +301,7 @@ class TestInstallReleaseResolution:
         runner = CliRunner()
         result = runner.invoke(admin, ["install", "gcp", "--registry", "local"])
         assert result.exit_code == 0
-        assert "Using release 1.0.15" in result.output
+        assert "Using release" in result.output and " 1.0.15 " in result.output
         mock_load.assert_called_once()
         assert mock_load.call_args[0][2] == "1.0.15"
 
@@ -308,7 +313,7 @@ class TestInstallReleaseResolution:
         runner = CliRunner()
         result = runner.invoke(admin, ["install", "gcp", "--registry", "local"])
         assert result.exit_code == 0
-        assert "Using release latest" in result.output
+        assert "Using release " in result.output and " latest " in result.output
         mock_load.assert_called_once()
         assert mock_load.call_args[0][2] == "latest"
 

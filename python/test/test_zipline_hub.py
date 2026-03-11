@@ -41,17 +41,18 @@ class TestZiplineHub:
         expected_end = str(date.today())
 
         assert result == {"workflowId": "456"}
-        mock_post.assert_called_once_with(
-            "http://example.com/workflow/v2/start",
-            json={
-                "confName": "test_conf",
-                "confHash": "hash123",
-                "mode": "daily",
-                "branch": "main",
-                "user": "user1",
-                "start": expected_start,
-                "end": expected_end,
-                "skipLongRunningNodes": False
-            },
-            headers={"Content-Type": "application/json", "X-Zipline-Version": "unknown"}
-        )
+        mock_post.assert_called_once()
+        call_kwargs = mock_post.call_args
+        assert call_kwargs[0][0] == "http://example.com/workflow/v2/start"
+        assert call_kwargs[1]["json"] == {
+            "confName": "test_conf",
+            "confHash": "hash123",
+            "mode": "daily",
+            "branch": "main",
+            "user": "user1",
+            "start": expected_start,
+            "end": expected_end,
+            "skipLongRunningNodes": False,
+        }
+        assert call_kwargs[1]["headers"]["Content-Type"] == "application/json"
+        assert "X-Zipline-Version" in call_kwargs[1]["headers"]

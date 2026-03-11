@@ -49,6 +49,9 @@ jobs:
       - name: Build Flink connectors jar
         run: ./mill flink_connectors.pubsub\[${{ env.SCALA_VERSION }}\].assembly
 
+      - name: Build Flink Kinesis connector jar
+        run: ./mill flink_connectors.kinesis\[${{ env.SCALA_VERSION }}\].assembly
+
       - name: Prepare build artifacts
         run: |
           # Copy jars to build_output as docker build can't access the mill output directories directly
@@ -107,6 +110,12 @@ jobs:
           name: flink-connectors-jar
           path: out/flink_connectors/pubsub/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
 
+      - name: Upload Flink Kinesis connector Jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: flink-kinesis-connector-jar
+          path: out/flink_connectors/kinesis/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
+
       - name: Upload Docker image
         uses: actions/upload-artifact@v4
         with:
@@ -142,6 +151,10 @@ jobs:
             fail_on: low
           - artifact: flink-connectors
             artifact_name: flink-connectors-jar
+            scan_type: jar
+            fail_on: low
+          - artifact: flink-kinesis-connector
+            artifact_name: flink-kinesis-connector-jar
             scan_type: jar
             fail_on: low
           - artifact: fetcher-image

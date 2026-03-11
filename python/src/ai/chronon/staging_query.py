@@ -30,6 +30,7 @@ class TableDependency:
     partition_format: Optional[str] = None
     additional_partitions: Optional[List[str]] = None
     offset: Optional[int] = None
+    time_partitioned: Optional[bool] = None
 
     def to_thrift(self):
         if self.partition_column is not None and self.offset is None:
@@ -41,6 +42,7 @@ class TableDependency:
                 partitionColumn=self.partition_column,
                 partitionFormat=self.partition_format,
                 partitionInterval=common.Window(1, common.TimeUnit.DAYS),
+                timePartitioned=self.time_partitioned,
             ),
             startOffset=offset_window,
             endOffset=offset_window,

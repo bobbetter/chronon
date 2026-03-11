@@ -13,7 +13,6 @@
 #     limitations under the License.
 
 import os
-
 import gen_thrift.api.ttypes as api
 import pytest
 
@@ -22,7 +21,7 @@ from ai.chronon.repo.serializer import file2thrift, json2thrift
 
 
 @pytest.fixture
-def event_group_by():
+def event_group_by(repo):
     """
     Sample source taken from one of the group bys.
     This is an event source, not streaming
@@ -42,7 +41,7 @@ def event_source(event_group_by):
 
 
 @pytest.fixture
-def group_by_requiring_backfill():
+def group_by_requiring_backfill(repo):
     from group_bys.sample_team.sample_group_by import require_backfill
 
     utils.__set_name(group_by_requiring_backfill, api.GroupBy, "group")
@@ -50,42 +49,42 @@ def group_by_requiring_backfill():
 
 
 @pytest.fixture
-def online_group_by_requiring_streaming():
+def online_group_by_requiring_streaming(repo):
     from group_bys.sample_team.entity_sample_group_by_from_module import v1
 
     return v1
 
 
 @pytest.fixture
-def basic_staging_query():
+def basic_staging_query(repo):
     from staging_queries.sample_team.sample_staging_query import v1
 
     return v1
 
 
 @pytest.fixture
-def basic_join():
+def basic_join(repo):
     from joins.sample_team.sample_join import v1
 
     return v1
 
 
 @pytest.fixture
-def never_scheduled_join():
+def never_scheduled_join(repo):
     from joins.sample_team.sample_join import never
 
     return never
 
 
 @pytest.fixture
-def consistency_check_join():
+def consistency_check_join(repo):
     from joins.sample_team.sample_join import consistency_check
 
     return consistency_check
 
 
 @pytest.fixture
-def no_log_flattener_join():
+def no_log_flattener_join(repo):
     from joins.sample_team.sample_join import no_log_flattener
 
     return no_log_flattener
