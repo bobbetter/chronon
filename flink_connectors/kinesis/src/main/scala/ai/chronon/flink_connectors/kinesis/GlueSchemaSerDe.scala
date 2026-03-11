@@ -72,13 +72,13 @@ class GlueSchemaSerDe(topicInfo: TopicInfo) extends SerDe {
     if (localSchemaDir.isDefined) {
       val schemaFile = java.nio.file.Paths.get(localSchemaDir.get, s"$schemaName.avsc")
       if (java.nio.file.Files.exists(schemaFile)) {
-        val avroSchemaStr = new String(java.nio.file.Files.readAllBytes(schemaFile), java.nio.charset.StandardCharsets.UTF_8)
+        val avroSchemaStr =
+          new String(java.nio.file.Files.readAllBytes(schemaFile), java.nio.charset.StandardCharsets.UTF_8)
         val avroSchema: Schema = AvroCodec.of(avroSchemaStr).schema
         val chrononSchema: StructType = AvroConversions.toChrononSchema(avroSchema).asInstanceOf[StructType]
         return (avroSchemaStr, chrononSchema)
       }
-      throw new IllegalArgumentException(
-        s"GLUE_LOCAL_SCHEMA_DIR is set but schema file not found: $schemaFile")
+      throw new IllegalArgumentException(s"GLUE_LOCAL_SCHEMA_DIR is set but schema file not found: $schemaFile")
     }
 
     val registryName =
