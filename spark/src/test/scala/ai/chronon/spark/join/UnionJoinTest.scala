@@ -201,7 +201,8 @@ class UnionJoinTest extends BaseJoinTest {
 
     val eventsSchema = List(
       Column("user_id", api.StringType, 1),
-      Column("item_id", api.StringType, 1),
+      Column("request_id", api.StringType, 100),
+      Column("request_ts", api.LongType, 100000),
       Column("amount", api.LongType, 100),
       Column("category", api.StringType, 3)
     )
@@ -247,32 +248,71 @@ class UnionJoinTest extends BaseJoinTest {
     val dateRange = PartitionRange(start, today)(tableUtils.partitionSpec)
 
     // Join with derivations
-    val joinWithSingleJP = Builders.Join(
+    val longNameJoin = Builders.Join(
       left = Builders.Source.events(
         Builders.Query(selects =
-                         Builders.Selects("user_id", "item_id", "amount", "category"), // Select all left cols here
+                         Builders.Selects("user_id", "request_id", "request_ts", "amount", "category"),
                        startPartition = start),
         table = eventsTable),
       joinParts = Seq(Builders.JoinPart(groupBy = groupByWithDerivations)),
       metaData =
-        Builders.MetaData(name = "test.user_features_derived.union_join", namespace = namespace, team = "user_team")
+        Builders.MetaData(name = "test.user_features_derived.union_join_long_names",
+                          namespace = namespace,
+                          team = "user_team")
     )
 
     // Execute UnionJoin with derivations
-    UnionJoin.computeJoinAndSave(joinWithSingleJP, dateRange)
+    UnionJoin.computeJoinAndSave(longNameJoin, dateRange)
 
-    val outputDf = tableUtils.loadTable(joinWithSingleJP.metaData.outputTable)
-
+    val longNameOutputDf = tableUtils.loadTable(longNameJoin.metaData.outputTable)
+    val longNameSchema = longNameOutputDf.schema
+    println(longNameSchema.pretty)
     // Verify that derived columns exist
-    val schema = outputDf.schema
-    println(schema.pretty)
-    schema.fieldNames should contain("user_id")
-    schema.fieldNames should contain("unit_test_user_features_with_derivations_item_id")
-    schema.fieldNames should contain("unit_test_user_features_with_derivations_amount")
-    schema.fieldNames should contain("unit_test_user_features_with_derivations_category")
-
+    longNameSchema.fieldNames should contain("user_id")
+    longNameSchema.fieldNames should contain("request_id")
+    longNameSchema.fieldNames should contain("request_ts")
+    longNameSchema.fieldNames should contain("amount")
+    longNameSchema.fieldNames should contain("category")
     // Derivation cols
-    schema.fieldNames should contain("unit_test_user_features_with_derivations_avg_amount_7d")
-    schema.fieldNames should contain("unit_test_user_features_with_derivations_amount_ratio")
+    longNameSchema.fieldNames should contain("unit_test_user_features_with_derivations_avg_amount_7d")
+    longNameSchema.fieldNames should contain("unit_test_user_features_with_derivations_amount_ratio")
+    longNameSchema.fieldNames should not contain("unit_test_user_features_with_derivations_request_id")
+    longNameSchema.fieldNames should not contain("unit_test_user_features_with_derivations_request_ts")
+    longNameSchema.fieldNames should not contain("unit_test_user_features_with_derivations_amount")
+    longNameSchema.fieldNames should not contain("unit_test_user_features_with_derivations_category")
+
+    // Join with derivations
+    val shortNameJoin = Builders.Join(
+      left = Builders.Source.events(
+        Builders.Query(selects =
+                         Builders.Selects("user_id", "request_id", "request_ts", "amount", "category"),
+                       startPartition = start),
+        table = eventsTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupByWithDerivations).setUseLongNames(false)),
+      metaData =
+        Builders.MetaData(name = "test.user_features_derived.union_join_short_names",
+                          namespace = namespace,
+                          team = "user_team")
+    )
+
+    // Execute UnionJoin with derivations
+    UnionJoin.computeJoinAndSave(shortNameJoin, dateRange)
+
+    val shortNameOutputDf = tableUtils.loadTable(shortNameJoin.metaData.outputTable)
+    val shortNameSchema = shortNameOutputDf.schema
+    println(shortNameSchema.pretty)
+    // Verify that derived columns exist
+    shortNameSchema.fieldNames should contain("user_id")
+    shortNameSchema.fieldNames should contain("request_id")
+    shortNameSchema.fieldNames should contain("request_ts")
+    shortNameSchema.fieldNames should contain("amount")
+    shortNameSchema.fieldNames should contain("category")
+    shortNameSchema.fieldNames should not contain("user_id_request_id")
+    shortNameSchema.fieldNames should not contain("user_id_request_ts")
+    shortNameSchema.fieldNames should not contain("user_id_amount")
+    shortNameSchema.fieldNames should not contain("user_id_category")
+    // Derivation cols
+    shortNameSchema.fieldNames should contain("user_id_avg_amount_7d")
+    shortNameSchema.fieldNames should contain("user_id_amount_ratio")
   }
 }

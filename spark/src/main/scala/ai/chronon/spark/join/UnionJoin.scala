@@ -204,8 +204,13 @@ object UnionJoin {
     val leftDf = JoinUtils.leftDf(joinConf, dateRange, tableUtils).get
 
     val groupByDerivedDf = computeJoinPart(leftDf, joinPart, dateRange, produceFinalJoinOutput = true)
-
-    val prefixedDf = MergeJob.prefixJoinPartValueColumns(groupByDerivedDf, joinPart)
+    val nonValueColumns = joinPart.rightToLeft.keys.toSet ++
+      Set(Constants.TimeColumn, tableUtils.partitionColumn, Constants.TimePartitionColumn) ++
+      leftDf.columns.toSet
+    // GroupBy derivations can preserve passthrough left columns in the fast path.
+    // Keep those columns unprefixed and only namespace actual join-part outputs.
+    val valueColumns = groupByDerivedDf.schema.names.filterNot(nonValueColumns.contains)
+    val prefixedDf = groupByDerivedDf.prefixColumnNames(joinPart.columnPrefix, valueColumns)
 
     // Apply Join derivations if they exist
     if (joinConf.isSetDerivations && !joinConf.derivations.isEmpty) {
