@@ -13,6 +13,7 @@ import glob
 import logging
 import os
 import re
+import shutil
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -194,11 +195,12 @@ def _apply_renames(content: str, renames: dict[str, str]) -> str:
     return content
 
 
-def _rewrite_file(path: str, stem_renames: dict[str, str]) -> bool:
+def _rewrite_file(path: str, stem_renames: dict[str, str], dest: str = None) -> bool:
     """Rewrite a single file, only renaming stems that appear in its imports.
 
     Returns True if the file was modified.
     """
+    dest_write = dest or path
     with open(path) as f:
         original = f.read()
     applicable = _find_imported_stems(original, stem_renames)
@@ -207,7 +209,7 @@ def _rewrite_file(path: str, stem_renames: dict[str, str]) -> bool:
     updated = _apply_renames(original, applicable)
     if updated == original:
         return False
-    with open(path, "w") as f:
+    with open(dest_write, "w") as f:
         f.write(updated)
     return True
 
@@ -236,24 +238,23 @@ def generate_test_configs(
     configs = _get_configs(cloud)
     stem_renames = {cfg.stem: f"{cfg.stem}_{test_id}" for cfg in configs}
 
-    # Phase 1: rewrite imports in ALL .py files (including non-isolated ones
-    # that may reference isolated modules).
     all_py = _collect_py_files(chronon_root, cloud)
-    for path in all_py:
-        if _rewrite_file(path, stem_renames):
-            logger.info("Rewrote imports in %s", path)
-
-    # Phase 2: rename the isolated source files.
-    renamed: list[str] = []
+    renamed: dict[str,str] = {}
     for cfg in configs:
         src = os.path.join(chronon_root, cfg.source)
         dst = os.path.join(chronon_root, cfg.renamed_source.format(test_id=test_id))
         if os.path.exists(src):
-            os.rename(src, dst)
+            shutil.copy(src, dst)
             logger.info("Renamed %s -> %s", src, dst)
-            renamed.append(dst)
+            renamed[src] = dst
 
-    return renamed
+    print(renamed)
+    for path in all_py:
+        if path in renamed:
+            if _rewrite_file(path, stem_renames, renamed[path]):
+                logger.info("Rewrote imports from %s in %s", path, renamed[path])
+
+    return list(renamed.values())
 
 
 def cleanup_test_configs(

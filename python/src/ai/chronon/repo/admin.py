@@ -98,9 +98,9 @@ def admin():
     "--release", default=None, help="Zipline release to load (e.g. 0.1.42). Defaults to the installed zipline-ai package version."
 )
 @click.option(
-    "--artifact-store",
+    "--artifact-prefix",
     default=None,
-    help="Target store for engine JARs: a blob store URI (e.g. gs://bucket/zipline) or a local filesystem path.",
+    help="Target prefix for engine JARs: a blob store URI (e.g. gs://bucket/zipline) or a local filesystem path.",
 )
 @click.option(
     "--bundle",
@@ -108,7 +108,7 @@ def admin():
     type=click.Path(exists=True),
     help="Path to air-gap tarball (alternative to pulling from Docker Hub).",
 )
-def install(cloud, registry, api_token, release, artifact_store, bundle):
+def install(cloud, registry, api_token, release, artifact_prefix, bundle):
     """Install Zipline images into a private registry or the local Docker daemon.
 
     CLOUD is the cloud provider variant (gcp, aws, or azure).
@@ -123,7 +123,8 @@ def install(cloud, registry, api_token, release, artifact_store, bundle):
         console.print(f"Using release [bold]{release}[/bold]")
     else:
         pkg_version = get_package_version()
-        if pkg_version != "unknown" and release != pkg_version:
+        # Normalize away any leading "v" before comparing since PyPI versions omit it.
+        if pkg_version != "unknown" and release.lstrip("v") != pkg_version.lstrip("v"):
             if not click.confirm(
                 f"Specified release {release} does not match installed zipline cli version {pkg_version}. Continue?"
             ):
@@ -143,16 +144,16 @@ def install(cloud, registry, api_token, release, artifact_store, bundle):
         else:
             results = _load_from_docker_hub(target, api_token, release, cloud, progress)
 
-        if artifact_store:
+        if artifact_prefix:
             if bundle:
                 jar_results = _extract_engine_jars_from_bundle(
-                    bundle, cloud, release, artifact_store, progress
+                    bundle, cloud, release, artifact_prefix, progress
                 )
             else:
                 hub_client = RegistryClient()
                 _authenticate_docker_hub(hub_client, api_token)
                 jar_results = _upload_engine_jars_to_store(
-                    hub_client, DOCKER_HUB_REGISTRY, release, cloud, artifact_store, progress
+                    hub_client, DOCKER_HUB_REGISTRY, release, cloud, artifact_prefix, progress
                 )
             results.extend(jar_results)
 

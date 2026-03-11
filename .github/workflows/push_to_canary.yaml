@@ -87,6 +87,7 @@ jobs:
           ./mill cloud_azure\[${{ env.SCALA_VERSION }}\].assembly
           ./mill service\[${{ env.SCALA_VERSION }}\].assembly
           ./mill flink_connectors.pubsub\[${{ env.SCALA_VERSION }}\].assembly
+          ./mill flink_connectors.kinesis\[${{ env.SCALA_VERSION }}\].assembly
 
       - name: Upload Flink Assembly Jar
         uses: actions/upload-artifact@v4
@@ -123,6 +124,12 @@ jobs:
         with:
           name: pubsub-jar
           path: out/flink_connectors/pubsub/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
+
+      - name: Upload Kinesis Jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: kinesis-jar
+          path: out/flink_connectors/kinesis/${{ env.SCALA_VERSION }}/assembly.dest/out.jar
     outputs:
       wheel_file: ${{ steps.build-wheel.outputs.wheel_file }}
       wheel_name: ${{ steps.build-wheel.outputs.wheel_name }}
@@ -161,6 +168,12 @@ jobs:
           name: service-assembly-jar
           path: service-assembly-jar
 
+      - name: Download Kinesis Jar
+        uses: actions/download-artifact@v4
+        with:
+          name: kinesis-jar
+          path: kinesis-jar
+
       - name: Rename JAR files to expected names
         run: |
           # The artifacts are downloaded into directories named after the artifact
@@ -168,6 +181,7 @@ jobs:
           mv flink-assembly-jar/out.jar flink_assembly_deploy.jar
           mv cloud-aws-jar/out.jar cloud_aws_lib_deploy.jar
           mv service-assembly-jar/out.jar service_assembly_deploy.jar
+          mv kinesis-jar/out.jar connectors_kinesis_deploy.jar
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -183,6 +197,7 @@ jobs:
           aws s3 cp flink_assembly_deploy.jar s3://zipline-artifacts-canary/release/${{ needs.build_artifacts.outputs.version }}/jars/flink_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
           aws s3 cp cloud_aws_lib_deploy.jar s3://zipline-artifacts-canary/release/${{ needs.build_artifacts.outputs.version }}/jars/cloud_aws_lib_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
           aws s3 cp service_assembly_deploy.jar s3://zipline-artifacts-canary/release/${{ needs.build_artifacts.outputs.version }}/jars/service_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+          aws s3 cp connectors_kinesis_deploy.jar s3://zipline-artifacts-canary/release/${{ needs.build_artifacts.outputs.version }}/jars/connectors_kinesis_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
 
 
   push_to_gcp:
@@ -773,6 +788,12 @@ jobs:
           name: service-assembly-jar
           path: service-assembly-jar
 
+      - name: Download Kinesis Jar
+        uses: actions/download-artifact@v4
+        with:
+          name: kinesis-jar
+          path: kinesis-jar
+
       - name: Rename JAR files to expected names
         run: |
           # The artifacts are downloaded into directories named after the artifact
@@ -780,6 +801,7 @@ jobs:
           mv flink-assembly-jar/out.jar flink_assembly_deploy.jar
           mv cloud-aws-jar/out.jar cloud_aws_lib_deploy.jar
           mv service-assembly-jar/out.jar service_assembly_deploy.jar
+          mv kinesis-jar/out.jar connectors_kinesis_deploy.jar
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -795,6 +817,7 @@ jobs:
           aws s3 cp flink_assembly_deploy.jar s3://zipline-artifacts-canary/release/passing-candidate/jars/flink_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
           aws s3 cp cloud_aws_lib_deploy.jar s3://zipline-artifacts-canary/release/passing-candidate/jars/cloud_aws_lib_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
           aws s3 cp service_assembly_deploy.jar s3://zipline-artifacts-canary/release/passing-candidate/jars/service_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+          aws s3 cp connectors_kinesis_deploy.jar s3://zipline-artifacts-canary/release/passing-candidate/jars/connectors_kinesis_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
 
       - name: Push Jars to s3 Bucket (latest)
         if: ${{ needs.run_aws_integration_tests.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -805,6 +828,7 @@ jobs:
           aws s3 cp flink_assembly_deploy.jar s3://zipline-artifacts-canary/release/latest/jars/flink_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
           aws s3 cp cloud_aws_lib_deploy.jar s3://zipline-artifacts-canary/release/latest/jars/cloud_aws_lib_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
           aws s3 cp service_assembly_deploy.jar s3://zipline-artifacts-canary/release/latest/jars/service_assembly_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
+          aws s3 cp connectors_kinesis_deploy.jar s3://zipline-artifacts-canary/release/latest/jars/connectors_kinesis_deploy.jar --metadata="updated_date=$(date),commit=$(git rev-parse HEAD),branch=$(git rev-parse --abbrev-ref HEAD)"
 
 
   push_to_gcp_passing:
@@ -1058,6 +1082,7 @@ jobs:
             cloud-gcp-jar
             service-assembly-jar
             pubsub-jar
+            kinesis-jar
 
   merge_to_main-passing-tests:
     needs: [ run_fetcher_integration_tests, run_aws_integration_tests, run_gcp_integration_tests ]

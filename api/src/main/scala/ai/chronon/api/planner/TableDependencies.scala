@@ -79,15 +79,24 @@ object TableDependencies {
 
     val inputTable = if (forMutations) source.mutationsTable.get else source.rawTable
 
-    val tableDep = new TableDependency()
-      .setTableInfo(
-        new TableInfo()
-          .setTable(inputTable)
-          .setIsCumulative(source.isCumulative)
-          .setPartitionColumn(source.query.getPartitionColumn)
-          .setPartitionFormat(source.query.getPartitionFormat)
-          .setPartitionInterval(source.query.getPartitionInterval)
+    val isTimePartitioned = Option(source.query).exists(q => q.isSetTimePartitioned && q.timePartitioned)
+    if (isTimePartitioned) {
+      require(
+        Option(source.query).exists(q => q.isSetPartitionColumn && q.partitionColumn != null),
+        "timePartitioned sources must have partitionColumn set to the timestamp/date column name"
       )
+    }
+
+    val tableInfo = new TableInfo()
+      .setTable(inputTable)
+      .setIsCumulative(source.isCumulative)
+      .setPartitionColumn(source.query.getPartitionColumn)
+      .setPartitionFormat(source.query.getPartitionFormat)
+      .setPartitionInterval(source.query.getPartitionInterval)
+    if (isTimePartitioned) tableInfo.setTimePartitioned(true)
+
+    val tableDep = new TableDependency()
+      .setTableInfo(tableInfo)
       .setStartOffset(startOffset)
       .setEndOffset(endOffset)
       .setStartCutOff(startCutOff)
@@ -111,14 +120,23 @@ object TableDependencies {
 
     val offset = Option(query.partitionLag).orElse(shift).getOrElse(WindowUtils.zero())
 
-    new TableDependency()
-      .setTableInfo(
-        new TableInfo()
-          .setTable(table)
-          .setPartitionColumn(query.getPartitionColumn)
-          .setPartitionFormat(query.getPartitionFormat)
-          .setPartitionInterval(query.getPartitionInterval)
+    val isTimePartitioned = query.isSetTimePartitioned && query.timePartitioned
+    if (isTimePartitioned) {
+      require(
+        query.isSetPartitionColumn && query.partitionColumn != null,
+        "timePartitioned sources must have partitionColumn set to the timestamp/date column name"
       )
+    }
+
+    val tableInfo = new TableInfo()
+      .setTable(table)
+      .setPartitionColumn(query.getPartitionColumn)
+      .setPartitionFormat(query.getPartitionFormat)
+      .setPartitionInterval(query.getPartitionInterval)
+    if (isTimePartitioned) tableInfo.setTimePartitioned(true)
+
+    new TableDependency()
+      .setTableInfo(tableInfo)
       .setStartOffset(offset)
       .setEndOffset(offset)
       .setStartCutOff(query.startPartition)

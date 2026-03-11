@@ -1,11 +1,15 @@
 package ai.chronon.integrations.cloud_gcp
 
+import ai.chronon.api.PartitionSpec
 import ai.chronon.spark.catalog.{Format, TableUtils}
 import com.google.cloud.bigquery._
 import com.google.cloud.spark.bigquery.v2.Spark35BigQueryTableProvider
 import org.apache.spark.sql.functions.{col, date_format, to_date}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, SparkSession}
+
+import java.time.ZoneOffset
+import scala.util.{Failure, Success, Try}
 
 case class PartitionColumnNotFoundException(message: String) extends UnsupportedOperationException(message)
 
@@ -155,4 +159,80 @@ case object BigQueryNative extends Format {
   }
 
   override def supportSubPartitionsFilter: Boolean = false
+
+  override def maxTimestampDate(tableName: String, timestampColumn: String, partitionSpec: PartitionSpec)(implicit
+      sparkSession: SparkSession): scala.Option[String] = {
+    Try {
+      val tableIdentifier = SparkBQUtils.toTableId(tableName)
+      val providedProject = scala.Option(tableIdentifier.getProject).getOrElse(bqOptions.getProjectId)
+      val database = scala
+        .Option(tableIdentifier.getDataset)
+        .getOrElse(throw new IllegalArgumentException(s"database required for table: ${tableName}"))
+
+      val sql = s"SELECT CAST(MAX(${timestampColumn}) AS DATE) AS max_val FROM ${tableName}"
+
+      val result = sparkSession.read
+        .format(bqFormat)
+        .option("project", providedProject)
+        .option("viewsEnabled", true)
+        .option("materializationDataset", database)
+        .load(sql)
+        .collect()
+        .headOption
+
+      result.flatMap { row =>
+        if (row.isNullAt(0)) None
+        else {
+          val utcMillis = row.getDate(0).toLocalDate.atStartOfDay(ZoneOffset.UTC).toInstant.toEpochMilli
+          Some(partitionSpec.at(utcMillis))
+        }
+      }
+    } match {
+      case Success(result) => result
+      case Failure(e) =>
+        logger.warn(s"Failed to get max timestamp date for $tableName: ${e.getMessage}")
+        None
+    }
+  }
+
+  override def virtualPartitions(tableName: String, timestampColumn: String, partitionSpec: PartitionSpec)(implicit
+      sparkSession: SparkSession): List[String] = {
+    Try {
+      val tableIdentifier = SparkBQUtils.toTableId(tableName)
+      val providedProject = scala.Option(tableIdentifier.getProject).getOrElse(bqOptions.getProjectId)
+      val database = scala
+        .Option(tableIdentifier.getDataset)
+        .getOrElse(throw new IllegalArgumentException(s"database required for table: ${tableName}"))
+
+      val sql =
+        s"""SELECT CAST(MIN(${timestampColumn}) AS DATE) AS min_val,
+           |       CAST(MAX(${timestampColumn}) AS DATE) AS max_val
+           |FROM ${tableName}""".stripMargin
+
+      val result = sparkSession.read
+        .format(bqFormat)
+        .option("project", providedProject)
+        .option("viewsEnabled", true)
+        .option("materializationDataset", database)
+        .load(sql)
+        .collect()
+        .headOption
+
+      result
+        .flatMap { row =>
+          if (row.isNullAt(0) || row.isNullAt(1)) None
+          else {
+            val minMillis = row.getDate(0).toLocalDate.atStartOfDay(ZoneOffset.UTC).toInstant.toEpochMilli
+            val maxMillis = row.getDate(1).toLocalDate.atStartOfDay(ZoneOffset.UTC).toInstant.toEpochMilli
+            Some(partitionSpec.expandRange(partitionSpec.at(minMillis), partitionSpec.at(maxMillis)))
+          }
+        }
+        .getOrElse(List.empty)
+    } match {
+      case Success(partitions) => partitions
+      case Failure(e) =>
+        logger.warn(s"Failed to get virtual partitions for $tableName: ${e.getMessage}")
+        List.empty
+    }
+  }
 }

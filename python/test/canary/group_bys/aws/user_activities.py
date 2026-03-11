@@ -15,7 +15,7 @@ source = Source(
     events=EventSource(
         # This will be the BigQuery table that receives the PubSub data
         table=exports.user_activities.table,
-        topic="kafka://user-activities-v2/serde=custom/provider_class=ai.chronon.flink.deser.MockCustomSchemaProvider/schema_name=user-activities",
+        topic="kinesis://user-activities/serde=glue_registry/registry_name=zipline-canary/schema_name=user-activities",
         query=Query(
             selects=selects(
                 user_id="user_id",

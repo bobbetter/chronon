@@ -47,13 +47,16 @@ struct Query {
     24: optional list<string> subPartitionsToWaitFor
 
     /**
-    * Indicates whether the source table uses clustering (e.g., Delta Lake) instead of
-    * traditional Hive-style partitioning. This affects sensor logic:
-    * - For partitioned tables: sensor checks max(partition_col) >= sensor_date
-    * - For clustered tables: sensor checks max(timestamp_col) >= next(sensor_date)
-    *   to ensure all data for that date has landed.
+    * Indicates whether the source table uses a timestamp or date column for time-based
+    * filtering instead of traditional Hive-style string partitioning.
+    * When true, partition_column should be set to the timestamp/date column name.
+    * The engine will:
+    *   - Derive virtual partitions via MIN/MAX of the partition column
+    *   - Use timestamp-based WHERE clauses for scanning
+    *   - Convert the timestamp column to formatted date strings for output partitioning
+    * Common for BigQuery, Snowflake, and Delta Lake tables that aren't Hive-partitioned.
     **/
-    25: optional bool clustered
+    25: optional bool timePartitioned
 
 }
  

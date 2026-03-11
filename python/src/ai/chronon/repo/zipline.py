@@ -1,3 +1,5 @@
+import os
+import sys
 
 import click
 
@@ -28,3 +30,12 @@ zipline.add_command(hub)
 zipline.add_command(admin)
 
 admin.add_command(init_cmd)
+
+
+def main():
+    """CLI entry point that ensures deterministic hashing before any config loading.
+    PYTHONHASHSEED must be set before interpreter startup, so re-exec if needed."""
+    if os.environ.get("PYTHONHASHSEED") != "0":
+        os.environ["PYTHONHASHSEED"] = "0"
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    zipline()

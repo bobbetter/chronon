@@ -21,7 +21,7 @@ import ai.chronon.api._
 import ai.chronon.api.planner.{MetaDataUtils, NodeRunner, TableDependencies}
 import ai.chronon.observability.{TileSummaryKey, TileSummary}
 import ai.chronon.online.KVStore.PutRequest
-import ai.chronon.planner.{ExternalSourceSensorNode, MonolithJoinNode, Node, NodeContent}
+import ai.chronon.planner.{ExternalSourceSensorNode, GroupByBackfillNode, MonolithJoinNode, Node, NodeContent, StagingQueryNode}
 import ai.chronon.spark.other.MockKVStore
 import ai.chronon.spark.utils.{MockApi, SparkTestBase}
 import ai.chronon.spark.catalog.TableUtils
@@ -272,6 +272,11 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     spark.sql("DROP TABLE IF EXISTS test_db.input_table_alt")
     spark.sql("DROP TABLE IF EXISTS test_db.output_table_alt")
     spark.sql("DROP TABLE IF EXISTS test_db.left_table_alt")
+    spark.sql("DROP TABLE IF EXISTS test_db.output_table" + Constants.archiveReuseTableSuffix)
+    spark.sql("DROP TABLE IF EXISTS test_db.tp_events")
+    spark.sql("DROP TABLE IF EXISTS test_db.tp_staging_output")
+    spark.sql("DROP TABLE IF EXISTS test_db.tp_gb_output")
+    spark.sql("DROP TABLE IF EXISTS test_db.time_part_sensor")
 
     setupTestTables()
     mockKVStore.reset()
@@ -871,6 +876,209 @@ class BatchNodeRunnerTest extends SparkTestBase with Matchers with BeforeAndAfte
     val runner = new BatchNodeRunner(node, tableUtils, mockApi)
 
     assertFalse("Should NOT identify regular node as sensor node", runner.isSensorNode)
+  }
+
+  "BatchNodeRunner.checkPartitions with timePartitioned" should "succeed when MAX covers the range" in {
+    // Create an unpartitioned table with timestamps
+    spark.sql(
+      """CREATE TABLE IF NOT EXISTS test_db.time_part_sensor (
+        |  user_id INT,
+        |  value STRING,
+        |  created_at TIMESTAMP
+        |)""".stripMargin)
+    spark.sql(
+      s"""INSERT INTO test_db.time_part_sensor VALUES
+         |(1, 'a', TIMESTAMP '${yesterday} 12:00:00'),
+         |(2, 'b', TIMESTAMP '${today} 12:00:00')
+         |""".stripMargin)
+
+    val tableInfo = new TableInfo()
+      .setTable("test_db.time_part_sensor")
+      .setPartitionColumn("created_at")
+      .setTimePartitioned(true)
+    val tableDependency = new TableDependency().setTableInfo(tableInfo)
+
+    val sensorNode = new ExternalSourceSensorNode()
+      .setSourceTableDependency(tableDependency)
+      .setRetryCount(0L)
+      .setRetryIntervalMin(1L)
+
+    val range = PartitionRange(twoDaysAgo, yesterday)(tableUtils.partitionSpec)
+    val configPath = createTestConfigFile(twoDaysAgo, yesterday)
+    val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
+
+    val result = runner.checkPartitions(sensorNode, range)
+
+    result match {
+      case Success(_) => // Test passed
+      case Failure(e) => fail(s"checkPartitions should have succeeded: ${e.getMessage}")
+    }
+  }
+
+  it should "fail when MAX does not cover the range" in {
+    val tableInfo = new TableInfo()
+      .setTable("test_db.time_part_sensor")
+      .setPartitionColumn("created_at")
+      .setTimePartitioned(true)
+    val tableDependency = new TableDependency().setTableInfo(tableInfo)
+
+    val sensorNode = new ExternalSourceSensorNode()
+      .setSourceTableDependency(tableDependency)
+      .setRetryCount(0L)
+      .setRetryIntervalMin(1L)
+
+    // Request a future date that the data doesn't cover
+    val futureDate = tableUtils.partitionSpec.after(today)
+    val range = PartitionRange(today, futureDate)(tableUtils.partitionSpec)
+    val configPath = createTestConfigFile(today, futureDate)
+    val node = ThriftJsonCodec.fromJsonFile[Node](configPath, check = true)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
+
+    val result = runner.checkPartitions(sensorNode, range)
+
+    result match {
+      case Success(_) => fail("checkPartitions should have failed")
+      case Failure(e) =>
+        assertTrue("Error should mention time-partitioned sensor",
+          e.getMessage.contains("Time-partitioned sensor") || e.getMessage.contains("Sensor timed out"))
+    }
+  }
+
+  private def createTimePartitionedEventsTable(): Unit = {
+    spark.sql(
+      """CREATE TABLE IF NOT EXISTS test_db.tp_events (
+        |  user_id INT,
+        |  value DOUBLE,
+        |  created_at TIMESTAMP
+        |)""".stripMargin)
+    spark.sql(
+      s"""INSERT INTO test_db.tp_events VALUES
+         |(1, 10.0, TIMESTAMP '${twoDaysAgo} 12:00:00'),
+         |(2, 20.0, TIMESTAMP '${twoDaysAgo} 12:00:00'),
+         |(1, 30.0, TIMESTAMP '${yesterday} 12:00:00'),
+         |(3, 40.0, TIMESTAMP '${yesterday} 12:00:00'),
+         |(2, 50.0, TIMESTAMP '${today} 12:00:00')
+         |""".stripMargin)
+  }
+
+  "E2E StagingQuery with timePartitioned input" should "run through BatchNodeRunner" in {
+    createTimePartitionedEventsTable()
+
+    // Create a time-partitioned table dependency
+    val query = new Query()
+      .setPartitionColumn("created_at")
+      .setTimePartitioned(true)
+    val tableDep = TableDependencies.fromTable("test_db.tp_events", query)
+
+    val sqMetaData = Builders.MetaData(namespace = "test_db", name = "tp_staging_test")
+    val outputTable = sqMetaData.outputTable
+
+    val stagingQueryConf = Builders.StagingQuery(
+      query = s"""SELECT user_id, value,
+                 |  DATE(created_at) as ds
+                 |FROM test_db.tp_events
+                 |WHERE created_at >= {{ start_date }}
+                 |  AND created_at < {{ end_date(offset=1) }}""".stripMargin,
+      metaData = sqMetaData,
+      startPartition = twoDaysAgo,
+      tableDependencies = Seq(tableDep)
+    )
+
+    val stagingQueryNode = new StagingQueryNode().setStagingQuery(stagingQueryConf)
+    val nodeContent = new NodeContent()
+    nodeContent.setStagingQuery(stagingQueryNode)
+
+    implicit val partitionSpec: PartitionSpec = tableUtils.partitionSpec
+    val metadata = MetaDataUtils.layer(
+      baseMetadata = new MetaData().setOutputNamespace("test_db").setTeam("test_team"),
+      modeName = "test_mode",
+      nodeName = "tp_staging_test",
+      tableDependencies = Seq(tableDep),
+      stepDays = Some(1),
+      outputTableOverride = Some(outputTable)
+    )
+
+    val node = new Node().setMetaData(metadata).setContent(nodeContent)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
+    val range = PartitionRange(twoDaysAgo, yesterday)(tableUtils.partitionSpec)
+
+    // Run the staging query through BatchNodeRunner
+    runner.run(metadata, nodeContent, Option(range))
+
+    // Verify the output table was created and contains the right data
+    val outputDf = spark.sql(s"SELECT * FROM $outputTable ORDER BY ds, user_id")
+    val rowCount = outputDf.count()
+    assertTrue(s"Output should have rows, got $rowCount", rowCount > 0)
+
+    val outputPartitions = tableUtils.partitions(outputTable)
+    assertTrue("Output should have partitions", outputPartitions.nonEmpty)
+    outputPartitions should contain(twoDaysAgo)
+    outputPartitions should contain(yesterday)
+  }
+
+  "E2E GroupBy backfill with timePartitioned source" should "run through BatchNodeRunner" in {
+    createTimePartitionedEventsTable()
+
+    val sourceQuery = Builders.Query(
+      selects = Builders.Selects("user_id", "value"),
+      partitionColumn = "created_at",
+      timeColumn = "UNIX_TIMESTAMP(created_at) * 1000"
+    )
+    sourceQuery.setTimePartitioned(true)
+
+    val source = Builders.Source.events(sourceQuery, table = "test_db.tp_events")
+    val tableDep = TableDependencies.fromSource(source).get
+
+    val gbMetaData = Builders.MetaData(namespace = "test_db", name = "tp_gb_test")
+    val outputTable = gbMetaData.outputTable
+
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("user_id"),
+      aggregations = Seq(
+        Builders.Aggregation(
+          inputColumn = "value",
+          operation = Operation.SUM
+        )
+      ),
+      metaData = gbMetaData
+    )
+
+    val gbNode = new GroupByBackfillNode().setGroupBy(groupByConf)
+    val nodeContent = new NodeContent()
+    nodeContent.setGroupByBackfill(gbNode)
+
+    implicit val partitionSpec: PartitionSpec = tableUtils.partitionSpec
+    val metadata = MetaDataUtils.layer(
+      baseMetadata = new MetaData().setOutputNamespace("test_db").setTeam("test_team"),
+      modeName = "test_mode",
+      nodeName = "tp_gb_test",
+      tableDependencies = Seq(tableDep),
+      stepDays = Some(1),
+      outputTableOverride = Some(outputTable)
+    )
+
+    val node = new Node().setMetaData(metadata).setContent(nodeContent)
+    val runner = new BatchNodeRunner(node, tableUtils, mockApi)
+    val range = PartitionRange(twoDaysAgo, yesterday)(tableUtils.partitionSpec)
+
+    // Run the groupBy backfill through BatchNodeRunner
+    runner.run(metadata, nodeContent, Option(range))
+
+    // Verify the output table was created with partitioned data
+    val outputDf = spark.sql(s"SELECT * FROM $outputTable ORDER BY ds, user_id")
+    val rowCount = outputDf.count()
+    assertTrue(s"Output should have rows, got $rowCount", rowCount > 0)
+
+    val outputPartitions = tableUtils.partitions(outputTable)
+    assertTrue("Output should have partitions", outputPartitions.nonEmpty)
+
+    // Verify aggregation results: user_id=1 should have sum(value)
+    val user1Rows = spark.sql(
+      s"SELECT * FROM $outputTable WHERE user_id = 1 AND ds = '$yesterday'"
+    ).collect()
+    assertTrue("Should have results for user_id=1", user1Rows.nonEmpty)
   }
 
   override def afterAll(): Unit = {

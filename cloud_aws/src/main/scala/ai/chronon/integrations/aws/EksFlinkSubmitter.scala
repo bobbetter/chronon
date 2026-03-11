@@ -1,7 +1,9 @@
 package ai.chronon.integrations.aws
 
+import ai.chronon.api.JobStatusType
 import ai.chronon.spark.submission.JobSubmitterConstants.{MaxRetainedCheckpoints, additionalFlinkJars}
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource
+import io.fabric8.kubernetes.api.model.networking.v1.IngressBuilder
 import io.fabric8.kubernetes.client.{Config, KubernetesClientBuilder}
 import io.fabric8.kubernetes.client.dsl.base.CustomResourceDefinitionContext
 import org.slf4j.LoggerFactory
@@ -13,7 +15,7 @@ import scala.jdk.CollectionConverters._
   * Uses IRSA (IAM Roles for Service Accounts) for AWS credential access — no explicit credentials
   * are passed; the pod's service account role is assumed automatically via web identity tokens.
   */
-class EksFlinkSubmitter(k8sConfig: Option[Config] = None) {
+class EksFlinkSubmitter(k8sConfig: Option[Config] = None, ingressBaseUrl: Option[String] = None) {
   import EksFlinkSubmitter._
 
   private val logger = LoggerFactory.getLogger(getClass)
@@ -71,6 +73,7 @@ class EksFlinkSubmitter(k8sConfig: Option[Config] = None) {
     jobProperties.get("taskmanager.memory.process.size") match {
       case Some(v) if v.toUpperCase.startsWith("64") => TaskManager64G
       case Some(v) if v.toUpperCase.startsWith("32") => TaskManager32G
+      case None                                      => TaskManager64G
       case _                                         => SmallTaskManager
     }
   }
@@ -115,6 +118,61 @@ class EksFlinkSubmitter(k8sConfig: Option[Config] = None) {
     ) ++ flinkMemoryConfig(tier) ++ jobProperties
   }
 
+  private def flinkDeploymentCrdContext: CustomResourceDefinitionContext =
+    new CustomResourceDefinitionContext.Builder()
+      .withGroup("flink.apache.org")
+      .withVersion("v1beta1")
+      .withScope("Namespaced")
+      .withPlural("flinkdeployments")
+      .withKind("FlinkDeployment")
+      .build()
+
+  private def k8sClient = new KubernetesClientBuilder()
+    .withConfig(k8sConfig.getOrElse(Config.autoConfigure(null)))
+    .build()
+
+  def status(deploymentName: String, namespace: String): JobStatusType = {
+    val client = k8sClient
+    try {
+      val resource = client
+        .genericKubernetesResources(flinkDeploymentCrdContext)
+        .inNamespace(namespace)
+        .withName(deploymentName)
+        .get()
+
+      if (resource == null) return JobStatusType.UNKNOWN
+
+      val lifecycleState = Option(resource.getAdditionalProperties.get("status"))
+        .collect { case m: java.util.Map[_, _] => m }
+        .flatMap(s => Option(s.get("lifecycleState")))
+        .map(_.toString)
+        .getOrElse("")
+
+      lifecycleState match {
+        case "STABLE"                                              => JobStatusType.RUNNING
+        case "DEPLOYED" | "CREATED" | "UPGRADING" | "ROLLING_BACK" => JobStatusType.PENDING
+        case "SUSPENDED" | "FAILED"                                => JobStatusType.FAILED
+        case _                                                     => JobStatusType.UNKNOWN
+      }
+    } finally {
+      client.close()
+    }
+  }
+
+  def delete(deploymentName: String, namespace: String): Unit = {
+    val client = k8sClient
+    try {
+      client
+        .genericKubernetesResources(flinkDeploymentCrdContext)
+        .inNamespace(namespace)
+        .withName(deploymentName)
+        .delete()
+      logger.info(s"Deleted FlinkDeployment: $deploymentName in namespace: $namespace")
+    } finally {
+      client.close()
+    }
+  }
+
   def submit(jobId: String,
              mainClass: String,
              mainJarUri: String,
@@ -128,7 +186,8 @@ class EksFlinkSubmitter(k8sConfig: Option[Config] = None) {
              namespace: String): String = {
 
     val deploymentName = sanitizeDeploymentName(s"flink-$jobId")
-    val flinkJars = maybeFlinkJarsUri.map(additionalFlinkJars).getOrElse(Array.empty)
+    val basePath = maybeFlinkJarsUri.getOrElse(DefaultS3FlinkJarsBasePath)
+    val flinkJars = additionalFlinkJars(basePath) ++ eksAdditionalFlinkJars(basePath)
     val allJarUris = (jarUris ++ flinkJars).distinct
     val tier = parseTmMemoryTier(jobProperties)
 
@@ -184,19 +243,9 @@ class EksFlinkSubmitter(k8sConfig: Option[Config] = None) {
     }
     spec.put("job", job)
 
-    val k8sClient = new KubernetesClientBuilder()
-      .withConfig(k8sConfig.getOrElse(Config.autoConfigure(null)))
-      .build()
+    val client = k8sClient
 
     try {
-      val crdContext = new CustomResourceDefinitionContext.Builder()
-        .withGroup("flink.apache.org")
-        .withVersion("v1beta1")
-        .withScope("Namespaced")
-        .withPlural("flinkdeployments")
-        .withKind("FlinkDeployment")
-        .build()
-
       val resource = new GenericKubernetesResource()
       resource.setApiVersion("flink.apache.org/v1beta1")
       resource.setKind("FlinkDeployment")
@@ -208,17 +257,95 @@ class EksFlinkSubmitter(k8sConfig: Option[Config] = None) {
       )
       resource.setAdditionalProperty("spec", spec)
 
-      k8sClient
-        .genericKubernetesResources(crdContext)
+      val created = client
+        .genericKubernetesResources(flinkDeploymentCrdContext)
         .inNamespace(namespace)
         .resource(resource)
         .create()
 
       logger.info(s"Created FlinkDeployment: $deploymentName in namespace: $namespace")
+
+      if (ingressBaseUrl.isDefined) {
+        try {
+          createFlinkIngress(client, deploymentName, namespace, created.getMetadata.getUid)
+        } catch {
+          case e: Exception =>
+            logger.warn(
+              s"FlinkDeployment '$deploymentName' (namespace=$namespace, uid=${created.getMetadata.getUid}) " +
+                s"was created successfully but ingress setup failed — Flink UI may be unavailable: ${e.getMessage}",
+              e
+            )
+        }
+      }
+
       deploymentName
     } finally {
-      k8sClient.close()
+      client.close()
     }
+  }
+
+  // Create an Ingress resource for the Flink REST UI, with rules specific to this deployment. This allows
+  // nginx-ingress to route /flink/{deploymentName} to the correct Flink
+  // REST service, and ensures the Ingress is automatically deleted when the FlinkDeployment is removed.
+  private[aws] def createFlinkIngress(client: io.fabric8.kubernetes.client.KubernetesClient,
+                                      deploymentName: String,
+                                      namespace: String,
+                                      ownerUid: String): Unit = {
+    // Extract host from ingressBaseUrl so the ingress rule is host-specific, matching at the
+    // same specificity level as the hub catch-all ingress. Without a host, nginx-ingress prefers
+    // host-specific rules (even with path: /) over wildcard-host rules with longer paths.
+    val host = ingressBaseUrl
+      .flatMap { url =>
+        scala.util.Try(new java.net.URI(url).getHost).toOption.filter(_ != null)
+      }
+      .getOrElse(throw new IllegalArgumentException(
+        s"Could not extract host from ingressBaseUrl: $ingressBaseUrl — cannot create host-specific ingress rule"
+      ))
+
+    val ingress = new IngressBuilder()
+      .withNewMetadata()
+      .withName(deploymentName)
+      .withNamespace(namespace)
+      // Owner reference ensures Kubernetes GC deletes the Ingress when the FlinkDeployment
+      // is removed for any reason (crash, operator cleanup, manual delete).
+      .addNewOwnerReference()
+      .withApiVersion("flink.apache.org/v1beta1")
+      .withKind("FlinkDeployment")
+      .withName(deploymentName)
+      .withUid(ownerUid)
+      .withController(true)
+      .withBlockOwnerDeletion(true)
+      .endOwnerReference()
+      .addToAnnotations("nginx.ingress.kubernetes.io/use-regex", "true")
+      .addToAnnotations("nginx.ingress.kubernetes.io/rewrite-target", "/$2")
+      .addToAnnotations("nginx.ingress.kubernetes.io/proxy-read-timeout", "3600")
+      .addToAnnotations("nginx.ingress.kubernetes.io/proxy-send-timeout", "3600")
+      .addToAnnotations("nginx.ingress.kubernetes.io/proxy-http-version", "1.1")
+      .endMetadata()
+      .withNewSpec()
+      .withIngressClassName("nginx-hub")
+      .addNewRule()
+      .withHost(host)
+      .withNewHttp()
+      .addNewPath()
+      .withPath(s"/flink/$deploymentName(/|$$)(.*)")
+      .withPathType("ImplementationSpecific")
+      .withNewBackend()
+      .withNewService()
+      .withName(s"$deploymentName-rest")
+      .withNewPort()
+      .withNumber(8081)
+      .endPort()
+      .endService()
+      .endBackend()
+      .endPath()
+      .endHttp()
+      .endRule()
+      .endSpec()
+      .build()
+
+    client.network().v1().ingresses().inNamespace(namespace).resource(ingress).create()
+    logger.info(s"Created Ingress: $deploymentName in namespace: $namespace")
   }
 
   // Builds the init container, volume, volume mounts, and env vars for downloading JARs from S3.
@@ -312,11 +439,27 @@ class EksFlinkSubmitter(k8sConfig: Option[Config] = None) {
 }
 
 object EksFlinkSubmitter {
+  // Default path for the libs we need for Spark expression eval in Flink
+  val DefaultS3FlinkJarsBasePath = "s3://zipline-spark-libs/spark-3.5.3/libs/"
+
+  // Jars required on EKS that other engines like Dataproc provide via their pre-installed Hadoop/YARN host classpath.
+  val EksOnlyAdditionalJarNames: Array[String] = Array(
+    "hadoop-client-runtime-3.3.6.jar",
+    "jakarta.servlet-api-4.0.3.jar"
+  )
+
+  def eksAdditionalFlinkJars(flinkJarsBasePath: String): Array[String] = {
+    val base = if (flinkJarsBasePath.endsWith("/")) flinkJarsBasePath else flinkJarsBasePath + "/"
+    EksOnlyAdditionalJarNames.map(base + _)
+  }
+
+  // Flink Kubernetes Operator enforces a 45-char limit on FlinkDeployment names.
   def sanitizeDeploymentName(raw: String): String = {
     val cleaned = raw.toLowerCase
       .replaceAll("[^a-z0-9-]", "-")
       .replaceAll("^-+|-+$", "")
-      .take(253)
+      .take(45)
+      .replaceAll("-+$", "")
     require(cleaned.nonEmpty, "jobId must produce a valid Kubernetes name")
     cleaned
   }

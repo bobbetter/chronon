@@ -1178,4 +1178,208 @@ class DataprocSubmitterTest extends AnyFlatSpec with MockitoSugar {
     )
     println(jobId)
   }
+
+  it should "return cluster name when cluster is RUNNING" in {
+    val mockClusterControllerClient = mock[ClusterControllerClient]
+    val mockCluster = Cluster
+      .newBuilder()
+      .setStatus(ClusterStatus.newBuilder().setState(ClusterStatus.State.RUNNING))
+      .build()
+
+    when(mockClusterControllerClient.getCluster(any[String], any[String], any[String]))
+      .thenReturn(mockCluster)
+
+    val submitterWithClusterClient = new DataprocSubmitter(
+      jobControllerClient = mock[JobControllerClient],
+      gcsClient = mock[GCSClient],
+      region = "test-region",
+      projectId = "test-project",
+      clusterControllerClient = Some(mockClusterControllerClient)
+    )
+
+    val result = submitterWithClusterClient.ensureClusterReady(
+      "test-cluster",
+      None
+    )(scala.concurrent.ExecutionContext.global)
+
+    assert(result.isDefined)
+    assertEquals(result.get, "test-cluster")
+  }
+
+  it should "return None when cluster is in CREATING state" in {
+    val mockClusterControllerClient = mock[ClusterControllerClient]
+    val mockCluster = Cluster
+      .newBuilder()
+      .setStatus(ClusterStatus.newBuilder().setState(ClusterStatus.State.CREATING))
+      .build()
+
+    when(mockClusterControllerClient.getCluster(any[String], any[String], any[String]))
+      .thenReturn(mockCluster)
+
+    val submitterWithClusterClient = new DataprocSubmitter(
+      jobControllerClient = mock[JobControllerClient],
+      gcsClient = mock[GCSClient],
+      region = "test-region",
+      projectId = "test-project",
+      clusterControllerClient = Some(mockClusterControllerClient)
+    )
+
+    val result = submitterWithClusterClient.ensureClusterReady(
+      "test-cluster",
+      None
+    )(scala.concurrent.ExecutionContext.global)
+
+    assert(result.isEmpty)
+  }
+
+  it should "throw IllegalStateException when cluster is in ERROR state and no config provided" in {
+    val mockClusterControllerClient = mock[ClusterControllerClient]
+    val mockCluster = Cluster
+      .newBuilder()
+      .setStatus(ClusterStatus.newBuilder().setState(ClusterStatus.State.ERROR))
+      .build()
+
+    when(mockClusterControllerClient.getCluster(any[String], any[String], any[String]))
+      .thenReturn(mockCluster)
+
+    val submitterWithClusterClient = new DataprocSubmitter(
+      jobControllerClient = mock[JobControllerClient],
+      gcsClient = mock[GCSClient],
+      region = "test-region",
+      projectId = "test-project",
+      clusterControllerClient = Some(mockClusterControllerClient)
+    )
+
+    val exception = intercept[IllegalStateException] {
+      submitterWithClusterClient.ensureClusterReady(
+        "test-cluster",
+        None
+      )(scala.concurrent.ExecutionContext.global)
+    }
+
+    assert(exception.getMessage.contains("cannot be used for job submission"))
+  }
+
+  it should "throw IllegalArgumentException when getOrCreateCluster is called with no config" in {
+    val mockDataprocClient = mock[ClusterControllerClient]
+
+    when(mockDataprocClient.getCluster(any[String], any[String], any[String]))
+      .thenReturn(null)
+
+    val exception = intercept[Exception] {
+      DataprocSubmitter.getOrCreateCluster(
+        "test-cluster",
+        None,
+        "test-project",
+        "test-region",
+        mockDataprocClient
+      )
+    }
+
+    assert(exception.getMessage.contains("does not exist and no cluster config provided"))
+  }
+
+  it should "throw IllegalArgumentException when getOrCreateCluster is called with config missing dataproc.config key" in {
+    val mockDataprocClient = mock[ClusterControllerClient]
+
+    when(mockDataprocClient.getCluster(any[String], any[String], any[String]))
+      .thenReturn(null)
+
+    val exception = intercept[Exception] {
+      DataprocSubmitter.getOrCreateCluster(
+        "test-cluster",
+        Some(Map("other-key" -> "value")),
+        "test-project",
+        "test-region",
+        mockDataprocClient
+      )
+    }
+
+    assert(exception.getMessage.contains("does not exist and no cluster config provided"))
+  }
+
+  it should "create cluster when config is properly provided" in {
+    val mockDataprocClient = mock[ClusterControllerClient]
+
+    when(mockDataprocClient.getCluster(any[String], any[String], any[String]))
+      .thenReturn(null)
+
+    val mockOperationFuture = mock[OperationFuture[Cluster, ClusterOperationMetadata]]
+    val mockRunningCluster = Cluster
+      .newBuilder()
+      .setStatus(ClusterStatus.newBuilder().setState(ClusterStatus.State.RUNNING))
+      .build()
+
+    when(mockDataprocClient.createClusterAsync(any[CreateClusterRequest]))
+      .thenReturn(mockOperationFuture)
+    when(mockOperationFuture.get(anyLong(), any[TimeUnit]))
+      .thenReturn(mockRunningCluster)
+    when(mockDataprocClient.getCluster(any[String], any[String], any[String]))
+      .thenReturn(null)
+      .thenReturn(mockRunningCluster)
+
+    val clusterConfigStr =
+      """{
+      "masterConfig": {
+        "numInstances": 1,
+        "machineTypeUri": "n1-standard-4"
+      }
+    }"""
+
+    val result = DataprocSubmitter.getOrCreateCluster(
+      "new-cluster",
+      Some(Map("dataproc.config" -> clusterConfigStr)),
+      "test-project",
+      "test-region",
+      mockDataprocClient
+    )
+
+    assertEquals(result, "new-cluster")
+    verify(mockDataprocClient).createClusterAsync(any[CreateClusterRequest])
+  }
+
+  // --- buildFlinkSubmissionProps ---
+  private val testArtifactPrefix = "gs://zipline-artifacts-test"
+  private val testVersion = "1.0.0"
+  private val baseFlinkEnv = Map(
+    "FLINK_STATE_URI" -> "gs://test-bucket/flink-state"
+  )
+  private val pubSubConnectorJarUri =
+    s"$testArtifactPrefix/release/$testVersion/jars/connectors_pubsub_deploy.jar"
+
+  private def createTestSubmitter(): DataprocSubmitter =
+    new DataprocSubmitter(mock[JobControllerClient], mock[GCSClient], region = "us-central1", projectId = "test-project")
+
+  "buildFlinkSubmissionProps" should "include flink jar URI and checkpoint URI" in {
+    val submitter = createTestSubmitter()
+    val props = submitter.buildFlinkSubmissionProps(baseFlinkEnv, testVersion, testArtifactPrefix)
+
+    assertEquals(props(FlinkMainJarURI), s"$testArtifactPrefix/release/$testVersion/jars/flink_assembly_deploy.jar")
+    assertEquals(props(FlinkCheckpointUri), "gs://test-bucket/flink-state/checkpoints")
+  }
+
+  it should "include pubsub connector jar when ENABLE_PUBSUB is true" in {
+    val submitter = createTestSubmitter()
+    val env = baseFlinkEnv + ("ENABLE_PUBSUB" -> "true")
+
+    val props = submitter.buildFlinkSubmissionProps(env, testVersion, testArtifactPrefix)
+
+    assertEquals(props(FlinkPubSubConnectorJarURI), pubSubConnectorJarUri)
+  }
+
+  it should "omit pubsub connector jar when ENABLE_PUBSUB is false or absent" in {
+    val submitter = createTestSubmitter()
+
+    val props = submitter.buildFlinkSubmissionProps(baseFlinkEnv, testVersion, testArtifactPrefix)
+
+    assert(!props.contains(FlinkPubSubConnectorJarURI))
+  }
+
+  it should "throw exception when FLINK_STATE_URI is not set" in {
+    val submitter = createTestSubmitter()
+
+    intercept[IllegalArgumentException] {
+      submitter.buildFlinkSubmissionProps(Map.empty, testVersion, testArtifactPrefix)
+    }
+  }
 }

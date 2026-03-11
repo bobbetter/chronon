@@ -139,7 +139,7 @@ jobs:
           ./mill service_commons\[${{ env.SCALA_VERSION }}\].test
 
   cloud_gcp_tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-8_cores-32_gb
     container:
       image: ghcr.io/${{ github.repository }}-ci:latest
       credentials:
